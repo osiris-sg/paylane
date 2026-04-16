@@ -10,21 +10,48 @@ import {
   Bell,
   ChevronLeft,
   ChevronRight,
+  Shield,
 } from "lucide-react";
 import { cn } from "~/lib/utils";
 import { useState } from "react";
 import { Button } from "~/components/ui/button";
+import { api } from "~/trpc/react";
 
-const navItems = [
+interface NavItem {
+  href: string;
+  label: string;
+  icon: React.ElementType;
+  modules?: ("RECEIVE" | "SEND" | "BOTH")[]; // which modules can see this item, undefined = all
+  adminOnly?: boolean;
+}
+
+const navItems: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/invoices", label: "Invoices", icon: FileText },
-  { href: "/customers", label: "Customers", icon: Users },
+  { href: "/customers", label: "Customers", icon: Users, modules: ["SEND", "BOTH"] },
   { href: "/notifications", label: "Notifications", icon: Bell },
+  { href: "/admin", label: "Admin", icon: Shield, adminOnly: true },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+
+  const { data: status } = api.onboarding.getStatus.useQuery();
+  const { data: adminCheck } = api.admin.isAdmin.useQuery();
+  const companyModule = status?.module;
+  const isAdmin = adminCheck?.isAdmin ?? false;
+
+  const visibleItems = navItems.filter((item) => {
+    // Admin-only items: only show for admins
+    if (item.adminOnly) return isAdmin;
+    // No module filter = visible to all
+    if (!item.modules) return true;
+    // No module set on company = show everything
+    if (!companyModule) return true;
+    // Check if the company's module is in the allowed list
+    return item.modules.includes(companyModule as "RECEIVE" | "SEND" | "BOTH");
+  });
 
   return (
     <aside
@@ -36,7 +63,7 @@ export function Sidebar() {
       <div className="flex h-14 items-center justify-between border-b px-4">
         {!collapsed && (
           <Link href="/dashboard" className="text-xl font-bold text-blue-600">
-            InvoiceFlow
+            PayLane
           </Link>
         )}
         <Button
@@ -50,7 +77,7 @@ export function Sidebar() {
       </div>
 
       <nav className="flex-1 space-y-1 p-2">
-        {navItems.map((item) => {
+        {visibleItems.map((item) => {
           const isActive = pathname.startsWith(item.href);
           return (
             <Link

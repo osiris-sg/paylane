@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import dayjs from "dayjs";
 import {
   FileText,
@@ -133,9 +134,17 @@ const SUMMARY_CARDS = [
 ] as const;
 
 export default function DashboardPage() {
+  const router = useRouter();
+  const onboarding = api.onboarding.getStatus.useQuery();
   const summary = api.dashboard.getSummary.useQuery();
   const aging = api.dashboard.getAgingData.useQuery();
   const monthly = api.dashboard.getMonthlyTotals.useQuery();
+
+  // Redirect to onboarding if not completed
+  if (onboarding.data && !onboarding.data.onboarded) {
+    router.push("/onboarding");
+    return null;
+  }
 
   return (
     <div className="space-y-8 p-6 lg:p-8">

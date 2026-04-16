@@ -1,6 +1,7 @@
 "use client";
 
-import { useParams } from "next/navigation";
+import { useState } from "react";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import dayjs from "dayjs";
 import { toast } from "sonner";
@@ -17,11 +18,19 @@ import {
   DollarSign,
   Hash,
   MapPin,
+  Trash2,
+  CalendarClock,
 } from "lucide-react";
 
 import { api } from "~/trpc/react";
 import { Button } from "~/components/ui/button";
+import { Input } from "~/components/ui/input";
 import { Badge } from "~/components/ui/badge";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "~/components/ui/popover";
 import {
   Card,
   CardContent,
@@ -39,6 +48,7 @@ const routingStatusConfig: Record<string, { label: string; className: string }> 
 const invoiceStatusConfig: Record<string, { label: string; className: string }> = {
   DRAFT: { label: "Draft", className: "bg-gray-100 text-gray-700 border-gray-300 dark:bg-gray-800 dark:text-gray-300" },
   SENT: { label: "Sent", className: "bg-blue-100 text-blue-700 border-blue-400 dark:bg-blue-950 dark:text-blue-400" },
+  PENDING_APPROVAL: { label: "Pending Approval", className: "bg-amber-100 text-amber-700 border-amber-400 dark:bg-amber-950 dark:text-amber-400" },
   PAID: { label: "Paid", className: "bg-green-100 text-green-700 border-green-400 dark:bg-green-950 dark:text-green-400" },
   OVERDUE: { label: "Overdue", className: "bg-red-100 text-red-700 border-red-400 dark:bg-red-950 dark:text-red-400" },
   CANCELLED: { label: "Cancelled", className: "bg-gray-100 text-gray-500 border-gray-300 dark:bg-gray-800 dark:text-gray-400" },
@@ -115,6 +125,7 @@ function TimelineItem({ event }: { event: TimelineEvent }) {
 
 export default function InvoiceDetailPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const utils = api.useUtils();
 
   const { data: invoice, isLoading } = api.invoice.getById.useQuery({
@@ -143,13 +154,55 @@ export default function InvoiceDetailPage() {
 
   const markPaid = api.invoice.markPaid.useMutation({
     onSuccess: () => {
-      toast.success("Invoice marked as paid");
+      toast.success("Payment submitted — pending sender approval");
       void utils.invoice.getById.invalidate({ id: params.id });
     },
     onError: () => {
-      toast.error("Failed to mark invoice as paid");
+      toast.error("Failed to submit payment");
     },
   });
+
+  const approvePayment = api.invoice.approvePayment.useMutation({
+    onSuccess: () => {
+      toast.success("Payment approved");
+      void utils.invoice.getById.invalidate({ id: params.id });
+    },
+    onError: () => {
+      toast.error("Failed to approve payment");
+    },
+  });
+
+  const rejectPayment = api.invoice.rejectPayment.useMutation({
+    onSuccess: () => {
+      toast.success("Payment rejected");
+      void utils.invoice.getById.invalidate({ id: params.id });
+    },
+    onError: () => {
+      toast.error("Failed to reject payment");
+    },
+  });
+
+  const deleteInvoice = api.invoice.delete.useMutation({
+    onSuccess: () => {
+      toast.success("Invoice deleted");
+      router.push("/invoices");
+    },
+    onError: () => {
+      toast.error("Failed to delete invoice");
+    },
+  });
+
+  const schedulePayment = api.invoice.schedulePayment.useMutation({
+    onSuccess: () => {
+      toast.success("Payment date scheduled");
+      void utils.invoice.getById.invalidate({ id: params.id });
+    },
+    onError: () => {
+      toast.error("Failed to schedule payment");
+    },
+  });
+
+  const [scheduleDate, setScheduleDate] = useState("");
 
   if (isLoading) {
     return (
@@ -190,10 +243,19 @@ export default function InvoiceDetailPage() {
   const rStatusConfig = routingStatusConfig[invoice.routingStatus];
   const iStatusConfig = invoiceStatusConfig[invoice.invoiceStatus];
 
-  const canSend = !isReceived && invoice.invoiceStatus === "DRAFT";
-  const canAcknowledge = isReceived && invoice.invoiceStatus === "SENT";
+  const isSender = !isReceived; // This user's company sent the invoice
+  const isReceiver = isReceived; // This user's company received the invoice
+
+  const canSend = isSender && invoice.invoiceStatus === "DRAFT";
+  const canAcknowledge = isReceiver && invoice.invoiceStatus === "SENT";
   const canMarkPaid =
-    isReceived &&
+    isReceiver &&
+    (invoice.invoiceStatus === "SENT" || invoice.invoiceStatus === "OVERDUE");
+  const canApprovePayment = isSender && invoice.invoiceStatus === "PENDING_APPROVAL";
+  const canRejectPayment = isSender && invoice.invoiceStatus === "PENDING_APPROVAL";
+  const canDelete = isSender && invoice.invoiceStatus === "DRAFT";
+  const canSchedulePayment =
+    isReceiver &&
     (invoice.invoiceStatus === "SENT" || invoice.invoiceStatus === "OVERDUE");
 
   const timeline: TimelineEvent[] = (invoice.timelineItems as TimelineEvent[]) ?? [];
@@ -282,6 +344,40 @@ export default function InvoiceDetailPage() {
               {acknowledgeInvoice.isPending ? "Acknowledging..." : "Acknowledge"}
             </Button>
           )}
+          {canSchedulePayment && (
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline">
+                  <CalendarClock className="mr-2 h-4 w-4" />
+                  Schedule Payment
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-4" align="end">
+                <div className="space-y-3">
+                  <p className="text-sm font-medium">When will payment be made?</p>
+                  <Input
+                    type="date"
+                    value={scheduleDate}
+                    onChange={(e) => setScheduleDate(e.target.value)}
+                    min={dayjs().format("YYYY-MM-DD")}
+                  />
+                  <Button
+                    size="sm"
+                    className="w-full"
+                    disabled={!scheduleDate || schedulePayment.isPending}
+                    onClick={() => {
+                      schedulePayment.mutate({
+                        id: invoice.id,
+                        expectedPaymentDate: new Date(scheduleDate),
+                      });
+                    }}
+                  >
+                    {schedulePayment.isPending ? "Scheduling..." : "Confirm"}
+                  </Button>
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
           {canMarkPaid && (
             <Button
               onClick={() => markPaid.mutate({ id: invoice.id })}
@@ -289,7 +385,41 @@ export default function InvoiceDetailPage() {
               className="bg-green-600 hover:bg-green-700"
             >
               <CreditCard className="mr-2 h-4 w-4" />
-              {markPaid.isPending ? "Processing..." : "Mark as Paid"}
+              {markPaid.isPending ? "Submitting..." : "Mark as Paid"}
+            </Button>
+          )}
+          {canApprovePayment && (
+            <Button
+              onClick={() => approvePayment.mutate({ id: invoice.id })}
+              disabled={approvePayment.isPending}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              <CheckCircle className="mr-2 h-4 w-4" />
+              {approvePayment.isPending ? "Approving..." : "Approve Payment"}
+            </Button>
+          )}
+          {canRejectPayment && (
+            <Button
+              onClick={() => rejectPayment.mutate({ id: invoice.id })}
+              disabled={rejectPayment.isPending}
+              variant="destructive"
+            >
+              {rejectPayment.isPending ? "Rejecting..." : "Reject Payment"}
+            </Button>
+          )}
+          {canDelete && (
+            <Button
+              variant="outline"
+              className="text-red-600 hover:bg-red-50 hover:text-red-700"
+              onClick={() => {
+                if (window.confirm("Are you sure you want to delete this invoice?")) {
+                  deleteInvoice.mutate({ id: invoice.id });
+                }
+              }}
+              disabled={deleteInvoice.isPending}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              {deleteInvoice.isPending ? "Deleting..." : "Delete"}
             </Button>
           )}
         </div>
@@ -341,6 +471,17 @@ export default function InvoiceDetailPage() {
                       </span>
                     }
                   />
+                  {invoice.expectedPaymentDate && (
+                    <DetailRow
+                      icon={CalendarClock}
+                      label="Expected Payment"
+                      value={
+                        <span className="font-medium text-blue-600">
+                          {dayjs(invoice.expectedPaymentDate).format("MMMM D, YYYY")}
+                        </span>
+                      }
+                    />
+                  )}
                   <DetailRow
                     icon={Clock}
                     label="Payment Terms"
@@ -381,6 +522,33 @@ export default function InvoiceDetailPage() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Line items are saved in DB but not displayed on the detail page */}
+          {/* Uploaded Invoice File */}
+          {invoice.fileUrl && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Uploaded Invoice</CardTitle>
+                <CardDescription>Original uploaded document</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {invoice.fileUrl.startsWith("data:application/pdf") ? (
+                  <iframe
+                    src={invoice.fileUrl}
+                    className="h-[600px] w-full rounded border"
+                    title="Invoice PDF"
+                  />
+                ) : (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={invoice.fileUrl}
+                    alt="Uploaded invoice"
+                    className="w-full rounded border"
+                  />
+                )}
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         {/* Right: Timeline */}

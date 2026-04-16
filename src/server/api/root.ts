@@ -3,12 +3,16 @@ import { invoiceRouter } from "./routers/invoice";
 import { customerRouter } from "./routers/customer";
 import { notificationRouter } from "./routers/notification";
 import { dashboardRouter } from "./routers/dashboard";
+import { onboardingRouter } from "./routers/onboarding";
+import { adminRouter } from "./routers/admin";
 
 export const appRouter = createTRPCRouter({
   invoice: invoiceRouter,
   customer: customerRouter,
   notification: notificationRouter,
   dashboard: dashboardRouter,
+  onboarding: onboardingRouter,
+  admin: adminRouter,
 });
 
 export type AppRouter = typeof appRouter;

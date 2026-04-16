@@ -1,5 +1,19 @@
 import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
+import { TRPCError } from "@trpc/server";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
+import { Resend } from "resend";
+
+const resend = new Resend(process.env.RESEND_API_KEY);
+const FROM_EMAIL = process.env.EMAIL_FROM ?? "PayLane <onboarding@resend.dev>";
+
+const itemSchema = z.object({
+  description: z.string().min(1),
+  quantity: z.number().min(0),
+  unitPrice: z.number().min(0),
+  amount: z.number().min(0),
+  sortOrder: z.number().int().default(0),
+});
 
 export const invoiceRouter = createTRPCRouter({
   list: protectedProcedure
@@ -69,6 +83,7 @@ export const invoiceRouter = createTRPCRouter({
         where: { id: input.id },
         include: {
           customer: true,
+          items: { orderBy: { sortOrder: "asc" } },
           timelineItems: { orderBy: { createdAt: "desc" } },
           senderCompany: true,
           receiverCompany: true,
@@ -78,6 +93,24 @@ export const invoiceRouter = createTRPCRouter({
       return invoice;
     }),
 
+  checkNumber: protectedProcedure
+    .input(z.object({ invoiceNumber: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const user = await ctx.db.user.findUniqueOrThrow({
+        where: { clerkId: ctx.auth.userId },
+      });
+      const existing = await ctx.db.invoice.findUnique({
+        where: {
+          invoiceNumber_senderCompanyId: {
+            invoiceNumber: input.invoiceNumber,
+            senderCompanyId: user.companyId,
+          },
+        },
+        select: { id: true, invoiceNumber: true },
+      });
+      return { exists: !!existing, invoiceId: existing?.id ?? null };
+    }),
+
   create: protectedProcedure
     .input(
       z.object({
@@ -85,13 +118,16 @@ export const invoiceRouter = createTRPCRouter({
         reference: z.string().optional(),
         invoicedDate: z.coerce.date(),
         paymentTerms: z.number().int().min(0),
-        amount: z.number().min(0),
-        currency: z.string().default("USD"),
+        currency: z.string().default("SGD"),
         fromAddress: z.string().optional(),
         toAddress: z.string().optional(),
         description: z.string().optional(),
         customerId: z.string().optional(),
         receiverCompanyId: z.string().optional(),
+        items: z.array(itemSchema).default([]),
+        taxRate: z.number().min(0).default(9),
+        notes: z.string().optional(),
+        fileUrl: z.string().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -102,34 +138,60 @@ export const invoiceRouter = createTRPCRouter({
       const dueDate = new Date(input.invoicedDate);
       dueDate.setDate(dueDate.getDate() + input.paymentTerms);
 
-      const invoice = await ctx.db.invoice.create({
-        data: {
-          invoiceNumber: input.invoiceNumber,
-          reference: input.reference,
-          invoicedDate: input.invoicedDate,
-          dueDate,
-          paymentTerms: input.paymentTerms,
-          amount: input.amount,
-          currency: input.currency,
-          fromAddress: input.fromAddress,
-          toAddress: input.toAddress,
-          description: input.description,
-          customerId: input.customerId,
-          receiverCompanyId: input.receiverCompanyId,
-          senderCompanyId: user.companyId,
-          createdById: user.id,
-          invoiceStatus: "DRAFT",
-          routingStatus: "PENDING",
-          timelineItems: {
-            create: {
-              message: "Invoice created",
+      const subtotal = input.items.reduce((sum, item) => sum + item.amount, 0);
+      const taxAmount = subtotal * (input.taxRate / 100);
+      const totalAmount = subtotal + taxAmount;
+
+      try {
+        const invoice = await ctx.db.invoice.create({
+          data: {
+            invoiceNumber: input.invoiceNumber,
+            reference: input.reference,
+            invoicedDate: input.invoicedDate,
+            dueDate,
+            paymentTerms: input.paymentTerms,
+            amount: totalAmount,
+            currency: input.currency,
+            fromAddress: input.fromAddress,
+            toAddress: input.toAddress,
+            description: input.description,
+            fileUrl: input.fileUrl,
+            customerId: input.customerId,
+            receiverCompanyId: input.receiverCompanyId,
+            senderCompanyId: user.companyId,
+            createdById: user.id,
+            invoiceStatus: "DRAFT",
+            routingStatus: "PENDING",
+            subtotal,
+            taxRate: input.taxRate,
+            taxAmount,
+            notes: input.notes,
+            items: {
+              create: input.items.map((item, index) => ({
+                description: item.description,
+                quantity: item.quantity,
+                unitPrice: item.unitPrice,
+                amount: item.amount,
+                sortOrder: index,
+              })),
+            },
+            timelineItems: {
+              create: { message: "Invoice created" },
             },
           },
-        },
-        include: { customer: true },
-      });
+          include: { customer: true, items: true },
+        });
 
-      return invoice;
+        return invoice;
+      } catch (error) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: `Invoice number "${input.invoiceNumber}" already exists. Please use a different number.`,
+          });
+        }
+        throw error;
+      }
     }),
 
   update: protectedProcedure
@@ -140,7 +202,6 @@ export const invoiceRouter = createTRPCRouter({
         reference: z.string().optional(),
         invoicedDate: z.coerce.date().optional(),
         paymentTerms: z.number().int().min(0).optional(),
-        amount: z.number().min(0).optional(),
         currency: z.string().optional(),
         fromAddress: z.string().optional(),
         toAddress: z.string().optional(),
@@ -148,17 +209,19 @@ export const invoiceRouter = createTRPCRouter({
         customerId: z.string().optional(),
         receiverCompanyId: z.string().optional(),
         fileUrl: z.string().optional(),
+        items: z.array(itemSchema).optional(),
+        taxRate: z.number().min(0).optional(),
+        notes: z.string().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const { id, ...data } = input;
+      const { id, items: newItems, ...data } = input;
+      const existing = await ctx.db.invoice.findUniqueOrThrow({ where: { id } });
+
+      const updateData: Record<string, unknown> = { ...data };
 
       // Recalculate dueDate if invoicedDate or paymentTerms changed
-      const updateData: Record<string, unknown> = { ...data };
       if (data.invoicedDate || data.paymentTerms) {
-        const existing = await ctx.db.invoice.findUniqueOrThrow({
-          where: { id },
-        });
         const invoicedDate = data.invoicedDate ?? existing.invoicedDate;
         const paymentTerms = data.paymentTerms ?? existing.paymentTerms;
         const dueDate = new Date(invoicedDate);
@@ -166,17 +229,43 @@ export const invoiceRouter = createTRPCRouter({
         updateData.dueDate = dueDate;
       }
 
+      // Recalculate totals if items changed
+      if (newItems !== undefined) {
+        const subtotal = newItems.reduce((sum, item) => sum + item.amount, 0);
+        const taxRate = data.taxRate ?? Number(existing.taxRate);
+        const taxAmount = subtotal * (taxRate / 100);
+        updateData.subtotal = subtotal;
+        updateData.taxAmount = taxAmount;
+        updateData.amount = subtotal + taxAmount;
+
+        // Replace items: delete all existing, create new
+        await ctx.db.$transaction([
+          ctx.db.$executeRaw`DELETE FROM "InvoiceItem" WHERE "invoiceId" = ${id}`,
+        ]);
+      }
+
       const invoice = await ctx.db.invoice.update({
         where: { id },
         data: {
           ...updateData,
+          ...(newItems !== undefined
+            ? {
+                items: {
+                  create: newItems.map((item, index) => ({
+                    description: item.description,
+                    quantity: item.quantity,
+                    unitPrice: item.unitPrice,
+                    amount: item.amount,
+                    sortOrder: index,
+                  })),
+                },
+              }
+            : {}),
           timelineItems: {
-            create: {
-              message: "Invoice updated",
-            },
+            create: { message: "Invoice updated" },
           },
         },
-        include: { customer: true },
+        include: { customer: true, items: true },
       });
 
       return invoice;
@@ -189,25 +278,107 @@ export const invoiceRouter = createTRPCRouter({
       return { success: true };
     }),
 
+  bulkDelete: protectedProcedure
+    .input(z.object({ ids: z.array(z.string()).min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      await ctx.db.invoice.deleteMany({ where: { id: { in: input.ids } } });
+      return { success: true, count: input.ids.length };
+    }),
+
+  bulkMarkPaid: protectedProcedure
+    .input(z.object({ ids: z.array(z.string()).min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      // Move to PENDING_APPROVAL (receiver claiming payment)
+      await ctx.db.invoice.updateMany({
+        where: { id: { in: input.ids } },
+        data: { invoiceStatus: "PENDING_APPROVAL" },
+      });
+
+      // Add timeline entries for each
+      const invoices = await ctx.db.invoice.findMany({
+        where: { id: { in: input.ids } },
+        select: { id: true, invoiceNumber: true, senderCompanyId: true },
+      });
+
+      for (const inv of invoices) {
+        await ctx.db.timelineItem.create({
+          data: { invoiceId: inv.id, message: "Payment submitted — pending sender approval" },
+        });
+
+        // Notify sender
+        const senderUsers = await ctx.db.user.findMany({
+          where: { companyId: inv.senderCompanyId },
+        });
+        if (senderUsers.length > 0) {
+          await ctx.db.notification.createMany({
+            data: senderUsers.map((u) => ({
+              message: `Invoice ${inv.invoiceNumber}: payment submitted, awaiting your approval`,
+              type: "INVOICE_PAID" as const,
+              userId: u.id,
+              invoiceId: inv.id,
+            })),
+          });
+        }
+      }
+
+      return { success: true, count: input.ids.length };
+    }),
+
   send: protectedProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
+      // Fetch invoice with customer to check for email-based linking
+      const existing = await ctx.db.invoice.findUniqueOrThrow({
+        where: { id: input.id },
+        include: { customer: true },
+      });
+
+      let receiverCompanyId = existing.receiverCompanyId;
+
+      // If no receiverCompany yet, try to link via customer email
+      if (!receiverCompanyId && existing.customer?.email) {
+        const customerEmail = existing.customer.email.toLowerCase();
+
+        // Check if customer is already linked to a company
+        if (existing.customer.linkedCompanyId) {
+          receiverCompanyId = existing.customer.linkedCompanyId;
+        } else {
+          // Try to find a company with this email on the platform
+          const matchedCompany = await ctx.db.company.findFirst({
+            where: { email: customerEmail },
+          });
+
+          if (matchedCompany) {
+            receiverCompanyId = matchedCompany.id;
+            // Link the customer for future sends
+            await ctx.db.customer.update({
+              where: { id: existing.customer.id },
+              data: { linkedCompanyId: matchedCompany.id },
+            });
+          }
+        }
+      }
+
       const invoice = await ctx.db.invoice.update({
         where: { id: input.id },
         data: {
           invoiceStatus: "SENT",
-          routingStatus: "PENDING",
+          routingStatus: receiverCompanyId ? "PENDING" : "PENDING",
+          receiverCompanyId,
           timelineItems: {
             create: {
-              message: "Invoice sent",
+              message: receiverCompanyId
+                ? "Invoice sent to customer"
+                : "Invoice sent (customer not yet on PayLane)",
             },
           },
         },
       });
 
-      if (invoice.receiverCompanyId) {
+      // Notify receiver company users if linked
+      if (receiverCompanyId) {
         const receiverUsers = await ctx.db.user.findMany({
-          where: { companyId: invoice.receiverCompanyId },
+          where: { companyId: receiverCompanyId },
         });
 
         await ctx.db.notification.createMany({
@@ -220,6 +391,54 @@ export const invoiceRouter = createTRPCRouter({
         });
       }
 
+      // If customer is NOT on PayLane, send them an invite email
+      if (!receiverCompanyId && existing.customer?.email) {
+        const senderCompany = await ctx.db.company.findUniqueOrThrow({
+          where: { id: invoice.senderCompanyId },
+        });
+
+        const signupUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/sign-up`;
+
+        try {
+          const result = await resend.emails.send({
+            from: FROM_EMAIL,
+            to: existing.customer.email,
+            subject: `${senderCompany.name} sent you an invoice on PayLane`,
+            html: `
+              <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 40px 20px;">
+                <div style="text-align: center; margin-bottom: 32px;">
+                  <h1 style="font-size: 24px; font-weight: 700; color: #2563eb; margin: 0;">PayLane</h1>
+                </div>
+                <div style="background: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 32px;">
+                  <h2 style="font-size: 20px; font-weight: 600; color: #111827; margin: 0 0 8px;">
+                    You have a new invoice
+                  </h2>
+                  <p style="color: #6b7280; font-size: 15px; line-height: 1.6; margin: 0 0 16px;">
+                    <strong style="color: #111827;">${senderCompany.name}</strong> sent you invoice
+                    <strong style="color: #111827;">${invoice.invoiceNumber}</strong> for
+                    <strong style="color: #111827;">${invoice.currency} ${Number(invoice.amount).toFixed(2)}</strong>.
+                  </p>
+                  <p style="color: #6b7280; font-size: 15px; line-height: 1.6; margin: 0 0 24px;">
+                    Sign up on PayLane to view, manage, and pay your invoices faster.
+                  </p>
+                  <div style="text-align: center; margin: 32px 0;">
+                    <a href="${signupUrl}" style="display: inline-block; background: #2563eb; color: #ffffff; font-size: 15px; font-weight: 600; text-decoration: none; padding: 12px 32px; border-radius: 8px;">
+                      View Invoice & Sign Up
+                    </a>
+                  </div>
+                </div>
+                <div style="text-align: center; margin-top: 24px;">
+                  <p style="color: #9ca3af; font-size: 12px; margin: 0;">PayLane — Get paid faster.</p>
+                </div>
+              </div>
+            `,
+          });
+          console.log(`📧 Invoice email sent to ${existing.customer.email}:`, result);
+        } catch (error) {
+          console.error(`📧 Failed to send invoice email to ${existing.customer.email}:`, error);
+        }
+      }
+
       return invoice;
     }),
 
@@ -230,12 +449,10 @@ export const invoiceRouter = createTRPCRouter({
         where: { id: input.id },
       });
 
-      const invoice = await ctx.db.invoice.update({
+      return ctx.db.invoice.update({
         where: { id: input.id },
         data: { pinned: !existing.pinned },
       });
-
-      return invoice;
     }),
 
   acknowledge: protectedProcedure
@@ -246,9 +463,7 @@ export const invoiceRouter = createTRPCRouter({
         data: {
           routingStatus: "ACKNOWLEDGED",
           timelineItems: {
-            create: {
-              message: "Invoice acknowledged",
-            },
+            create: { message: "Invoice acknowledged" },
           },
         },
       });
@@ -271,21 +486,28 @@ export const invoiceRouter = createTRPCRouter({
       return invoice;
     }),
 
-  markPaid: protectedProcedure
-    .input(z.object({ id: z.string() }))
+  /** Receiver schedules payment — "payment will come in X days" */
+  schedulePayment: protectedProcedure
+    .input(
+      z.object({
+        id: z.string(),
+        expectedPaymentDate: z.coerce.date(),
+      }),
+    )
     .mutation(async ({ ctx, input }) => {
       const invoice = await ctx.db.invoice.update({
         where: { id: input.id },
         data: {
-          invoiceStatus: "PAID",
+          expectedPaymentDate: input.expectedPaymentDate,
           timelineItems: {
             create: {
-              message: "Invoice marked as paid",
+              message: `Payment scheduled for ${input.expectedPaymentDate.toLocaleDateString("en-SG", { year: "numeric", month: "short", day: "numeric" })}`,
             },
           },
         },
       });
 
+      // Notify sender
       if (invoice.senderCompanyId) {
         const senderUsers = await ctx.db.user.findMany({
           where: { companyId: invoice.senderCompanyId },
@@ -293,8 +515,107 @@ export const invoiceRouter = createTRPCRouter({
 
         await ctx.db.notification.createMany({
           data: senderUsers.map((u) => ({
-            message: `Invoice ${invoice.invoiceNumber} has been paid`,
+            message: `Invoice ${invoice.invoiceNumber}: payment expected on ${input.expectedPaymentDate.toLocaleDateString("en-SG", { year: "numeric", month: "short", day: "numeric" })}`,
+            type: "GENERAL" as const,
+            userId: u.id,
+            invoiceId: invoice.id,
+          })),
+        });
+      }
+
+      return invoice;
+    }),
+
+  /** Receiver claims payment — moves to PENDING_APPROVAL */
+  markPaid: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const invoice = await ctx.db.invoice.update({
+        where: { id: input.id },
+        data: {
+          invoiceStatus: "PENDING_APPROVAL",
+          timelineItems: {
+            create: { message: "Payment submitted — pending sender approval" },
+          },
+        },
+      });
+
+      // Notify sender that receiver claims payment
+      if (invoice.senderCompanyId) {
+        const senderUsers = await ctx.db.user.findMany({
+          where: { companyId: invoice.senderCompanyId },
+        });
+
+        await ctx.db.notification.createMany({
+          data: senderUsers.map((u) => ({
+            message: `Invoice ${invoice.invoiceNumber}: payment submitted, awaiting your approval`,
             type: "INVOICE_PAID" as const,
+            userId: u.id,
+            invoiceId: invoice.id,
+          })),
+        });
+      }
+
+      return invoice;
+    }),
+
+  /** Sender approves the payment — moves to PAID */
+  approvePayment: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const invoice = await ctx.db.invoice.update({
+        where: { id: input.id },
+        data: {
+          invoiceStatus: "PAID",
+          timelineItems: {
+            create: { message: "Payment approved" },
+          },
+        },
+      });
+
+      // Notify receiver that payment was approved
+      if (invoice.receiverCompanyId) {
+        const receiverUsers = await ctx.db.user.findMany({
+          where: { companyId: invoice.receiverCompanyId },
+        });
+
+        await ctx.db.notification.createMany({
+          data: receiverUsers.map((u) => ({
+            message: `Invoice ${invoice.invoiceNumber}: payment approved`,
+            type: "INVOICE_PAID" as const,
+            userId: u.id,
+            invoiceId: invoice.id,
+          })),
+        });
+      }
+
+      return invoice;
+    }),
+
+  /** Sender rejects the payment claim — moves back to SENT */
+  rejectPayment: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const invoice = await ctx.db.invoice.update({
+        where: { id: input.id },
+        data: {
+          invoiceStatus: "SENT",
+          timelineItems: {
+            create: { message: "Payment rejected by sender" },
+          },
+        },
+      });
+
+      // Notify receiver that payment was rejected
+      if (invoice.receiverCompanyId) {
+        const receiverUsers = await ctx.db.user.findMany({
+          where: { companyId: invoice.receiverCompanyId },
+        });
+
+        await ctx.db.notification.createMany({
+          data: receiverUsers.map((u) => ({
+            message: `Invoice ${invoice.invoiceNumber}: payment was rejected`,
+            type: "GENERAL" as const,
             userId: u.id,
             invoiceId: invoice.id,
           })),

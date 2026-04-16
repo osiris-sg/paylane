@@ -1,0 +1,552 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import {
+  Building2,
+  Mail,
+  Plus,
+  Trash2,
+  Send as SendIcon,
+  ArrowRight,
+  ArrowLeft,
+  Check,
+  Users,
+  Sparkles,
+} from "lucide-react";
+
+import { api } from "~/trpc/react";
+import { Button } from "~/components/ui/button";
+import { Input } from "~/components/ui/input";
+import { Label } from "~/components/ui/label";
+import { Textarea } from "~/components/ui/textarea";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "~/components/ui/card";
+import { Separator } from "~/components/ui/separator";
+import { Badge } from "~/components/ui/badge";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "~/components/ui/popover";
+
+interface SupplierRow {
+  id: number;
+  companyName: string;
+  email: string;
+  contactName: string;
+}
+
+const COUNTRY_CODES = [
+  { code: "+65", country: "Singapore", short: "SG" },
+  { code: "+60", country: "Malaysia", short: "MY" },
+  { code: "+1", country: "United States", short: "US" },
+  { code: "+44", country: "United Kingdom", short: "UK" },
+  { code: "+61", country: "Australia", short: "AU" },
+  { code: "+81", country: "Japan", short: "JP" },
+  { code: "+82", country: "South Korea", short: "KR" },
+  { code: "+86", country: "China", short: "CN" },
+  { code: "+91", country: "India", short: "IN" },
+  { code: "+852", country: "Hong Kong", short: "HK" },
+  { code: "+886", country: "Taiwan", short: "TW" },
+  { code: "+62", country: "Indonesia", short: "ID" },
+  { code: "+63", country: "Philippines", short: "PH" },
+  { code: "+66", country: "Thailand", short: "TH" },
+  { code: "+84", country: "Vietnam", short: "VN" },
+  { code: "+49", country: "Germany", short: "DE" },
+  { code: "+33", country: "France", short: "FR" },
+  { code: "+39", country: "Italy", short: "IT" },
+  { code: "+34", country: "Spain", short: "ES" },
+  { code: "+31", country: "Netherlands", short: "NL" },
+  { code: "+46", country: "Sweden", short: "SE" },
+  { code: "+41", country: "Switzerland", short: "CH" },
+  { code: "+971", country: "UAE", short: "AE" },
+  { code: "+966", country: "Saudi Arabia", short: "SA" },
+  { code: "+55", country: "Brazil", short: "BR" },
+  { code: "+52", country: "Mexico", short: "MX" },
+  { code: "+64", country: "New Zealand", short: "NZ" },
+  { code: "+27", country: "South Africa", short: "ZA" },
+  { code: "+234", country: "Nigeria", short: "NG" },
+  { code: "+254", country: "Kenya", short: "KE" },
+  { code: "+7", country: "Russia", short: "RU" },
+  { code: "+48", country: "Poland", short: "PL" },
+  { code: "+90", country: "Turkey", short: "TR" },
+  { code: "+20", country: "Egypt", short: "EG" },
+  { code: "+92", country: "Pakistan", short: "PK" },
+  { code: "+880", country: "Bangladesh", short: "BD" },
+  { code: "+94", country: "Sri Lanka", short: "LK" },
+  { code: "+95", country: "Myanmar", short: "MM" },
+  { code: "+856", country: "Laos", short: "LA" },
+  { code: "+855", country: "Cambodia", short: "KH" },
+];
+
+function PhoneCodeSelect({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (val: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+
+  const selected = COUNTRY_CODES.find((c) => c.code === value);
+
+  const filtered = COUNTRY_CODES.filter((c) => {
+    const q = search.toLowerCase();
+    return (
+      c.code.includes(q) ||
+      c.country.toLowerCase().includes(q) ||
+      c.short.toLowerCase().includes(q)
+    );
+  });
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className="w-[105px] shrink-0 justify-between px-2.5 font-normal"
+        >
+          {selected ? `${selected.code} ${selected.short}` : "+65 SG"}
+          <svg className="ml-1 h-3.5 w-3.5 shrink-0 opacity-50" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[240px] p-0" align="start">
+        <div className="border-b px-3 py-2">
+          <input
+            className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            placeholder="Search country or code..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <div className="max-h-56 overflow-y-auto py-1">
+          {filtered.length === 0 ? (
+            <p className="py-4 text-center text-sm text-muted-foreground">No results</p>
+          ) : (
+            filtered.map((c) => (
+              <button
+                key={c.code}
+                onClick={() => {
+                  onChange(c.code);
+                  setOpen(false);
+                  setSearch("");
+                }}
+                className={`flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-100 ${
+                  c.code === value ? "bg-gray-50 font-medium" : ""
+                }`}
+              >
+                <span className="w-12 tabular-nums">{c.code}</span>
+                <span className="text-muted-foreground">{c.country}</span>
+              </button>
+            ))
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+const RECEIVE_STEPS = [
+  { title: "Your Company", description: "Tell us about your business" },
+  { title: "Add Suppliers", description: "Invite your suppliers to get paid faster" },
+  { title: "All Set!", description: "You're ready to receive invoices" },
+];
+
+const SEND_STEPS = [
+  { title: "Your Company", description: "Tell us about your business" },
+  { title: "All Set!", description: "You're ready to send invoices" },
+];
+
+function StepIndicator({ currentStep, steps }: { currentStep: number; steps: { title: string }[] }) {
+  return (
+    <div className="flex items-center justify-center gap-2">
+      {steps.map((step, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <div
+            className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-medium ${
+              i < currentStep
+                ? "bg-green-500 text-white"
+                : i === currentStep
+                  ? "bg-blue-600 text-white"
+                  : "bg-gray-200 text-gray-500"
+            }`}
+          >
+            {i < currentStep ? <Check className="h-4 w-4" /> : i + 1}
+          </div>
+          <span
+            className={`hidden text-sm sm:inline ${
+              i === currentStep ? "font-medium text-gray-900" : "text-gray-500"
+            }`}
+          >
+            {step.title}
+          </span>
+          {i < steps.length - 1 && (
+            <div className={`h-px w-8 ${i < currentStep ? "bg-green-500" : "bg-gray-200"}`} />
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export default function OnboardingPage() {
+  const router = useRouter();
+  const [step, setStep] = useState(0);
+
+  // Company form
+  const [companyName, setCompanyName] = useState("");
+  const [companyEmail, setCompanyEmail] = useState("");
+  const [phoneCode, setPhoneCode] = useState("+65");
+  const [companyPhone, setCompanyPhone] = useState("");
+  const [companyAddress, setCompanyAddress] = useState("");
+
+  // Suppliers form
+  const [suppliers, setSuppliers] = useState<SupplierRow[]>([
+    { id: Date.now(), companyName: "", email: "", contactName: "" },
+  ]);
+
+  // Results from invite
+  const [inviteResults, setInviteResults] = useState<
+    { email: string; status: "created" | "linked" | "exists" }[]
+  >([]);
+
+  // Load current company info
+  const [initialized, setInitialized] = useState(false);
+  const { data: status } = api.onboarding.getStatus.useQuery();
+
+  const companyModule = status?.module; // "RECEIVE", "SEND", "BOTH", or null
+  const isReceiveModule = companyModule === "RECEIVE" || companyModule === "BOTH";
+  const steps = isReceiveModule ? RECEIVE_STEPS : SEND_STEPS;
+
+  useEffect(() => {
+    if (!status || initialized) return;
+    if (status.onboarded) {
+      router.push("/dashboard");
+      return;
+    }
+    if (!status.module) {
+      // No module assigned yet — admin hasn't set it up
+      // They can still complete onboarding but will have limited access
+    }
+    setInitialized(true);
+  }, [status, router, initialized]);
+
+  const updateCompany = api.onboarding.updateCompany.useMutation({
+    onSuccess: () => {
+      // RECEIVE/BOTH: go to suppliers step. SEND: go straight to done.
+      if (isReceiveModule) {
+        setStep(1);
+      } else {
+        setStep(1); // For SEND, step 1 is the "All Set" step
+      }
+    },
+    onError: (err) => {
+      toast.error(err.message || "Failed to update company");
+    },
+  });
+
+  const addSuppliers = api.onboarding.addSuppliers.useMutation({
+    onSuccess: (results) => {
+      setInviteResults(results);
+      setStep(2);
+    },
+    onError: (err) => {
+      toast.error(err.message || "Failed to add suppliers");
+    },
+  });
+
+  const completeOnboarding = api.onboarding.complete.useMutation({
+    onSuccess: () => {
+      toast.success("Welcome to PayLane!");
+      router.push("/dashboard");
+    },
+  });
+
+  // Supplier row management
+  const addSupplierRow = () => {
+    setSuppliers([...suppliers, { id: Date.now(), companyName: "", email: "", contactName: "" }]);
+  };
+
+  const removeSupplierRow = (id: number) => {
+    if (suppliers.length <= 1) return;
+    setSuppliers(suppliers.filter((s) => s.id !== id));
+  };
+
+  const updateSupplierRow = (id: number, field: keyof SupplierRow, value: string) => {
+    setSuppliers(suppliers.map((s) => (s.id === id ? { ...s, [field]: value } : s)));
+  };
+
+  // Step handlers
+  const handleStep1Submit = () => {
+    if (!companyName.trim()) {
+      toast.error("Company name is required");
+      return;
+    }
+    updateCompany.mutate({
+      name: companyName.trim(),
+      email: companyEmail.trim() || undefined,
+      phone: companyPhone.trim() ? `${phoneCode} ${companyPhone.trim()}` : undefined,
+      address: companyAddress.trim() || undefined,
+    });
+  };
+
+  const handleStep2Submit = () => {
+    const validSuppliers = suppliers.filter(
+      (s) => s.companyName.trim() && s.email.trim(),
+    );
+
+    if (validSuppliers.length === 0) {
+      toast.error("Add at least one supplier with a company name and email");
+      return;
+    }
+
+    addSuppliers.mutate({
+      suppliers: validSuppliers.map((s) => ({
+        companyName: s.companyName.trim(),
+        email: s.email.trim(),
+        contactName: s.contactName.trim() || undefined,
+      })),
+    });
+  };
+
+  const handleSkipSuppliers = () => {
+    setStep(2);
+  };
+
+  const handleFinish = () => {
+    completeOnboarding.mutate();
+  };
+
+  return (
+    <div className="flex min-h-[calc(100vh-7rem)] flex-col items-center justify-center p-6">
+      <div className="w-full max-w-2xl space-y-8">
+        {/* Step indicator */}
+        <StepIndicator currentStep={step} steps={steps} />
+
+        {/* Step 1: Company Info */}
+        {step === 0 && (
+          <Card>
+            <CardHeader className="text-center">
+              <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-blue-100">
+                <Building2 className="h-6 w-6 text-blue-600" />
+              </div>
+              <CardTitle className="text-2xl">Set up your company</CardTitle>
+              <CardDescription>
+                This is how your suppliers will see you when they receive invoices.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-2">
+                <Label>
+                  Company Name <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  placeholder="Acme Pte Ltd"
+                  value={companyName}
+                  onChange={(e) => setCompanyName(e.target.value)}
+                />
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="grid gap-2">
+                  <Label>Company Email</Label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      className="pl-9"
+                      placeholder="accounts@acme.com"
+                      type="email"
+                      value={companyEmail}
+                      onChange={(e) => setCompanyEmail(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="grid gap-2">
+                  <Label>Phone</Label>
+                  <div className="flex gap-1.5">
+                    <PhoneCodeSelect value={phoneCode} onChange={setPhoneCode} />
+                    <Input
+                      placeholder="1234 5678"
+                      value={companyPhone}
+                      onChange={(e) => setCompanyPhone(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="grid gap-2">
+                <Label>Address</Label>
+                <Textarea
+                  placeholder="123 Business Park, Singapore 123456"
+                  value={companyAddress}
+                  onChange={(e) => setCompanyAddress(e.target.value)}
+                  rows={2}
+                />
+              </div>
+
+              <Separator />
+
+              <div className="flex justify-end">
+                <Button onClick={handleStep1Submit} disabled={updateCompany.isPending}>
+                  {updateCompany.isPending ? "Saving..." : "Continue"}
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Step 2: Add Suppliers (RECEIVE module only) */}
+        {step === 1 && isReceiveModule && (
+          <Card>
+            <CardHeader className="text-center">
+              <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-purple-100">
+                <Users className="h-6 w-6 text-purple-600" />
+              </div>
+              <CardTitle className="text-2xl">Invite your suppliers</CardTitle>
+              <CardDescription>
+                Add the companies that send you invoices. We&apos;ll email them to join PayLane
+                so they can get paid faster.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {suppliers.map((supplier, index) => (
+                <div
+                  key={supplier.id}
+                  className="flex items-start gap-3 rounded-lg border bg-gray-50/50 p-3"
+                >
+                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gray-200 text-xs font-medium text-gray-600">
+                    {index + 1}
+                  </div>
+                  <div className="grid flex-1 gap-3 sm:grid-cols-3">
+                    <div className="grid gap-1">
+                      <Label className="text-xs">
+                        Company Name <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        placeholder="Supplier Co."
+                        value={supplier.companyName}
+                        onChange={(e) => updateSupplierRow(supplier.id, "companyName", e.target.value)}
+                      />
+                    </div>
+                    <div className="grid gap-1">
+                      <Label className="text-xs">
+                        Email <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        type="email"
+                        placeholder="accounts@supplier.com"
+                        value={supplier.email}
+                        onChange={(e) => updateSupplierRow(supplier.id, "email", e.target.value)}
+                      />
+                    </div>
+                    <div className="grid gap-1">
+                      <Label className="text-xs">Contact Name</Label>
+                      <Input
+                        placeholder="John Doe"
+                        value={supplier.contactName}
+                        onChange={(e) => updateSupplierRow(supplier.id, "contactName", e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="mt-5 h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+                    onClick={() => removeSupplierRow(supplier.id)}
+                    disabled={suppliers.length <= 1}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+
+              <Button variant="outline" size="sm" onClick={addSupplierRow} className="w-full">
+                <Plus className="mr-2 h-4 w-4" />
+                Add Another Supplier
+              </Button>
+
+              <Separator />
+
+              <div className="flex items-center justify-between">
+                <div className="flex gap-2">
+                  <Button variant="ghost" onClick={() => setStep(0)}>
+                    <ArrowLeft className="mr-2 h-4 w-4" />
+                    Back
+                  </Button>
+                  <Button variant="link" onClick={handleSkipSuppliers} className="text-muted-foreground">
+                    Skip for now
+                  </Button>
+                </div>
+                <Button onClick={handleStep2Submit} disabled={addSuppliers.isPending}>
+                  <SendIcon className="mr-2 h-4 w-4" />
+                  {addSuppliers.isPending ? "Sending Invites..." : "Send Invites & Continue"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Final Step: Done */}
+        {((isReceiveModule && step === 2) || (!isReceiveModule && step === 1)) && (
+          <Card>
+            <CardHeader className="text-center">
+              <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
+                <Sparkles className="h-6 w-6 text-green-600" />
+              </div>
+              <CardTitle className="text-2xl">You&apos;re all set!</CardTitle>
+              <CardDescription>
+                {inviteResults.length > 0
+                  ? `We've sent invite emails to ${inviteResults.filter((r) => r.status === "created").length} supplier(s). They'll be notified to join PayLane.`
+                  : isReceiveModule
+                    ? "Your company is set up. You can add suppliers anytime from the Customers page."
+                    : "Your company is set up. You can start sending invoices to your customers."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Invite results */}
+              {inviteResults.length > 0 && (
+                <div className="space-y-2">
+                  {inviteResults.map((result, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center justify-between rounded-lg border px-4 py-2"
+                    >
+                      <span className="text-sm">{result.email}</span>
+                      <Badge
+                        variant={
+                          result.status === "linked"
+                            ? "default"
+                            : result.status === "created"
+                              ? "secondary"
+                              : "outline"
+                        }
+                      >
+                        {result.status === "linked"
+                          ? "Already on PayLane"
+                          : result.status === "created"
+                            ? "Invite Sent"
+                            : "Already Added"}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <Separator />
+
+              <div className="flex justify-center">
+                <Button size="lg" onClick={handleFinish} disabled={completeOnboarding.isPending}>
+                  {completeOnboarding.isPending ? "Finishing..." : "Go to Dashboard"}
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    </div>
+  );
+}
