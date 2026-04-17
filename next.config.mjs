@@ -5,30 +5,47 @@ const withPWA = withPWAInit({
   register: false,
   skipWaiting: true,
   disable: process.env.NODE_ENV === "development",
+  // Disable precaching — this is what causes stale HTML crashes
+  buildExcludes: [/./],
   runtimeCaching: [
     {
-      // Never cache page navigations — always go to network
-      urlPattern: /^https:\/\/.*\/_next\/.*$/,
+      // HTML pages — ALWAYS go to network, never serve cached HTML
+      urlPattern: ({ request }) => request.mode === "navigate",
+      handler: "NetworkOnly",
+    },
+    {
+      // Next.js data/RSC requests
+      urlPattern: /\/_next\/data\/.+\/.+\.json$/,
       handler: "NetworkFirst",
       options: {
-        cacheName: "next-assets",
+        cacheName: "next-data",
         expiration: {
-          maxEntries: 64,
-          maxAgeSeconds: 24 * 60 * 60, // 1 day
+          maxEntries: 32,
+          maxAgeSeconds: 60 * 5,
         },
       },
     },
     {
-      // API calls — always network first
-      urlPattern: /^https:\/\/.*\/api\/.*/,
-      handler: "NetworkFirst",
+      // Next.js JS/CSS bundles
+      urlPattern: /\/_next\/static\/.+/,
+      handler: "CacheFirst",
       options: {
-        cacheName: "api-cache",
+        cacheName: "next-static",
         expiration: {
-          maxEntries: 32,
-          maxAgeSeconds: 60 * 5, // 5 minutes
+          maxEntries: 64,
+          maxAgeSeconds: 24 * 60 * 60,
         },
       },
+    },
+    {
+      // API calls — always network
+      urlPattern: /\/api\/.*/,
+      handler: "NetworkOnly",
+    },
+    {
+      // tRPC calls — always network
+      urlPattern: /\/trpc\/.*/,
+      handler: "NetworkOnly",
     },
     {
       // Static assets (images, fonts) — cache first
@@ -38,7 +55,7 @@ const withPWA = withPWAInit({
         cacheName: "static-assets",
         expiration: {
           maxEntries: 64,
-          maxAgeSeconds: 7 * 24 * 60 * 60, // 1 week
+          maxAgeSeconds: 7 * 24 * 60 * 60,
         },
       },
     },

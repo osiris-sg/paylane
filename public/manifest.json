@@ -2,7 +2,7 @@
   "name": "PayLane - Invoice Management",
   "short_name": "PayLane",
   "description": "Send, receive, and manage invoices faster",
-  "start_url": "/",
+  "start_url": "/dashboard",
   "display": "standalone",
   "orientation": "portrait-primary",
   "background_color": "#ffffff",
