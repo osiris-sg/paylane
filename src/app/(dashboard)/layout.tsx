@@ -1,6 +1,7 @@
 import { Sidebar } from "~/components/layout/sidebar";
 import { Header } from "~/components/layout/header";
 import { OnboardingGuard } from "~/components/onboarding-guard";
+import { PullToRefresh } from "~/components/pull-to-refresh";
 
 export default function DashboardLayout({
   children,
@@ -13,9 +14,9 @@ export default function DashboardLayout({
         <Sidebar />
         <div className="flex flex-1 flex-col overflow-hidden">
           <Header />
-          <main className="flex-1 overflow-y-auto bg-gray-50 p-3 md:p-6">
+          <PullToRefresh className="flex-1 bg-gray-50 p-3 md:p-6">
             {children}
-          </main>
+          </PullToRefresh>
         </div>
       </div>
     </OnboardingGuard>
