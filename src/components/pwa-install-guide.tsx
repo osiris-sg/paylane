@@ -331,6 +331,9 @@ export function PWAInstallBanner() {
     if (typeof window === "undefined") return;
     if (isStandalone()) return;
     if (localStorage.getItem("pwa-install-dismissed")) return;
+    // Only show on mobile/tablet, not desktop
+    const isMobile = /iphone|ipad|ipod|android/i.test(navigator.userAgent);
+    if (!isMobile) return;
     setShow(true);
   }, []);
 

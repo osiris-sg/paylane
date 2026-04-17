@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useSignUp } from "@clerk/nextjs";
+import { useSignUp, useAuth } from "@clerk/nextjs";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -14,8 +14,16 @@ import { Separator } from "~/components/ui/separator";
 
 function SignUpForm() {
   const { signUp, setActive, isLoaded } = useSignUp();
+  const { isSignedIn } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
+
+  // If already signed in, go to dashboard
+  useEffect(() => {
+    if (isSignedIn) {
+      router.replace("/dashboard");
+    }
+  }, [isSignedIn, router]);
 
   const prefilledEmail = searchParams.get("email") ?? "";
   const isEmailLocked = !!prefilledEmail;
@@ -44,6 +52,11 @@ function SignUpForm() {
     setLoading(true);
 
     try {
+      // If there's a stale sign-up attempt, clear it by creating fresh
+      if (signUp.status !== null) {
+        console.log("[SignUp] Clearing stale sign-up state:", signUp.status);
+      }
+
       console.log("[SignUp] Creating account with:", { email, firstName, lastName });
       const createResult = await signUp.create({
         emailAddress: email,
@@ -51,17 +64,33 @@ function SignUpForm() {
         firstName: firstName.trim() || undefined,
         lastName: lastName.trim() || undefined,
       });
-      console.log("[SignUp] Create result:", createResult.status, createResult);
+      console.log("[SignUp] Create result:", createResult.status);
+
+      if (createResult.status === "complete") {
+        console.log("[SignUp] Complete immediately, setting session...");
+        await setActive({ session: createResult.createdSessionId });
+        router.replace("/dashboard");
+        return;
+      }
 
       console.log("[SignUp] Preparing email verification...");
       await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
-      console.log("[SignUp] Verification email sent, showing code input");
+      console.log("[SignUp] Verification email sent");
       setVerifying(true);
     } catch (err: unknown) {
       console.error("[SignUp] Error:", err);
       const clerkError = err as { errors?: { message: string; code: string; longMessage: string }[] };
-      console.error("[SignUp] Clerk errors:", JSON.stringify(clerkError.errors, null, 2));
-      setError(clerkError.errors?.[0]?.longMessage ?? clerkError.errors?.[0]?.message ?? "Sign up failed. Please try again.");
+      const errorCode = clerkError.errors?.[0]?.code;
+      console.error("[SignUp] Clerk error code:", errorCode);
+
+      // If client state is invalid, the user needs to clear cookies
+      if (errorCode === "client_state_invalid") {
+        setError("Session expired. Please clear your browser cookies for this site and try again.");
+      } else if (errorCode === "form_identifier_exists") {
+        setError("An account with this email already exists. Please sign in instead.");
+      } else {
+        setError(clerkError.errors?.[0]?.longMessage ?? clerkError.errors?.[0]?.message ?? "Sign up failed. Please try again.");
+      }
     } finally {
       setLoading(false);
     }
@@ -83,7 +112,7 @@ function SignUpForm() {
         console.log("[SignUp] Verification complete, setting active session...");
         await setActive({ session: result.createdSessionId });
         console.log("[SignUp] Session active, redirecting to dashboard");
-        router.push("/dashboard");
+        router.replace("/dashboard");
       } else {
         console.log("[SignUp] Verification not complete, status:", result.status);
       }
