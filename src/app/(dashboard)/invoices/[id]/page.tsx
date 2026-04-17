@@ -206,7 +206,7 @@ export default function InvoiceDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="flex flex-col gap-6 p-6">
+      <div className="flex flex-col gap-4 p-3 sm:gap-6 sm:p-6">
         <div className="h-8 w-24 animate-pulse rounded bg-muted" />
         <div className="h-12 w-64 animate-pulse rounded bg-muted" />
         <div className="grid gap-6 lg:grid-cols-3">
@@ -264,7 +264,7 @@ export default function InvoiceDetailPage() {
   );
 
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <div className="flex flex-col gap-4 p-3 sm:gap-6 sm:p-6">
       {/* Back Button */}
       <div>
         <Button variant="ghost" size="sm" asChild>

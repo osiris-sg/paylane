@@ -321,8 +321,86 @@ export function InvoiceTable({ type }: InvoiceTableProps) {
           )}
         </div>
 
-        {/* Table */}
-        <div className="overflow-x-auto rounded-md border">
+        {/* Mobile Card View */}
+        <div className="space-y-3 md:hidden">
+          {isLoading ? (
+            Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="animate-pulse rounded-lg border bg-white p-4">
+                <div className="h-4 w-32 rounded bg-muted" />
+                <div className="mt-2 h-3 w-24 rounded bg-muted" />
+                <div className="mt-2 h-3 w-40 rounded bg-muted" />
+              </div>
+            ))
+          ) : invoices.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 py-12 text-muted-foreground">
+              <FileX className="h-10 w-10" />
+              <p className="text-base font-medium">No invoices found</p>
+              <p className="text-sm">
+                {search || statusFilter !== "all" ? "Try adjusting your search or filters" : `No ${type} invoices yet`}
+              </p>
+            </div>
+          ) : (
+            invoices.map((invoice) => {
+              const isSelected = selectedIds.has(invoice.id);
+              const rowUrgency = type === "received" ? getRowUrgency(invoice.dueDate) : "normal";
+              const iConfig = invoiceStatusConfig[invoice.invoiceStatus];
+              const rConfig = routingStatusConfig[invoice.routingStatus];
+
+              return (
+                <div
+                  key={invoice.id}
+                  className={`rounded-lg border bg-white p-3 transition-colors ${
+                    isSelected ? "border-blue-300 bg-blue-50" : rowUrgency === "overdue" ? "border-red-200 bg-red-50/50" : rowUrgency === "due-soon" ? "border-amber-200 bg-amber-50/50" : ""
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <Checkbox
+                      checked={isSelected}
+                      onCheckedChange={() => toggleSelect(invoice.id)}
+                      className="mt-1"
+                    />
+                    <div className="min-w-0 flex-1" onClick={() => router.push(`/invoices/${invoice.id}`)} role="button">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold text-blue-600">{invoice.invoiceNumber}</span>
+                        <span className="text-sm font-medium tabular-nums">
+                          {formatCurrency(invoice.amount, invoice.currency)}
+                        </span>
+                      </div>
+                      <p className="mt-0.5 text-sm text-muted-foreground">
+                        {type === "sent" ? invoice.customer?.name : invoice.senderCompany?.name}
+                        {invoice.reference ? ` · ${invoice.reference}` : ""}
+                      </p>
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                        <Badge variant="outline" className={`text-xs ${iConfig?.className ?? ""}`}>
+                          {iConfig?.label ?? invoice.invoiceStatus}
+                        </Badge>
+                        <Badge variant="outline" className={`text-xs ${rConfig?.className ?? ""}`}>
+                          {rConfig?.label ?? invoice.routingStatus}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          {dayjs(invoice.invoicedDate).format("MMM D, YYYY")}
+                        </span>
+                        {type === "received" && rowUrgency === "overdue" && (
+                          <span className="flex items-center gap-0.5 text-xs font-medium text-red-600">
+                            <AlertTriangle className="h-3 w-3" /> Overdue
+                          </span>
+                        )}
+                        {type === "received" && rowUrgency === "due-soon" && (
+                          <span className="flex items-center gap-0.5 text-xs font-medium text-amber-600">
+                            <Clock className="h-3 w-3" /> Due Soon
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Desktop Table */}
+        <div className="hidden overflow-x-auto rounded-md border md:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -540,11 +618,9 @@ export function InvoiceTable({ type }: InvoiceTableProps) {
 
         {/* Pagination */}
         {!isLoading && invoices.length > 0 && (
-          <div className="mt-4 flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">
-              Showing {(page - 1) * ITEMS_PER_PAGE + 1} to{" "}
-              {Math.min(page * ITEMS_PER_PAGE, totalCount)} of {totalCount}{" "}
-              invoices
+          <div className="mt-4 flex flex-col items-center gap-3 sm:flex-row sm:justify-between">
+            <p className="text-xs text-muted-foreground sm:text-sm">
+              {(page - 1) * ITEMS_PER_PAGE + 1}–{Math.min(page * ITEMS_PER_PAGE, totalCount)} of {totalCount}
             </p>
             <div className="flex items-center gap-2">
               <Button
@@ -553,11 +629,10 @@ export function InvoiceTable({ type }: InvoiceTableProps) {
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page <= 1}
               >
-                <ChevronLeft className="mr-1 h-4 w-4" />
-                Previous
+                <ChevronLeft className="h-4 w-4" />
               </Button>
-              <span className="text-sm text-muted-foreground">
-                Page {page} of {totalPages}
+              <span className="text-xs text-muted-foreground sm:text-sm">
+                {page} / {totalPages}
               </span>
               <Button
                 variant="outline"
@@ -565,8 +640,7 @@ export function InvoiceTable({ type }: InvoiceTableProps) {
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={page >= totalPages}
               >
-                Next
-                <ChevronRight className="ml-1 h-4 w-4" />
+                <ChevronRight className="h-4 w-4" />
               </Button>
             </div>
           </div>
