@@ -17,7 +17,6 @@ import {
   ChevronsUpDown,
   Search,
   X,
-  Sparkles,
   Plus,
 } from "lucide-react";
 
@@ -38,10 +37,11 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "~/components/ui/popover";
+import { Input } from "~/components/ui/input";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type InvoiceStatus = "staged" | "extracting" | "ready" | "error" | "saving" | "saved" | "sent";
+type InvoiceStatus = "extracting" | "ready" | "error" | "saving" | "saved" | "sent";
 
 interface UploadedInvoice {
   id: string;
@@ -143,8 +143,6 @@ function CustomerPicker({
 
 function StatusBadge({ status }: { status: InvoiceStatus }) {
   switch (status) {
-    case "staged":
-      return <Badge variant="outline" className="gap-1 border-gray-300 bg-gray-50 text-gray-600"><FileText className="h-3 w-3" />Staged</Badge>;
     case "extracting":
       return <Badge variant="outline" className="gap-1 border-blue-300 bg-blue-50 text-blue-700"><Loader2 className="h-3 w-3 animate-spin" />Extracting</Badge>;
     case "ready":
@@ -169,7 +167,6 @@ export default function UploadInvoicePage() {
   const [invoices, setInvoices] = useState<UploadedInvoice[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [dragOver, setDragOver] = useState(false);
-  const [isExtracting, setIsExtracting] = useState(false);
 
   const { data: customersData } = api.customer.list.useQuery({ limit: 100 });
   const customers = customersData?.customers ?? [];
@@ -177,32 +174,88 @@ export default function UploadInvoicePage() {
   const createInvoice = api.invoice.create.useMutation();
   const sendInvoice = api.invoice.send.useMutation();
 
-  // ─── Stage Files (no extraction yet) ────────────────────────────────
+  // ─── Add Files & Extract Immediately ─────────────────────────────────
 
-  const stageFiles = (files: FileList | File[]) => {
+  const processFile = async (id: string, file: File) => {
+    const fileDataUrl = await new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.readAsDataURL(file);
+    });
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/extract-invoice", { method: "POST", body: formData });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Extraction failed");
+      }
+      const { data } = await res.json();
+
+      let matchedCustomerId = "";
+      if (data.customerName || data.customerEmail) {
+        const match = customers.find(
+          (c) =>
+            (data.customerName && c.name.toLowerCase().includes(data.customerName.toLowerCase())) ||
+            (data.customerEmail && c.email?.toLowerCase() === data.customerEmail.toLowerCase()),
+        );
+        if (match) matchedCustomerId = match.id;
+      }
+
+      const sub = (data.items ?? []).reduce((s: number, i: { amount: number }) => s + (i.amount || 0), 0);
+      const taxAmt = data.taxAmount ?? sub * ((data.taxRate ?? 9) / 100);
+      const total = data.totalAmount ?? sub + taxAmt;
+
+      setInvoices((prev) =>
+        prev.map((x) =>
+          x.id === id
+            ? {
+                ...x,
+                status: "ready" as const,
+                fileDataUrl,
+                invoiceNumber: data.invoiceNumber ?? "",
+                customerName: data.customerName ?? "",
+                customerEmail: data.customerEmail ?? "",
+                reference: data.reference ?? "",
+                invoicedDate: data.invoicedDate ?? dayjs().format("YYYY-MM-DD"),
+                dueDate: data.dueDate ?? "",
+                paymentTerms: data.paymentTerms ?? 30,
+                currency: data.currency ?? "SGD",
+                taxRate: data.taxRate ?? 9,
+                totalAmount: total,
+                subtotal: sub,
+                taxAmount: taxAmt,
+                notes: data.notes ?? "",
+                items: data.items ?? [],
+                customerId: matchedCustomerId,
+              }
+            : x,
+        ),
+      );
+    } catch (error) {
+      setInvoices((prev) =>
+        prev.map((x) => (x.id === id ? { ...x, status: "error" as const, error: String(error), fileDataUrl } : x)),
+      );
+    }
+  };
+
+  const addFiles = (files: FileList | File[]) => {
     const validTypes = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
-    const newEntries: UploadedInvoice[] = [];
 
     for (const file of Array.from(files)) {
-      if (!validTypes.includes(file.type)) {
-        toast.error(`${file.name}: unsupported format`);
-        continue;
-      }
-      if (file.size > 20 * 1024 * 1024) {
-        toast.error(`${file.name}: too large (max 20MB)`);
-        continue;
-      }
-      // Skip if already staged
-      if (invoices.some((inv) => inv.fileName === file.name && inv.fileSize === file.size)) {
-        continue;
-      }
+      if (!validTypes.includes(file.type)) { toast.error(`${file.name}: unsupported format`); continue; }
+      if (file.size > 20 * 1024 * 1024) { toast.error(`${file.name}: too large (max 20MB)`); continue; }
+      if (invoices.some((inv) => inv.fileName === file.name && inv.fileSize === file.size)) continue;
 
-      newEntries.push({
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+      const entry: UploadedInvoice = {
+        id,
         fileName: file.name,
         fileSize: file.size,
         file,
-        status: "staged",
+        status: "extracting",
         invoiceNumber: "",
         customerName: "",
         customerEmail: "",
@@ -219,111 +272,12 @@ export default function UploadInvoicePage() {
         items: [],
         customerId: "",
         fileDataUrl: null,
-      });
+      };
+
+      setInvoices((prev) => [...prev, entry]);
+      // Start extraction immediately in background
+      void processFile(id, file);
     }
-
-    if (newEntries.length > 0) {
-      setInvoices((prev) => [...prev, ...newEntries]);
-      toast.success(`${newEntries.length} file(s) added`);
-    }
-  };
-
-  // ─── Extract All Staged ─────────────────────────────────────────────
-
-  const extractAll = async () => {
-    const staged = invoices.filter((inv) => inv.status === "staged");
-    if (staged.length === 0) return;
-
-    setIsExtracting(true);
-
-    // Mark all as extracting
-    setInvoices((prev) =>
-      prev.map((inv) => (inv.status === "staged" ? { ...inv, status: "extracting" as const } : inv)),
-    );
-
-    // Process in parallel (max 3 concurrent)
-    const queue = [...staged];
-    const concurrency = 3;
-    const running: Promise<void>[] = [];
-
-    const processOne = async (inv: UploadedInvoice) => {
-      // Read file as data URL
-      const fileDataUrl = await new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.readAsDataURL(inv.file);
-      });
-
-      try {
-        const formData = new FormData();
-        formData.append("file", inv.file);
-        const res = await fetch("/api/extract-invoice", { method: "POST", body: formData });
-        if (!res.ok) {
-          const err = await res.json();
-          throw new Error(err.error || "Extraction failed");
-        }
-        const { data } = await res.json();
-
-        let matchedCustomerId = "";
-        if (data.customerName || data.customerEmail) {
-          const match = customers.find(
-            (c) =>
-              (data.customerName && c.name.toLowerCase().includes(data.customerName.toLowerCase())) ||
-              (data.customerEmail && c.email?.toLowerCase() === data.customerEmail.toLowerCase()),
-          );
-          if (match) matchedCustomerId = match.id;
-        }
-
-        const sub = (data.items ?? []).reduce((s: number, i: { amount: number }) => s + (i.amount || 0), 0);
-        const taxAmt = data.taxAmount ?? sub * ((data.taxRate ?? 9) / 100);
-        const total = data.totalAmount ?? sub + taxAmt;
-
-        setInvoices((prev) =>
-          prev.map((x) =>
-            x.id === inv.id
-              ? {
-                  ...x,
-                  status: "ready" as const,
-                  fileDataUrl,
-                  invoiceNumber: data.invoiceNumber ?? "",
-                  customerName: data.customerName ?? "",
-                  customerEmail: data.customerEmail ?? "",
-                  reference: data.reference ?? "",
-                  invoicedDate: data.invoicedDate ?? dayjs().format("YYYY-MM-DD"),
-                  dueDate: data.dueDate ?? "",
-                  paymentTerms: data.paymentTerms ?? 30,
-                  currency: data.currency ?? "SGD",
-                  taxRate: data.taxRate ?? 9,
-                  totalAmount: total,
-                  subtotal: sub,
-                  taxAmount: taxAmt,
-                  notes: data.notes ?? "",
-                  items: data.items ?? [],
-                  customerId: matchedCustomerId,
-                }
-              : x,
-          ),
-        );
-      } catch (error) {
-        setInvoices((prev) =>
-          prev.map((x) => (x.id === inv.id ? { ...x, status: "error" as const, error: String(error), fileDataUrl } : x)),
-        );
-      }
-    };
-
-    for (const inv of queue) {
-      if (running.length >= concurrency) {
-        await Promise.race(running);
-      }
-      const p = processOne(inv).then(() => {
-        running.splice(running.indexOf(p), 1);
-      });
-      running.push(p);
-    }
-    await Promise.all(running);
-
-    setIsExtracting(false);
-    toast.success("Extraction complete");
   };
 
   // ─── Drop Handler ───────────────────────────────────────────────────
@@ -331,13 +285,13 @@ export default function UploadInvoicePage() {
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
-    stageFiles(e.dataTransfer.files);
+    addFiles(e.dataTransfer.files);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [invoices]);
 
   // ─── Selection ──────────────────────────────────────────────────────
 
-  const actionableInvoices = invoices.filter((i) => i.status === "ready" || i.status === "staged");
+  const actionableInvoices = invoices.filter((i) => i.status === "ready");
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
@@ -424,7 +378,6 @@ export default function UploadInvoicePage() {
     setSelectedIds(new Set());
   };
 
-  const stagedCount = invoices.filter((i) => i.status === "staged").length;
   const hasInvoices = invoices.length > 0;
 
   return (
@@ -447,18 +400,12 @@ export default function UploadInvoicePage() {
               Add More Files
             </Button>
           )}
-          {stagedCount > 0 && (
-            <Button size="sm" onClick={extractAll} disabled={isExtracting}>
-              <Sparkles className="mr-1.5 h-3.5 w-3.5" />
-              {isExtracting ? "Extracting..." : `Extract All (${stagedCount})`}
-            </Button>
-          )}
           <input
             ref={fileInputRef}
             type="file"
             accept="image/jpeg,image/png,image/webp,application/pdf"
             multiple
-            onChange={(e) => { if (e.target.files) stageFiles(e.target.files); e.target.value = ""; }}
+            onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = ""; }}
             className="hidden"
           />
         </div>
@@ -497,7 +444,7 @@ export default function UploadInvoicePage() {
                   type="file"
                   accept="image/jpeg,image/png,image/webp,application/pdf"
                   multiple
-                  onChange={(e) => { if (e.target.files) stageFiles(e.target.files); e.target.value = ""; }}
+                  onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = ""; }}
                   className="hidden"
                 />
               </label>
@@ -523,10 +470,10 @@ export default function UploadInvoicePage() {
                   <div className="w-[180px]">
                     <CustomerPicker customers={customers} selectedId="" onSelect={bulkAssignCustomer} label="Assign customer..." />
                   </div>
-                  <Button size="sm" variant="outline" onClick={handleBulkSave} disabled={isExtracting} className="border-green-300 text-green-700 hover:bg-green-50">
+                  <Button size="sm" variant="outline" onClick={handleBulkSave} disabled={false} className="border-green-300 text-green-700 hover:bg-green-50">
                     <Save className="mr-1.5 h-3.5 w-3.5" />Save Drafts
                   </Button>
-                  <Button size="sm" onClick={handleBulkSend} disabled={isExtracting} className="bg-blue-600 hover:bg-blue-700">
+                  <Button size="sm" onClick={handleBulkSend} disabled={false} className="bg-blue-600 hover:bg-blue-700">
                     <Send className="mr-1.5 h-3.5 w-3.5" />Send to Customer
                   </Button>
                   <Button size="sm" variant="outline" onClick={handleBulkRemove} className="border-red-300 text-red-600 hover:bg-red-50">
@@ -563,7 +510,7 @@ export default function UploadInvoicePage() {
                 <TableBody>
                   {invoices.map((inv) => {
                     const isSelected = selectedIds.has(inv.id);
-                    const isActionable = inv.status === "ready" || inv.status === "staged";
+                    const isActionable = inv.status === "ready";
 
                     return (
                       <TableRow key={inv.id} className={isSelected ? "bg-blue-50" : ""}>
@@ -577,10 +524,14 @@ export default function UploadInvoicePage() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <span className="text-sm font-medium">{inv.invoiceNumber || "—"}</span>
+                          {isActionable ? (
+                            <Input className="h-7 border-gray-200 text-sm" value={inv.invoiceNumber} onChange={(e) => updateInvoice(inv.id, { invoiceNumber: e.target.value })} placeholder="Invoice #" />
+                          ) : (
+                            <span className="text-sm font-medium">{inv.invoiceNumber || "—"}</span>
+                          )}
                         </TableCell>
                         <TableCell className="min-w-[160px]">
-                          {inv.status === "ready" ? (
+                          {isActionable ? (
                             <CustomerPicker
                               customers={customers}
                               selectedId={inv.customerId}
@@ -591,11 +542,33 @@ export default function UploadInvoicePage() {
                             <span className="text-sm text-muted-foreground">—</span>
                           )}
                         </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{inv.reference || "—"}</TableCell>
-                        <TableCell className="text-sm">{inv.invoicedDate ? dayjs(inv.invoicedDate).format("MMM D, YYYY") : "—"}</TableCell>
-                        <TableCell className="text-sm">{inv.dueDate ? dayjs(inv.dueDate).format("MMM D, YYYY") : "—"}</TableCell>
-                        <TableCell className="text-right font-medium tabular-nums">
-                          {inv.totalAmount > 0 ? formatCurrency(inv.totalAmount, inv.currency) : "—"}
+                        <TableCell>
+                          {isActionable ? (
+                            <Input className="h-7 border-gray-200 text-sm" value={inv.reference} onChange={(e) => updateInvoice(inv.id, { reference: e.target.value })} placeholder="Ref" />
+                          ) : (
+                            <span className="text-sm text-muted-foreground">{inv.reference || "—"}</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {isActionable ? (
+                            <Input type="date" className="h-7 border-gray-200 text-sm" value={inv.invoicedDate} onChange={(e) => updateInvoice(inv.id, { invoicedDate: e.target.value })} />
+                          ) : (
+                            <span className="text-sm">{inv.invoicedDate ? dayjs(inv.invoicedDate).format("MMM D, YYYY") : "—"}</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {isActionable ? (
+                            <Input type="date" className="h-7 border-gray-200 text-sm" value={inv.dueDate} onChange={(e) => updateInvoice(inv.id, { dueDate: e.target.value })} />
+                          ) : (
+                            <span className="text-sm">{inv.dueDate ? dayjs(inv.dueDate).format("MMM D, YYYY") : "—"}</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {isActionable ? (
+                            <Input type="number" min={0} step={0.01} className="h-7 w-28 border-gray-200 text-right text-sm" value={inv.totalAmount} onChange={(e) => updateInvoice(inv.id, { totalAmount: parseFloat(e.target.value) || 0 })} />
+                          ) : (
+                            <span className="text-right font-medium tabular-nums">{inv.totalAmount > 0 ? formatCurrency(inv.totalAmount, inv.currency) : "—"}</span>
+                          )}
                         </TableCell>
                         <TableCell><StatusBadge status={inv.status} /></TableCell>
                         <TableCell>
