@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import dayjs from "dayjs";
+import { PWAInstallBanner } from "~/components/pwa-install-guide";
 import {
   FileText,
   FileDown,
@@ -171,6 +172,8 @@ export default function DashboardPage() {
           </Button>
         </div>
       </div>
+
+      <PWAInstallBanner />
 
       <Separator />
 

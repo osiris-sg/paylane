@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { PWAInstallGuide } from "~/components/pwa-install-guide";
 import {
   Building2,
   Mail,
@@ -196,6 +197,7 @@ function StepIndicator({ currentStep, steps }: { currentStep: number; steps: { t
 export default function OnboardingPage() {
   const router = useRouter();
   const [step, setStep] = useState(0);
+  const [pwaGuideOpen, setPwaGuideOpen] = useState(false);
 
   // Company form
   const [companyName, setCompanyName] = useState("");
@@ -537,7 +539,10 @@ export default function OnboardingPage() {
 
               <Separator />
 
-              <div className="flex justify-center">
+              <div className="flex flex-col items-center gap-3">
+                <Button variant="outline" onClick={() => setPwaGuideOpen(true)}>
+                  Add PayLane to Home Screen
+                </Button>
                 <Button size="lg" onClick={handleFinish} disabled={completeOnboarding.isPending}>
                   {completeOnboarding.isPending ? "Finishing..." : "Go to Dashboard"}
                   <ArrowRight className="ml-2 h-4 w-4" />
@@ -546,6 +551,8 @@ export default function OnboardingPage() {
             </CardContent>
           </Card>
         )}
+
+        <PWAInstallGuide open={pwaGuideOpen} onOpenChange={setPwaGuideOpen} />
       </div>
     </div>
   );
