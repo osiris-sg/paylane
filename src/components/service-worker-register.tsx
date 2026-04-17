@@ -13,13 +13,16 @@ export function ServiceWorkerRegister() {
     async function registerSW() {
       try {
         const registration = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
-        registration.update();
+
+        // Force check for updates on every page load
+        registration.update().catch(() => {});
 
         registration.addEventListener("updatefound", () => {
           const newWorker = registration.installing;
           if (newWorker) {
             newWorker.addEventListener("statechange", () => {
               if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
+                // New version available — activate immediately
                 newWorker.postMessage({ type: "SKIP_WAITING" });
               }
             });
@@ -34,6 +37,16 @@ export function ServiceWorkerRegister() {
         });
       } catch (error) {
         console.error("[SW] Registration failed:", error);
+        // If SW fails, unregister it so the app still works
+        try {
+          const registrations = await navigator.serviceWorker.getRegistrations();
+          for (const reg of registrations) {
+            await reg.unregister();
+          }
+          console.log("[SW] Unregistered broken service workers");
+        } catch {
+          // ignore
+        }
       }
     }
 
