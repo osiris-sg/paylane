@@ -44,18 +44,24 @@ function SignUpForm() {
     setLoading(true);
 
     try {
-      await signUp.create({
+      console.log("[SignUp] Creating account with:", { email, firstName, lastName });
+      const createResult = await signUp.create({
         emailAddress: email,
         password,
         firstName: firstName.trim() || undefined,
         lastName: lastName.trim() || undefined,
       });
+      console.log("[SignUp] Create result:", createResult.status, createResult);
 
+      console.log("[SignUp] Preparing email verification...");
       await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
+      console.log("[SignUp] Verification email sent, showing code input");
       setVerifying(true);
     } catch (err: unknown) {
-      const clerkError = err as { errors?: { message: string }[] };
-      setError(clerkError.errors?.[0]?.message ?? "Sign up failed. Please try again.");
+      console.error("[SignUp] Error:", err);
+      const clerkError = err as { errors?: { message: string; code: string; longMessage: string }[] };
+      console.error("[SignUp] Clerk errors:", JSON.stringify(clerkError.errors, null, 2));
+      setError(clerkError.errors?.[0]?.longMessage ?? clerkError.errors?.[0]?.message ?? "Sign up failed. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -69,15 +75,23 @@ function SignUpForm() {
     setLoading(true);
 
     try {
+      console.log("[SignUp] Attempting verification with code:", code);
       const result = await signUp.attemptEmailAddressVerification({ code });
+      console.log("[SignUp] Verification result:", result.status, result);
 
       if (result.status === "complete") {
+        console.log("[SignUp] Verification complete, setting active session...");
         await setActive({ session: result.createdSessionId });
+        console.log("[SignUp] Session active, redirecting to dashboard");
         router.push("/dashboard");
+      } else {
+        console.log("[SignUp] Verification not complete, status:", result.status);
       }
     } catch (err: unknown) {
-      const clerkError = err as { errors?: { message: string }[] };
-      setError(clerkError.errors?.[0]?.message ?? "Verification failed. Please try again.");
+      console.error("[SignUp] Verification error:", err);
+      const clerkError = err as { errors?: { message: string; code: string; longMessage: string }[] };
+      console.error("[SignUp] Clerk errors:", JSON.stringify(clerkError.errors, null, 2));
+      setError(clerkError.errors?.[0]?.longMessage ?? clerkError.errors?.[0]?.message ?? "Verification failed. Please try again.");
     } finally {
       setLoading(false);
     }

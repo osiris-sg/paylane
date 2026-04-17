@@ -29,18 +29,26 @@ export default function SignInPage() {
     setLoading(true);
 
     try {
+      console.log("[SignIn] Attempting sign in with:", email);
       const result = await signIn.create({
         identifier: email,
         password,
       });
+      console.log("[SignIn] Result:", result.status, result);
 
       if (result.status === "complete") {
+        console.log("[SignIn] Complete, setting active session...");
         await setActive({ session: result.createdSessionId });
+        console.log("[SignIn] Session active, redirecting...");
         router.push("/dashboard");
+      } else {
+        console.log("[SignIn] Not complete, status:", result.status);
       }
     } catch (err: unknown) {
-      const clerkError = err as { errors?: { message: string }[] };
-      setError(clerkError.errors?.[0]?.message ?? "Sign in failed. Please try again.");
+      console.error("[SignIn] Error:", err);
+      const clerkError = err as { errors?: { message: string; code: string; longMessage: string }[] };
+      console.error("[SignIn] Clerk errors:", JSON.stringify(clerkError.errors, null, 2));
+      setError(clerkError.errors?.[0]?.longMessage ?? clerkError.errors?.[0]?.message ?? "Sign in failed. Please try again.");
     } finally {
       setLoading(false);
     }
