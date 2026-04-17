@@ -233,9 +233,14 @@ export default function OnboardingPage() {
       router.replace("/dashboard");
       return;
     }
-    // Prefill company name from invitation (only once)
-    if (!prefilled && status.invitedByCompanyName) {
-      setCompanyName(status.invitedByCompanyName);
+    // Prefill from invitation data (only once)
+    if (!prefilled) {
+      if (status.invitedByCompanyName) {
+        setCompanyName(status.invitedByCompanyName);
+      }
+      if (status.userEmail) {
+        setCompanyEmail(status.userEmail);
+      }
       setPrefilled(true);
     }
   }, [status, router, prefilled]);

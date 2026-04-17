@@ -88,6 +88,7 @@ export const onboardingRouter = createTRPCRouter({
       companyName: user.company.name,
       companyId: user.company.id,
       // Prefill data from invitation
+      userEmail: user.email,
       invitedByCompanyName: linkedFrom?.company ?? null,
       firstInvoiceId: firstInvoice?.id ?? null,
     };

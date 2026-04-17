@@ -263,8 +263,12 @@ export default function InvoiceDetailPage() {
     (a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf()
   );
 
+  const [showDocument, setShowDocument] = useState(false);
+
+  const hasActions = canSend || canAcknowledge || canSchedulePayment || canMarkPaid || canApprovePayment || canRejectPayment || canDelete;
+
   return (
-    <div className="flex flex-col gap-4 p-3 sm:gap-6 sm:p-6">
+    <div className="flex flex-col gap-4 p-3 pb-24 sm:gap-6 sm:p-6 sm:pb-6">
       {/* Back Button */}
       <div>
         <Button variant="ghost" size="sm" asChild>
@@ -275,53 +279,96 @@ export default function InvoiceDetailPage() {
         </Button>
       </div>
 
-      {/* Urgency Banner */}
+      {/* Mobile Summary Card */}
+      <div className="sm:hidden">
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-lg font-bold">{invoice.invoiceNumber}</p>
+                <p className="text-sm text-muted-foreground">
+                  {isReceived ? `From ${invoice.senderCompany?.name ?? "Unknown"}` : `To ${invoice.customer?.name ?? "Unknown"}`}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-xl font-bold">{formatCurrency(invoice.amount, invoice.currency)}</p>
+              </div>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              <Badge variant="outline" className={iStatusConfig?.className}>{iStatusConfig?.label ?? invoice.invoiceStatus}</Badge>
+              <Badge variant="outline" className={rStatusConfig?.className}>{rStatusConfig?.label ?? invoice.routingStatus}</Badge>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+              <div>
+                <p className="text-xs text-muted-foreground">Invoice Date</p>
+                <p className="font-medium">{dayjs(invoice.invoicedDate).format("MMM D, YYYY")}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Due Date</p>
+                <p className={`font-medium ${isOverdue ? "text-red-600" : isDueSoon ? "text-amber-600" : ""}`}>
+                  {dayjs(invoice.dueDate).format("MMM D, YYYY")}
+                </p>
+              </div>
+              {invoice.expectedPaymentDate && (
+                <div className="col-span-2">
+                  <p className="text-xs text-muted-foreground">Expected Payment</p>
+                  <p className="font-medium text-blue-600">{dayjs(invoice.expectedPaymentDate).format("MMM D, YYYY")}</p>
+                </div>
+              )}
+            </div>
+            {isOverdue && (
+              <div className="mt-3 flex items-center gap-2 rounded-md bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+                <AlertTriangle className="h-4 w-4" />
+                Overdue by {Math.abs(daysUntilDue)} days
+              </div>
+            )}
+            {isDueSoon && !isOverdue && (
+              <div className="mt-3 flex items-center gap-2 rounded-md bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700">
+                <Clock className="h-4 w-4" />
+                Due in {daysUntilDue} days
+              </div>
+            )}
+            {invoice.fileUrl && (
+              <Button variant="outline" className="mt-3 w-full" onClick={() => setShowDocument(true)}>
+                <FileText className="mr-2 h-4 w-4" />
+                View Original Document
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Desktop: Urgency Banner */}
       {showUrgencyBanner && (
         <div
-          className={`flex items-center gap-3 rounded-lg border px-4 py-3 ${
+          className={`hidden items-center gap-3 rounded-lg border px-4 py-3 sm:flex ${
             isOverdue
-              ? "border-red-300 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950/50 dark:text-red-300"
-              : "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-300"
+              ? "border-red-300 bg-red-50 text-red-800"
+              : "border-amber-300 bg-amber-50 text-amber-800"
           }`}
         >
-          {isOverdue ? (
-            <AlertTriangle className="h-5 w-5 shrink-0" />
-          ) : (
-            <Clock className="h-5 w-5 shrink-0" />
-          )}
+          {isOverdue ? <AlertTriangle className="h-5 w-5 shrink-0" /> : <Clock className="h-5 w-5 shrink-0" />}
           <div>
             <p className="font-semibold">
-              {isOverdue
-                ? `This invoice is overdue by ${Math.abs(daysUntilDue)} day${Math.abs(daysUntilDue) !== 1 ? "s" : ""}`
-                : `This invoice is due in ${daysUntilDue} day${daysUntilDue !== 1 ? "s" : ""}`}
+              {isOverdue ? `This invoice is overdue by ${Math.abs(daysUntilDue)} day${Math.abs(daysUntilDue) !== 1 ? "s" : ""}` : `This invoice is due in ${daysUntilDue} day${daysUntilDue !== 1 ? "s" : ""}`}
             </p>
             <p className="text-sm opacity-80">
-              {isOverdue
-                ? "Payment was expected by " + dayjs(invoice.dueDate).format("MMMM D, YYYY")
-                : "Due date: " + dayjs(invoice.dueDate).format("MMMM D, YYYY")}
+              {isOverdue ? "Payment was expected by " + dayjs(invoice.dueDate).format("MMMM D, YYYY") : "Due date: " + dayjs(invoice.dueDate).format("MMMM D, YYYY")}
             </p>
           </div>
         </div>
       )}
 
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      {/* Desktop: Header */}
+      <div className="hidden flex-col gap-4 sm:flex sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-col gap-2">
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-xl font-bold tracking-tight sm:text-3xl">
-              {invoice.invoiceNumber}
-            </h1>
-            <Badge variant="outline" className={iStatusConfig?.className}>
-              {iStatusConfig?.label ?? invoice.invoiceStatus}
-            </Badge>
-            <Badge variant="outline" className={rStatusConfig?.className}>
-              {rStatusConfig?.label ?? invoice.routingStatus}
-            </Badge>
+            <h1 className="text-3xl font-bold tracking-tight">{invoice.invoiceNumber}</h1>
+            <Badge variant="outline" className={iStatusConfig?.className}>{iStatusConfig?.label ?? invoice.invoiceStatus}</Badge>
+            <Badge variant="outline" className={rStatusConfig?.className}>{rStatusConfig?.label ?? invoice.routingStatus}</Badge>
           </div>
           <p className="text-muted-foreground">
-            {isReceived
-              ? `From ${invoice.senderCompany?.name ?? "Unknown"}`
-              : `To ${invoice.customer?.name ?? "Unknown"}`}
+            {isReceived ? `From ${invoice.senderCompany?.name ?? "Unknown"}` : `To ${invoice.customer?.name ?? "Unknown"}`}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -428,8 +475,8 @@ export default function InvoiceDetailPage() {
       {/* Content Grid */}
       <div className="grid gap-4 lg:grid-cols-3 lg:gap-6">
         {/* Left: Invoice Details */}
-        <div className="space-y-6 lg:col-span-2">
-          <Card>
+        <div className="space-y-4 sm:space-y-6 lg:col-span-2">
+          <Card className="hidden sm:block">
             <CardHeader>
               <CardTitle>Invoice Details</CardTitle>
               <CardDescription>
@@ -524,27 +571,19 @@ export default function InvoiceDetailPage() {
           </Card>
 
           {/* Line items are saved in DB but not displayed on the detail page */}
-          {/* Uploaded Invoice File */}
+          {/* Uploaded Invoice File — desktop only, mobile uses full-screen dialog */}
           {invoice.fileUrl && (
-            <Card>
+            <Card className="hidden sm:block">
               <CardHeader>
                 <CardTitle>Uploaded Invoice</CardTitle>
                 <CardDescription>Original uploaded document</CardDescription>
               </CardHeader>
               <CardContent>
                 {invoice.fileUrl.startsWith("data:application/pdf") ? (
-                  <iframe
-                    src={invoice.fileUrl}
-                    className="h-[400px] w-full rounded border sm:h-[600px]"
-                    title="Invoice PDF"
-                  />
+                  <iframe src={invoice.fileUrl} className="h-[600px] w-full rounded border" title="Invoice PDF" />
                 ) : (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={invoice.fileUrl}
-                    alt="Uploaded invoice"
-                    className="w-full rounded border"
-                  />
+                  <img src={invoice.fileUrl} alt="Uploaded invoice" className="w-full rounded border" />
                 )}
               </CardContent>
             </Card>
@@ -577,6 +616,55 @@ export default function InvoiceDetailPage() {
           </Card>
         </div>
       </div>
+
+      {/* Mobile: Sticky Bottom Action Bar */}
+      {hasActions && (
+        <div className="fixed bottom-0 left-0 right-0 z-50 flex items-center gap-2 border-t bg-white px-4 py-3 shadow-lg sm:hidden">
+          {canSend && (
+            <Button size="sm" className="flex-1" onClick={() => sendInvoice.mutate({ id: invoice.id })} disabled={sendInvoice.isPending}>
+              <Send className="mr-1.5 h-3.5 w-3.5" /> Send
+            </Button>
+          )}
+          {canAcknowledge && (
+            <Button size="sm" variant="outline" className="flex-1" onClick={() => acknowledgeInvoice.mutate({ id: invoice.id })} disabled={acknowledgeInvoice.isPending}>
+              Acknowledge
+            </Button>
+          )}
+          {canMarkPaid && (
+            <Button size="sm" className="flex-1 bg-green-600 hover:bg-green-700" onClick={() => markPaid.mutate({ id: invoice.id })} disabled={markPaid.isPending}>
+              Mark Paid
+            </Button>
+          )}
+          {canApprovePayment && (
+            <Button size="sm" className="flex-1 bg-green-600 hover:bg-green-700" onClick={() => approvePayment.mutate({ id: invoice.id })} disabled={approvePayment.isPending}>
+              Approve
+            </Button>
+          )}
+          {canRejectPayment && (
+            <Button size="sm" variant="destructive" className="flex-1" onClick={() => rejectPayment.mutate({ id: invoice.id })} disabled={rejectPayment.isPending}>
+              Reject
+            </Button>
+          )}
+        </div>
+      )}
+
+      {/* Mobile: Full-screen Document Viewer */}
+      {showDocument && invoice.fileUrl && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-white sm:hidden">
+          <div className="flex items-center justify-between border-b px-4 py-3">
+            <span className="font-semibold">Invoice Document</span>
+            <Button variant="ghost" size="sm" onClick={() => setShowDocument(false)}>Close</Button>
+          </div>
+          <div className="flex-1 overflow-auto p-2">
+            {invoice.fileUrl.startsWith("data:application/pdf") ? (
+              <iframe src={invoice.fileUrl} className="h-full w-full" title="Invoice PDF" />
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={invoice.fileUrl} alt="Invoice" className="w-full" />
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
