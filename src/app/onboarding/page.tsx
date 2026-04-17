@@ -109,7 +109,7 @@ function PhoneCodeSelect({
           variant="outline"
           role="combobox"
           aria-expanded={open}
-          className="w-[105px] shrink-0 justify-between px-2.5 font-normal"
+          className="w-[90px] shrink-0 justify-between px-2 font-normal sm:w-[105px] sm:px-2.5"
         >
           {selected ? `${selected.code} ${selected.short}` : "+65 SG"}
           <svg className="ml-1 h-3.5 w-3.5 shrink-0 opacity-50" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
@@ -326,7 +326,7 @@ export default function OnboardingPage() {
   };
 
   return (
-    <div className="flex min-h-[calc(100vh-7rem)] flex-col items-center justify-center p-6">
+    <div className="flex min-h-[calc(100vh-7rem)] flex-col items-center justify-center p-3 sm:p-6">
       <div className="w-full max-w-2xl space-y-8">
         {/* Step indicator */}
         <StepIndicator currentStep={step} steps={steps} />

@@ -65,7 +65,7 @@ export default function AdminPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid gap-4 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Companies</CardTitle>
@@ -113,8 +113,8 @@ export default function AdminPage() {
       {/* Companies Table */}
       <Card>
         <CardContent className="p-0">
-          <div className="rounded-md border">
-            <Table>
+          <div className="overflow-x-auto rounded-md border">
+            <Table className="min-w-[700px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>Company</TableHead>

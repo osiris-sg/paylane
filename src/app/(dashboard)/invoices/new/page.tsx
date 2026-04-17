@@ -543,7 +543,7 @@ export default function CreateInvoicePage() {
                     </div>
 
                     {/* Right: Rate / Totals panel */}
-                    <div className="w-72 shrink-0 overflow-hidden rounded-md border bg-white">
+                    <div className="w-full overflow-hidden rounded-md border bg-white lg:w-72 lg:shrink-0">
                       <div className="border-b bg-gray-50 px-3 py-1.5 text-sm font-semibold text-gray-700">
                         Rate
                       </div>
@@ -642,8 +642,8 @@ export default function CreateInvoicePage() {
               {itemsTab === "details" ? (
                 <div className="flex flex-1 flex-col">
                   {/* Items table */}
-                  <div className="flex-1 overflow-auto">
-                    <table className="w-full">
+                  <div className="flex-1 overflow-x-auto">
+                    <table className="w-full min-w-[500px]">
                       <thead>
                         <tr className="border-b text-left">
                           <th className="py-2 text-sm font-semibold text-gray-700" style={{ width: "35%" }}>Description</th>

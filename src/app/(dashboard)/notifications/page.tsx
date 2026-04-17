@@ -176,7 +176,7 @@ export default function NotificationsPage() {
                     handleMarkRead(notification.id, notification.read)
                   }
                 >
-                  <div className="flex items-start gap-4 p-4">
+                  <div className="flex items-start gap-2.5 p-3 sm:gap-4 sm:p-4">
                     {/* Unread indicator */}
                     <div className="flex items-center pt-0.5">
                       <div

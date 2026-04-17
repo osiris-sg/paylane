@@ -307,8 +307,8 @@ export default function InvoiceDetailPage() {
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-3">
-            <h1 className="text-3xl font-bold tracking-tight">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-xl font-bold tracking-tight sm:text-3xl">
               {invoice.invoiceNumber}
             </h1>
             <Badge variant="outline" className={iStatusConfig?.className}>
@@ -324,7 +324,7 @@ export default function InvoiceDetailPage() {
               : `To ${invoice.customer?.name ?? "Unknown"}`}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {canSend && (
             <Button
               onClick={() => sendInvoice.mutate({ id: invoice.id })}
@@ -426,7 +426,7 @@ export default function InvoiceDetailPage() {
       </div>
 
       {/* Content Grid */}
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-3 lg:gap-6">
         {/* Left: Invoice Details */}
         <div className="space-y-6 lg:col-span-2">
           <Card>
@@ -535,7 +535,7 @@ export default function InvoiceDetailPage() {
                 {invoice.fileUrl.startsWith("data:application/pdf") ? (
                   <iframe
                     src={invoice.fileUrl}
-                    className="h-[600px] w-full rounded border"
+                    className="h-[400px] w-full rounded border sm:h-[600px]"
                     title="Invoice PDF"
                   />
                 ) : (

@@ -170,13 +170,13 @@ export default function DashboardPage() {
 
       {/* Summary Cards */}
       {summary.isLoading ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
           {Array.from({ length: 6 }).map((_, i) => (
             <SkeletonCard key={i} />
           ))}
         </div>
       ) : summary.data ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
           {SUMMARY_CARDS.map((card) => {
             const count = summary.data[card.key];
             const amount = card.amountKey ? summary.data[card.amountKey] : null;
@@ -233,7 +233,7 @@ export default function DashboardPage() {
               </p>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
+              <ResponsiveContainer width="100%" height={220}>
                 <BarChart
                   data={aging.data}
                   margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
@@ -287,7 +287,7 @@ export default function DashboardPage() {
               </p>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
+              <ResponsiveContainer width="100%" height={220}>
                 <LineChart
                   data={monthly.data}
                   margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
