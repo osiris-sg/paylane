@@ -107,23 +107,21 @@ function getSteps(browser: BrowserType): Step[] {
       ];
 
     case "chrome-ios":
-      // Chrome on iOS can't install PWAs — must use Safari
       return [
         {
-          icon: <Copy className="h-6 w-6" />,
-          title: "Copy the URL below",
-          description: "Tap the button to copy the PayLane URL to your clipboard",
-          action: "copy-url",
-        },
-        {
           icon: <Share className="h-6 w-6" />,
-          title: "Open Safari and paste the URL",
-          description: "Only Safari on iPhone can add apps to your home screen",
+          title: "Tap the Share button",
+          description: "It's the square with an arrow at the top-right of Chrome",
         },
         {
           icon: <ArrowDown className="h-6 w-6" />,
-          title: "Tap Share → \"Add to Home Screen\"",
-          description: "Then tap Add — PayLane will appear as an app",
+          title: "Tap \"Add to Home Screen\"",
+          description: "Scroll down in the share sheet if you don't see it",
+        },
+        {
+          icon: <Plus className="h-6 w-6" />,
+          title: "Tap \"Add\"",
+          description: "PayLane will appear as an app icon on your home screen",
         },
       ];
 
