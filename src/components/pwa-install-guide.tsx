@@ -10,9 +10,11 @@ import {
   Monitor,
   X,
   ArrowDown,
-  ExternalLink,
+  Copy,
+  Check,
 } from "lucide-react";
 import { Button } from "~/components/ui/button";
+import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
@@ -21,37 +23,38 @@ import {
   DialogDescription,
 } from "~/components/ui/dialog";
 
-type DeviceType = "ios" | "android" | "desktop";
-type BrowserType = "safari" | "chrome" | "firefox" | "samsung" | "edge" | "other";
+type BrowserType = "safari" | "chrome-ios" | "chrome-android" | "chrome-desktop" | "samsung" | "edge" | "firefox" | "other";
 
-function detectDevice(): { device: DeviceType; browser: BrowserType } {
-  if (typeof window === "undefined") return { device: "desktop", browser: "other" };
+function detectBrowser(): BrowserType {
+  if (typeof window === "undefined") return "other";
 
   const ua = navigator.userAgent.toLowerCase();
+  const isIOS = /iphone|ipad|ipod/.test(ua);
+  const isAndroid = /android/.test(ua);
 
-  // Device detection
-  let device: DeviceType = "desktop";
-  if (/iphone|ipad|ipod/.test(ua)) {
-    device = "ios";
-  } else if (/android/.test(ua)) {
-    device = "android";
+  // iOS browsers
+  if (isIOS) {
+    if (/crios/.test(ua)) return "chrome-ios";
+    if (/fxios/.test(ua)) return "firefox"; // Firefox on iOS
+    if (/safari/.test(ua) && !/chrome/.test(ua)) return "safari";
+    return "other"; // Other iOS browser
   }
 
-  // Browser detection
-  let browser: BrowserType = "other";
-  if (/samsungbrowser/.test(ua)) {
-    browser = "samsung";
-  } else if (/edg/.test(ua)) {
-    browser = "edge";
-  } else if (/chrome|crios/.test(ua) && !/edg/.test(ua)) {
-    browser = "chrome";
-  } else if (/safari/.test(ua) && !/chrome/.test(ua)) {
-    browser = "safari";
-  } else if (/firefox|fxios/.test(ua)) {
-    browser = "firefox";
+  // Android browsers
+  if (isAndroid) {
+    if (/samsungbrowser/.test(ua)) return "samsung";
+    if (/chrome/.test(ua) && !/edg/.test(ua)) return "chrome-android";
+    if (/firefox/.test(ua)) return "firefox";
+    return "other";
   }
 
-  return { device, browser };
+  // Desktop browsers
+  if (/edg/.test(ua)) return "edge";
+  if (/chrome/.test(ua)) return "chrome-desktop";
+  if (/safari/.test(ua)) return "safari";
+  if (/firefox/.test(ua)) return "firefox";
+
+  return "other";
 }
 
 function isStandalone(): boolean {
@@ -66,11 +69,25 @@ interface Step {
   icon: React.ReactNode;
   title: string;
   description: string;
+  action?: "copy-url";
 }
 
-function getSteps(device: DeviceType, browser: BrowserType): Step[] {
-  if (device === "ios") {
-    if (browser === "safari") {
+function getBrowserLabel(browser: BrowserType): string {
+  switch (browser) {
+    case "safari": return "Safari";
+    case "chrome-ios": return "Chrome (iPhone)";
+    case "chrome-android": return "Chrome (Android)";
+    case "chrome-desktop": return "Chrome";
+    case "samsung": return "Samsung Internet";
+    case "edge": return "Edge";
+    case "firefox": return "Firefox";
+    default: return "your browser";
+  }
+}
+
+function getSteps(browser: BrowserType): Step[] {
+  switch (browser) {
+    case "safari":
       return [
         {
           icon: <Share className="h-6 w-6" />,
@@ -88,34 +105,34 @@ function getSteps(device: DeviceType, browser: BrowserType): Step[] {
           description: "PayLane will appear as an app icon on your home screen",
         },
       ];
-    }
-    // iOS Chrome/Firefox - need to use Safari
-    return [
-      {
-        icon: <ExternalLink className="h-6 w-6" />,
-        title: "Open in Safari",
-        description: "On iPhone/iPad, you need Safari to add apps to your home screen. Copy this URL and open it in Safari.",
-      },
-      {
-        icon: <Share className="h-6 w-6" />,
-        title: "Tap the Share button",
-        description: "It's the square with an arrow at the bottom of Safari",
-      },
-      {
-        icon: <Plus className="h-6 w-6" />,
-        title: "Tap \"Add to Home Screen\"",
-        description: "Then tap Add — PayLane will appear as an app",
-      },
-    ];
-  }
 
-  if (device === "android") {
-    if (browser === "chrome") {
+    case "chrome-ios":
+      // Chrome on iOS can't install PWAs — must use Safari
+      return [
+        {
+          icon: <Copy className="h-6 w-6" />,
+          title: "Copy the URL below",
+          description: "Tap the button to copy the PayLane URL to your clipboard",
+          action: "copy-url",
+        },
+        {
+          icon: <Share className="h-6 w-6" />,
+          title: "Open Safari and paste the URL",
+          description: "Only Safari on iPhone can add apps to your home screen",
+        },
+        {
+          icon: <ArrowDown className="h-6 w-6" />,
+          title: "Tap Share → \"Add to Home Screen\"",
+          description: "Then tap Add — PayLane will appear as an app",
+        },
+      ];
+
+    case "chrome-android":
       return [
         {
           icon: <MoreVertical className="h-6 w-6" />,
-          title: "Tap the menu button",
-          description: "It's the three dots (⋮) in the top-right corner of Chrome",
+          title: "Tap the menu button (three dots)",
+          description: "It's in the top-right corner of Chrome",
         },
         {
           icon: <Download className="h-6 w-6" />,
@@ -125,66 +142,69 @@ function getSteps(device: DeviceType, browser: BrowserType): Step[] {
         {
           icon: <Smartphone className="h-6 w-6" />,
           title: "Tap \"Install\"",
-          description: "PayLane will be installed and appear in your app drawer",
+          description: "PayLane will appear in your app drawer and home screen",
         },
       ];
-    }
-    if (browser === "samsung") {
+
+    case "samsung":
       return [
         {
           icon: <MoreVertical className="h-6 w-6" />,
-          title: "Tap the menu button",
-          description: "It's the three horizontal lines (≡) at the bottom-right",
+          title: "Tap the menu (three lines)",
+          description: "It's at the bottom-right of Samsung Internet",
         },
         {
           icon: <Plus className="h-6 w-6" />,
-          title: "Tap \"Add page to\" → \"Home screen\"",
-          description: "This adds PayLane as a shortcut to your home screen",
+          title: "Tap \"Add page to\" then \"Home screen\"",
+          description: "This adds PayLane as a shortcut",
         },
         {
           icon: <Smartphone className="h-6 w-6" />,
           title: "Done!",
-          description: "You can now open PayLane directly from your home screen",
+          description: "Open PayLane directly from your home screen",
         },
       ];
-    }
-    return [
-      {
-        icon: <MoreVertical className="h-6 w-6" />,
-        title: "Tap the browser menu",
-        description: "Look for the three dots or menu icon",
-      },
-      {
-        icon: <Download className="h-6 w-6" />,
-        title: "Look for \"Install\" or \"Add to Home screen\"",
-        description: "The exact wording depends on your browser",
-      },
-      {
-        icon: <Smartphone className="h-6 w-6" />,
-        title: "Confirm the installation",
-        description: "PayLane will appear on your home screen",
-      },
-    ];
-  }
 
-  // Desktop
-  return [
-    {
-      icon: <Monitor className="h-6 w-6" />,
-      title: "Look for the install icon",
-      description: "In Chrome/Edge, you'll see a ⊕ or download icon in the address bar (right side)",
-    },
-    {
-      icon: <Download className="h-6 w-6" />,
-      title: "Click \"Install\"",
-      description: "A prompt will appear asking to install PayLane",
-    },
-    {
-      icon: <Smartphone className="h-6 w-6" />,
-      title: "Done!",
-      description: "PayLane will open as a standalone app window",
-    },
-  ];
+    case "chrome-desktop":
+    case "edge":
+      return [
+        {
+          icon: <Monitor className="h-6 w-6" />,
+          title: "Look for the install icon in the address bar",
+          description: "You'll see a \"+\" or download icon on the right side of the URL bar",
+        },
+        {
+          icon: <Download className="h-6 w-6" />,
+          title: "Click \"Install\"",
+          description: "A prompt will ask to install PayLane",
+        },
+        {
+          icon: <Smartphone className="h-6 w-6" />,
+          title: "Done!",
+          description: "PayLane opens as a standalone app window",
+        },
+      ];
+
+    case "firefox":
+      return [
+        {
+          icon: <MoreVertical className="h-6 w-6" />,
+          title: "Firefox doesn't support app installation",
+          description: "For the best experience, open PayLane in Chrome or Safari",
+          action: "copy-url",
+        },
+      ];
+
+    default:
+      return [
+        {
+          icon: <Copy className="h-6 w-6" />,
+          title: "Open in Chrome or Safari",
+          description: "Copy the URL below and open it in Chrome or Safari for the best experience",
+          action: "copy-url",
+        },
+      ];
+  }
 }
 
 export function PWAInstallGuide({
@@ -194,33 +214,28 @@ export function PWAInstallGuide({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const [info, setInfo] = useState<{ device: DeviceType; browser: BrowserType }>({
-    device: "desktop",
-    browser: "other",
-  });
+  const [browser, setBrowser] = useState<BrowserType>("other");
   const [alreadyInstalled, setAlreadyInstalled] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    setInfo(detectDevice());
+    setBrowser(detectBrowser());
     setAlreadyInstalled(isStandalone());
   }, []);
 
-  const steps = getSteps(info.device, info.browser);
+  const steps = getSteps(browser);
+  const browserLabel = getBrowserLabel(browser);
 
-  const deviceLabel =
-    info.device === "ios" ? "iPhone/iPad" : info.device === "android" ? "Android" : "Desktop";
-  const browserLabel =
-    info.browser === "safari"
-      ? "Safari"
-      : info.browser === "chrome"
-        ? "Chrome"
-        : info.browser === "samsung"
-          ? "Samsung Internet"
-          : info.browser === "edge"
-            ? "Edge"
-            : info.browser === "firefox"
-              ? "Firefox"
-              : "your browser";
+  const handleCopyUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.origin);
+      setCopied(true);
+      toast.success("URL copied to clipboard");
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error("Failed to copy URL");
+    }
+  };
 
   if (alreadyInstalled) {
     return (
@@ -252,29 +267,44 @@ export function PWAInstallGuide({
           </div>
           <DialogTitle className="text-xl">Add PayLane to Home Screen</DialogTitle>
           <DialogDescription>
-            Get the full app experience — instant access, push notifications, and works offline.
+            Get the full app experience — instant access and push notifications.
             <br />
             <span className="mt-1 inline-block text-xs">
-              Detected: {deviceLabel} · {browserLabel}
+              Detected: {browserLabel}
             </span>
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
           {steps.map((step, i) => (
-            <div key={i} className="flex gap-4">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600">
-                {step.icon}
+            <div key={i}>
+              <div className="flex gap-4">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+                  {step.icon}
+                </div>
+                <div className="flex-1 pt-0.5">
+                  <p className="text-sm font-semibold">
+                    <span className="mr-2 inline-flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-xs text-white">
+                      {i + 1}
+                    </span>
+                    {step.title}
+                  </p>
+                  <p className="mt-0.5 text-sm text-muted-foreground">{step.description}</p>
+                </div>
               </div>
-              <div className="flex-1 pt-0.5">
-                <p className="text-sm font-semibold">
-                  <span className="mr-2 inline-flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-xs text-white">
-                    {i + 1}
-                  </span>
-                  {step.title}
-                </p>
-                <p className="mt-0.5 text-sm text-muted-foreground">{step.description}</p>
-              </div>
+              {step.action === "copy-url" && (
+                <div className="ml-14 mt-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleCopyUrl}
+                    className="gap-2"
+                  >
+                    {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                    {copied ? "Copied!" : "Copy PayLane URL"}
+                  </Button>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -301,7 +331,6 @@ export function PWAInstallBanner() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    // Don't show if already installed or if user dismissed
     if (isStandalone()) return;
     if (localStorage.getItem("pwa-install-dismissed")) return;
     setShow(true);
