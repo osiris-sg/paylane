@@ -32,10 +32,10 @@ function InvoicesContent() {
   };
 
   return (
-    <div className="flex flex-col gap-6 p-6">
-      <div className="flex items-center justify-between">
+    <div className="flex flex-col gap-4 p-3 md:gap-6 md:p-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Invoices</h1>
+          <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Invoices</h1>
           <p className="text-muted-foreground">
             {canSend && canReceive
               ? "Manage your sent and received invoices"

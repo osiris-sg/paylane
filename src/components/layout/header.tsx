@@ -6,14 +6,21 @@ import { Button } from "~/components/ui/button";
 import { Badge } from "~/components/ui/badge";
 import { api } from "~/trpc/react";
 import { NotificationToggle } from "~/components/notification-toggle";
+import { MobileSidebar } from "~/components/layout/sidebar";
 
 export function Header() {
   const { data } = api.notification.getUnreadCount.useQuery();
   const unreadCount = data?.count ?? 0;
 
   return (
-    <header className="flex h-14 items-center justify-between border-b bg-white px-6">
-      <div />
+    <header className="flex h-14 items-center justify-between border-b bg-white px-4 md:px-6">
+      <div className="flex items-center gap-2">
+        <MobileSidebar />
+        {/* Show logo on mobile since sidebar is hidden */}
+        <Link href="/dashboard" className="text-lg font-bold text-blue-600 md:hidden">
+          PayLane
+        </Link>
+      </div>
       <div className="flex items-center gap-2">
         <NotificationToggle />
         <Link href="/notifications">

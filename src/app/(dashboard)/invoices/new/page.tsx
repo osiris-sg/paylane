@@ -396,25 +396,25 @@ export default function CreateInvoicePage() {
   return (
     <div className="flex h-full flex-col">
       {/* ─── Header Bar ─────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between border-b bg-white px-4 py-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-white px-4 py-2">
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => router.push("/invoices")}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <span className="text-base font-semibold">{invoiceNumber || "New Invoice"}</span>
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           <Button variant="outline" size="sm" onClick={() => setPreviewMode(!previewMode)}>
             <Eye className="mr-1.5 h-3.5 w-3.5" />
-            {previewMode ? "Edit" : "Preview"}
+            <span className="hidden sm:inline">{previewMode ? "Edit" : "Preview"}</span>
           </Button>
           <Button variant="outline" size="sm" onClick={() => handlePrint()}>
             <Printer className="mr-1.5 h-3.5 w-3.5" />
-            Print / PDF
+            <span className="hidden sm:inline">Print / PDF</span>
           </Button>
           <Button variant="outline" size="sm" className="border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100" onClick={handleSendToCustomer} disabled={isSaving}>
             <Send className="mr-1.5 h-3.5 w-3.5" />
-            {createAndSend.isPending || sendInvoice.isPending ? "Sending..." : "Send to Customer"}
+            <span className="hidden sm:inline">{createAndSend.isPending || sendInvoice.isPending ? "Sending..." : "Send"}</span>
           </Button>
           <Button size="sm" onClick={handleSave} disabled={isSaving}>
             <Save className="mr-1.5 h-3.5 w-3.5" />
@@ -450,7 +450,7 @@ export default function CreateInvoicePage() {
 
                 {/* ─── General Tab ──────────────────────────────────── */}
                 <TabsContent value="general" className="mt-0">
-                  <div className="flex gap-4 p-4">
+                  <div className="flex flex-col gap-4 p-4 lg:flex-row">
                     {/* Left: Form fields (table style) */}
                     <div className="flex-1 overflow-hidden rounded-md border bg-white">
                       <div className="border-b bg-gray-50 px-3 py-1.5 text-sm font-semibold text-gray-700">

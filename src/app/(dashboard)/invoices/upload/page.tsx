@@ -485,8 +485,8 @@ export default function UploadInvoicePage() {
             </div>
 
             {/* Table */}
-            <div className="rounded-lg border bg-white">
-              <Table>
+            <div className="overflow-x-auto rounded-lg border bg-white">
+              <Table className="min-w-[800px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-10">
