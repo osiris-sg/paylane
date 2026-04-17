@@ -15,7 +15,7 @@ async function sendInviteEmail({
   supplierCompanyName: string;
   senderCompanyName: string;
 }) {
-  const signupUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/sign-up`;
+  const signupUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/sign-up?email=${encodeURIComponent(to)}`;
 
   try {
     await resend.emails.send({

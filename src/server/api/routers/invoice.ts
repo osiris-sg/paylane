@@ -406,7 +406,7 @@ export const invoiceRouter = createTRPCRouter({
           where: { id: invoice.senderCompanyId },
         });
 
-        const signupUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/sign-up`;
+        const signupUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/sign-up?email=${encodeURIComponent(existing.customer.email)}`;
 
         try {
           const result = await resend.emails.send({
