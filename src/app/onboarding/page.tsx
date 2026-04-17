@@ -220,8 +220,10 @@ export default function OnboardingPage() {
   const { data: status, isLoading: statusLoading } = api.onboarding.getStatus.useQuery();
 
   const companyModule = status?.module;
-  const isReceiveModule = companyModule === "RECEIVE" || companyModule === "BOTH";
-  const steps = isReceiveModule ? RECEIVE_STEPS : SEND_STEPS;
+  const wasInvited = !!status?.invitedByCompanyName;
+  // Show supplier invite step only for RECEIVE companies that signed up on their own (not invited)
+  const showSupplierStep = !wasInvited && (companyModule === "RECEIVE" || companyModule === "BOTH");
+  const steps = showSupplierStep ? RECEIVE_STEPS : SEND_STEPS;
 
   const [prefilled, setPrefilled] = useState(false);
 
@@ -250,7 +252,7 @@ export default function OnboardingPage() {
   const updateCompany = api.onboarding.updateCompany.useMutation({
     onSuccess: () => {
       // RECEIVE/BOTH: go to suppliers step. SEND: go straight to done.
-      if (isReceiveModule) {
+      if (showSupplierStep) {
         setStep(1);
       } else {
         setStep(1); // For SEND, step 1 is the "All Set" step
@@ -416,7 +418,7 @@ export default function OnboardingPage() {
         )}
 
         {/* Step 2: Add Suppliers (RECEIVE module only) */}
-        {step === 1 && isReceiveModule && (
+        {step === 1 && showSupplierStep && (
           <Card>
             <CardHeader className="text-center">
               <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-purple-100">
@@ -507,7 +509,7 @@ export default function OnboardingPage() {
         )}
 
         {/* Final Step: Done */}
-        {((isReceiveModule && step === 2) || (!isReceiveModule && step === 1)) && (
+        {((showSupplierStep && step === 2) || (!showSupplierStep && step === 1)) && (
           <Card>
             <CardHeader className="text-center">
               <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
@@ -517,7 +519,7 @@ export default function OnboardingPage() {
               <CardDescription>
                 {inviteResults.length > 0
                   ? `We've sent invite emails to ${inviteResults.filter((r) => r.status === "created").length} supplier(s). They'll be notified to join PayLane.`
-                  : isReceiveModule
+                  : showSupplierStep
                     ? "Your company is set up. You can add suppliers anytime from the Customers page."
                     : "Your company is set up. You can start sending invoices to your customers."}
               </CardDescription>
