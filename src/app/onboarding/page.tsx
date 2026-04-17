@@ -566,6 +566,9 @@ export default function OnboardingPage() {
                   Add PayLane to Home Screen
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
+                <Button variant="link" size="sm" className="text-muted-foreground" onClick={handleFinish} disabled={completeOnboarding.isPending}>
+                  {completeOnboarding.isPending ? "Loading..." : "Skip, go to dashboard"}
+                </Button>
               </div>
             </CardContent>
           </Card>
