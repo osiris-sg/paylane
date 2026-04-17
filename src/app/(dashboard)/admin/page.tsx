@@ -42,8 +42,8 @@ export default function AdminPage() {
   });
 
   const handleModuleChange = (companyId: string, value: string) => {
-    const module = value === "none" ? null : (value as "RECEIVE" | "SEND" | "BOTH");
-    setModule.mutate({ companyId, module });
+    const selectedModule = value === "none" ? null : (value as "RECEIVE" | "SEND" | "BOTH");
+    setModule.mutate({ companyId, module: selectedModule });
   };
 
   if (isLoading) {
