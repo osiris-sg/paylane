@@ -223,12 +223,20 @@ export default function OnboardingPage() {
   const isReceiveModule = companyModule === "RECEIVE" || companyModule === "BOTH";
   const steps = isReceiveModule ? RECEIVE_STEPS : SEND_STEPS;
 
+  const [prefilled, setPrefilled] = useState(false);
+
   useEffect(() => {
     if (!status) return;
     if (status.onboarded) {
       router.replace("/dashboard");
+      return;
     }
-  }, [status, router]);
+    // Prefill company name from invitation (only once)
+    if (!prefilled && status.invitedByCompanyName) {
+      setCompanyName(status.invitedByCompanyName);
+      setPrefilled(true);
+    }
+  }, [status, router, prefilled]);
 
   // Show loading while checking status
   if (statusLoading || (status?.onboarded)) {
@@ -266,7 +274,12 @@ export default function OnboardingPage() {
   const completeOnboarding = api.onboarding.complete.useMutation({
     onSuccess: () => {
       toast.success("Welcome to PayLane!");
-      router.push("/dashboard");
+      // Deep-link to first invoice if they were invited
+      if (status?.firstInvoiceId) {
+        router.push(`/invoices/${status.firstInvoiceId}`);
+      } else {
+        router.push("/dashboard");
+      }
     },
   });
 
@@ -542,11 +555,8 @@ export default function OnboardingPage() {
               <Separator />
 
               <div className="flex flex-col items-center gap-3">
-                <Button variant="outline" onClick={() => setPwaGuideOpen(true)}>
+                <Button size="lg" onClick={() => setPwaGuideOpen(true)}>
                   Add PayLane to Home Screen
-                </Button>
-                <Button size="lg" onClick={handleFinish} disabled={completeOnboarding.isPending}>
-                  {completeOnboarding.isPending ? "Finishing..." : "Go to Dashboard"}
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
               </div>
@@ -554,7 +564,7 @@ export default function OnboardingPage() {
           </Card>
         )}
 
-        <PWAInstallGuide open={pwaGuideOpen} onOpenChange={setPwaGuideOpen} />
+        <PWAInstallGuide open={pwaGuideOpen} onOpenChange={setPwaGuideOpen} onComplete={handleFinish} />
       </div>
     </div>
   );

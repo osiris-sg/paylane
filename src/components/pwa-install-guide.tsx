@@ -208,9 +208,11 @@ function getSteps(browser: BrowserType): Step[] {
 export function PWAInstallGuide({
   open,
   onOpenChange,
+  onComplete,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onComplete?: () => void;
 }) {
   const [browser, setBrowser] = useState<BrowserType>("other");
   const [alreadyInstalled, setAlreadyInstalled] = useState(false);
@@ -249,7 +251,7 @@ export function PWAInstallGuide({
             </DialogDescription>
           </DialogHeader>
           <div className="flex justify-center pt-2">
-            <Button onClick={() => onOpenChange(false)}>Got it</Button>
+            <Button onClick={() => { onOpenChange(false); onComplete?.(); }}>Continue to Dashboard</Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -307,12 +309,9 @@ export function PWAInstallGuide({
           ))}
         </div>
 
-        <div className="flex justify-between pt-2">
-          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
-            Skip for now
-          </Button>
-          <Button size="sm" onClick={() => onOpenChange(false)}>
-            Done
+        <div className="flex justify-center pt-2">
+          <Button size="sm" onClick={() => { onOpenChange(false); onComplete?.(); }}>
+            Done — Continue to Dashboard
           </Button>
         </div>
       </DialogContent>

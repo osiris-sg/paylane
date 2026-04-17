@@ -69,11 +69,27 @@ export const onboardingRouter = createTRPCRouter({
       include: { company: true },
     });
 
+    // Check if this company was invited (has linked customers pointing to it)
+    const linkedFrom = await ctx.db.customer.findFirst({
+      where: { linkedCompanyId: user.companyId },
+      select: { company: true },
+    });
+
+    // Find first received invoice to deep-link after onboarding
+    const firstInvoice = await ctx.db.invoice.findFirst({
+      where: { receiverCompanyId: user.companyId },
+      orderBy: { createdAt: "desc" },
+      select: { id: true },
+    });
+
     return {
       onboarded: user.company.onboarded,
       module: user.company.module,
       companyName: user.company.name,
       companyId: user.company.id,
+      // Prefill data from invitation
+      invitedByCompanyName: linkedFrom?.company ?? null,
+      firstInvoiceId: firstInvoice?.id ?? null,
     };
   }),
 
