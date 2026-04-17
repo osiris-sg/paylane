@@ -96,6 +96,12 @@ async function createUserAndCompany(clerkUserId: string) {
       },
     });
 
+    // Auto-assign RECEIVE module — this user was invited as a customer
+    await db.company.update({
+      where: { id: company.id },
+      data: { module: "RECEIVE" },
+    });
+
     // Mark invitations as accepted
     await db.invitation.updateMany({
       where: {
