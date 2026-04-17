@@ -83,13 +83,11 @@ function formatFileSize(bytes: number) {
 function CustomerPicker({
   customers,
   selectedId,
-  aiName,
   onSelect,
   label,
 }: {
   customers: { id: string; name: string; company: string | null; email: string | null }[];
   selectedId: string;
-  aiName?: string;
   onSelect: (id: string) => void;
   label?: string;
 }) {
@@ -107,8 +105,6 @@ function CustomerPicker({
         <button className="flex w-full items-center gap-1 rounded px-1 py-0.5 text-left text-sm hover:bg-gray-50">
           {selected ? (
             <span className="truncate font-medium">{selected.name}</span>
-          ) : aiName ? (
-            <span className="truncate text-amber-600">{aiName}</span>
           ) : (
             <span className="text-muted-foreground">{label ?? "Select..."}</span>
           )}
@@ -535,7 +531,6 @@ export default function UploadInvoicePage() {
                             <CustomerPicker
                               customers={customers}
                               selectedId={inv.customerId}
-                              aiName={inv.customerName}
                               onSelect={(id) => updateInvoice(inv.id, { customerId: id })}
                             />
                           ) : (
