@@ -203,6 +203,7 @@ export default function InvoiceDetailPage() {
   });
 
   const [scheduleDate, setScheduleDate] = useState("");
+  const [showDocument, setShowDocument] = useState(false);
 
   if (isLoading) {
     return (
@@ -262,8 +263,6 @@ export default function InvoiceDetailPage() {
   const sortedTimeline = [...timeline].sort(
     (a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf()
   );
-
-  const [showDocument, setShowDocument] = useState(false);
 
   const hasActions = canSend || canAcknowledge || canSchedulePayment || canMarkPaid || canApprovePayment || canRejectPayment || canDelete;
 
