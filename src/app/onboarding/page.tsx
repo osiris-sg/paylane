@@ -217,25 +217,27 @@ export default function OnboardingPage() {
   >([]);
 
   // Load current company info
-  const [initialized, setInitialized] = useState(false);
-  const { data: status } = api.onboarding.getStatus.useQuery();
+  const { data: status, isLoading: statusLoading } = api.onboarding.getStatus.useQuery();
 
-  const companyModule = status?.module; // "RECEIVE", "SEND", "BOTH", or null
+  const companyModule = status?.module;
   const isReceiveModule = companyModule === "RECEIVE" || companyModule === "BOTH";
   const steps = isReceiveModule ? RECEIVE_STEPS : SEND_STEPS;
 
   useEffect(() => {
-    if (!status || initialized) return;
+    if (!status) return;
     if (status.onboarded) {
-      router.push("/dashboard");
-      return;
+      router.replace("/dashboard");
     }
-    if (!status.module) {
-      // No module assigned yet — admin hasn't set it up
-      // They can still complete onboarding but will have limited access
-    }
-    setInitialized(true);
-  }, [status, router, initialized]);
+  }, [status, router]);
+
+  // Show loading while checking status
+  if (statusLoading || (status?.onboarded)) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent" />
+      </div>
+    );
+  }
 
   const updateCompany = api.onboarding.updateCompany.useMutation({
     onSuccess: () => {
