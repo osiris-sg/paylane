@@ -3,6 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { Resend } from "resend";
+import { sendPushToCompany } from "~/lib/push-notifications";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const FROM_EMAIL = process.env.EMAIL_FROM ?? "PayLane <onboarding@resend.dev>";
@@ -389,6 +390,14 @@ export const invoiceRouter = createTRPCRouter({
             invoiceId: invoice.id,
           })),
         });
+
+        // Push notification
+        void sendPushToCompany(receiverCompanyId, {
+          title: "New Invoice Received",
+          body: `Invoice ${invoice.invoiceNumber} — ${invoice.currency} ${Number(invoice.amount).toFixed(2)}`,
+          url: `/invoices/${invoice.id}`,
+          tag: `invoice-${invoice.id}`,
+        });
       }
 
       // If customer is NOT on PayLane, send them an invite email
@@ -554,6 +563,13 @@ export const invoiceRouter = createTRPCRouter({
             invoiceId: invoice.id,
           })),
         });
+
+        void sendPushToCompany(invoice.senderCompanyId, {
+          title: "Payment Submitted",
+          body: `Invoice ${invoice.invoiceNumber} — awaiting your approval`,
+          url: `/invoices/${invoice.id}`,
+          tag: `payment-${invoice.id}`,
+        });
       }
 
       return invoice;
@@ -587,6 +603,13 @@ export const invoiceRouter = createTRPCRouter({
             invoiceId: invoice.id,
           })),
         });
+
+        void sendPushToCompany(invoice.receiverCompanyId, {
+          title: "Payment Approved",
+          body: `Invoice ${invoice.invoiceNumber} — payment confirmed`,
+          url: `/invoices/${invoice.id}`,
+          tag: `payment-${invoice.id}`,
+        });
       }
 
       return invoice;
@@ -619,6 +642,13 @@ export const invoiceRouter = createTRPCRouter({
             userId: u.id,
             invoiceId: invoice.id,
           })),
+        });
+
+        void sendPushToCompany(invoice.receiverCompanyId, {
+          title: "Payment Rejected",
+          body: `Invoice ${invoice.invoiceNumber} — payment was not accepted`,
+          url: `/invoices/${invoice.id}`,
+          tag: `payment-${invoice.id}`,
         });
       }
 

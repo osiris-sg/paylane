@@ -138,6 +138,18 @@ model TimelineItem {
   createdAt DateTime @default(now())
 }
 
+model PushSubscription {
+  id        String   @id @default(cuid())
+  clerkId   String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clerkId])
+}
+
 enum CompanyModule {
   RECEIVE  // Company A — receives invoices from suppliers, adds suppliers
   SEND     // Suppliers — sends invoices to their customers

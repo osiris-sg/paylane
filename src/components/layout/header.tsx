@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Button } from "~/components/ui/button";
 import { Badge } from "~/components/ui/badge";
 import { api } from "~/trpc/react";
+import { NotificationToggle } from "~/components/notification-toggle";
 
 export function Header() {
   const { data } = api.notification.getUnreadCount.useQuery();
@@ -13,7 +14,8 @@ export function Header() {
   return (
     <header className="flex h-14 items-center justify-between border-b bg-white px-6">
       <div />
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-2">
+        <NotificationToggle />
         <Link href="/notifications">
           <Button variant="ghost" size="icon" className="relative">
             <Bell className="h-5 w-5" />
