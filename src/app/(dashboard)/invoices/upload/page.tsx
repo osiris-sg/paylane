@@ -214,10 +214,11 @@ function StatusBadge({
     );
   }
   if (status === "ready" && hasDbId && uploadResult === "updated") {
+    const label = existingStatus ? `Updated — ${existingStatus}` : "Updated";
     return (
       <Badge variant="outline" className="gap-1 border-purple-300 bg-purple-50 text-purple-700">
         <RefreshCw className="h-3 w-3" />
-        Overrode Draft
+        {label}
       </Badge>
     );
   }
@@ -403,32 +404,27 @@ export default function UploadInvoicePage() {
       };
 
       try {
-        let result;
-        try {
-          result = await tryUpsert(invoiceNumber);
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : String(err);
-          if (msg.toLowerCase().includes("cannot override")) {
-            // Existing invoice is SENT/PAID — save under a new number
-            const retryNumber = `${invoiceNumber}-${id.slice(0, 6)}`;
-            result = await tryUpsert(retryNumber);
-            setInvoices((prev) => prev.map((x) => (x.id === id ? { ...x, invoiceNumber: retryNumber } : x)));
-            toast.info(`Invoice ${invoiceNumber} is already sent — saved as ${retryNumber}`);
-          } else {
-            throw err;
-          }
-        }
+        const result = await tryUpsert(invoiceNumber);
         setInvoices((prev) =>
           prev.map((x) =>
             x.id === id
-              ? { ...x, dbId: result!.invoice.id, uploadResult: result!.status, existingStatus: result!.existingStatus as ExistingInvoiceStatus | null }
+              ? {
+                  ...x,
+                  dbId: result.invoice.id,
+                  uploadResult: result.status,
+                  existingStatus: result.existingStatus as ExistingInvoiceStatus | null,
+                  // For duplicates/overrides, hydrate local state from the saved invoice
+                  // so the read-only row reflects what's actually in the DB.
+                  customerId: result.invoice.customerId ?? x.customerId,
+                }
               : x,
           ),
         );
         if (result.status === "duplicate") {
-          toast.info(`${invoiceNumber} is a duplicate of an existing invoice`);
+          const label = result.existingStatus ? ` (${result.existingStatus})` : "";
+          toast.info(`${invoiceNumber} already exists${label}`);
         } else if (result.status === "updated") {
-          toast.success(`${invoiceNumber} draft overridden with new data`);
+          toast.success(`${invoiceNumber} updated with new data from this upload`);
         }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "Auto-save failed";

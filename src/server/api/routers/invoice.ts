@@ -298,13 +298,9 @@ export const invoiceRouter = createTRPCRouter({
           };
         }
 
-        if (existing.invoiceStatus !== "DRAFT") {
-          throw new TRPCError({
-            code: "CONFLICT",
-            message: `Invoice ${existing.invoiceNumber} already exists and is ${existing.invoiceStatus}. Cannot override a sent invoice.`,
-          });
-        }
-
+        // Details differ — override the existing invoice's data fields.
+        // We intentionally do NOT touch invoiceStatus / routingStatus / receiver
+        // so a SENT/PAID invoice stays SENT/PAID but its content is refreshed.
         await ctx.db.$executeRaw`DELETE FROM "InvoiceItem" WHERE "invoiceId" = ${existing.id}`;
 
         const updated = await ctx.db.invoice.update({
