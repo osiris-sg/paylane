@@ -890,11 +890,30 @@ export default function UploadInvoicePage() {
               {isSomeSelected ? (
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-sm font-medium">{selectedIds.size} selected</span>
-                  {invoices.some((i) => selectedIds.has(i.id) && !i.customerId) && (
-                    <div className="w-[180px]">
-                      <CustomerPicker customers={customers} selectedId="" onSelect={bulkAssignCustomer} onAddNew={() => openAddCustomer("bulk")} label="Assign customer..." />
-                    </div>
-                  )}
+                  {(() => {
+                    const selectedInvoices = invoices.filter((i) => selectedIds.has(i.id));
+                    const anyMissing = selectedInvoices.some((i) => !i.customerId);
+                    const assignedIds = selectedInvoices.map((i) => i.customerId).filter(Boolean);
+                    const distinctCustomerIds = Array.from(new Set(assignedIds));
+                    const sharedCustomerId = distinctCustomerIds.length === 1 ? (distinctCustomerIds[0] ?? "") : "";
+                    const label = anyMissing
+                      ? "Assign customer..."
+                      : distinctCustomerIds.length > 1
+                        ? "Change customer (mixed)..."
+                        : "Change customer...";
+                    return (
+                      <div className="w-[200px]">
+                        <CustomerPicker
+                          customers={customers}
+                          selectedId={sharedCustomerId}
+                          onSelect={bulkAssignCustomer}
+                          onAddNew={() => openAddCustomer("bulk")}
+                          label={label}
+                          warnWhenEmpty={anyMissing}
+                        />
+                      </div>
+                    );
+                  })()}
                   <Button size="sm" variant="outline" onClick={handleBulkSave} disabled={false} className="border-green-300 text-green-700 hover:bg-green-50">
                     <Save className="mr-1.5 h-3.5 w-3.5" />Save Drafts
                   </Button>
