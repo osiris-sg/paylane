@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 
 import { api } from "~/trpc/react";
+import { formatCurrency } from "~/lib/currency";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Badge } from "~/components/ui/badge";
@@ -85,14 +86,6 @@ const invoiceStatusConfig: Record<string, { label: string; className: string }> 
   OVERDUE: { label: "Overdue", className: "bg-red-100 text-red-700 border-red-400 dark:bg-red-950 dark:text-red-400" },
   CANCELLED: { label: "Cancelled", className: "bg-gray-100 text-gray-500 border-gray-300 dark:bg-gray-800 dark:text-gray-400" },
 };
-
-function formatCurrency(amount: number | unknown, currency: string) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: currency || "USD",
-    minimumFractionDigits: 2,
-  }).format(Number(amount));
-}
 
 function getDueDateUrgency(dueDate: string | Date) {
   const now = dayjs();

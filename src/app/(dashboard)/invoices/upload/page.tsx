@@ -85,9 +85,7 @@ interface UploadedInvoice {
   fileDataUrl: string | null;
 }
 
-function formatCurrency(value: number, currency: string = "SGD") {
-  return new Intl.NumberFormat("en-SG", { style: "currency", currency, minimumFractionDigits: 2 }).format(value);
-}
+import { formatCurrency } from "~/lib/currency";
 
 function formatFileSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;

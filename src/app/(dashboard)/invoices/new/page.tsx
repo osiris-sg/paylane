@@ -44,13 +44,7 @@ interface LineItem {
   amount: number;
 }
 
-function formatCurrency(value: number, currency: string = "SGD") {
-  return new Intl.NumberFormat("en-SG", {
-    style: "currency",
-    currency,
-    minimumFractionDigits: 2,
-  }).format(value);
-}
+import { formatCurrency } from "~/lib/currency";
 
 // ─── Form Row (label-value table style) ───────────────────────────────────────
 

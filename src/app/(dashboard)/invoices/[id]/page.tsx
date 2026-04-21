@@ -66,13 +66,7 @@ const invoiceStatusConfig: Record<string, { label: string; className: string }> 
   CANCELLED: { label: "Cancelled", className: "bg-gray-100 text-gray-500 border-gray-300 dark:bg-gray-800 dark:text-gray-400" },
 };
 
-function formatCurrency(amount: number | unknown, currency: string) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: currency || "USD",
-    minimumFractionDigits: 2,
-  }).format(Number(amount));
-}
+import { formatCurrency } from "~/lib/currency";
 
 function DetailRow({
   icon: Icon,
