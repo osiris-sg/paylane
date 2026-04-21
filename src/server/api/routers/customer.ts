@@ -72,11 +72,11 @@ export const customerRouter = createTRPCRouter({
   create: protectedProcedure
     .input(
       z.object({
-        name: z.string().min(1),
+        company: z.string().min(1), // Company name is now required
+        name: z.string().optional(), // Contact name is optional
         email: z.string().email().optional(),
         phone: z.string().optional(),
         address: z.string().optional(),
-        company: z.string().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -84,9 +84,12 @@ export const customerRouter = createTRPCRouter({
         where: { clerkId: ctx.auth.userId },
       });
 
+      // The DB still requires `name` (legacy column). Fall back to company name when
+      // the user didn't provide a contact name.
       const customer = await ctx.db.customer.create({
         data: {
           ...input,
+          name: input.name?.trim() || input.company,
           companyId: user.companyId,
         },
       });

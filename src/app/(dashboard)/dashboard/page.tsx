@@ -7,7 +7,6 @@ import {
   FileText,
   FileDown,
   Clock,
-  CheckCircle,
   AlertTriangle,
   DollarSign,
   Plus,
@@ -76,6 +75,8 @@ function SkeletonChart() {
   );
 }
 
+type CardModules = "send" | "receive" | "both";
+
 const SUMMARY_CARDS = [
   {
     key: "totalSent" as const,
@@ -85,6 +86,8 @@ const SUMMARY_CARDS = [
     accent: "text-blue-600",
     bg: "bg-blue-50",
     border: "",
+    statusFilter: null,
+    modules: "send" as CardModules,
   },
   {
     key: "totalReceived" as const,
@@ -94,42 +97,41 @@ const SUMMARY_CARDS = [
     accent: "text-purple-600",
     bg: "bg-purple-50",
     border: "",
+    statusFilter: null,
+    modules: "receive" as CardModules,
   },
   {
     key: "pending" as const,
-    amountKey: null,
+    amountKey: "totalAmountPending" as const,
     label: "Pending",
     icon: Clock,
-    accent: "text-yellow-600",
-    bg: "bg-yellow-50",
+    accent: "text-amber-600",
+    bg: "bg-amber-50",
     border: "",
-  },
-  {
-    key: "acknowledged" as const,
-    amountKey: null,
-    label: "Acknowledged",
-    icon: CheckCircle,
-    accent: "text-green-600",
-    bg: "bg-green-50",
-    border: "",
+    statusFilter: "SENT",
+    modules: "both" as CardModules,
   },
   {
     key: "overdue" as const,
-    amountKey: null,
+    amountKey: "totalAmountOverdue" as const,
     label: "Overdue",
     icon: AlertTriangle,
     accent: "text-red-600",
     bg: "bg-red-50",
     border: "overdue",
+    statusFilter: "OVERDUE",
+    modules: "both" as CardModules,
   },
   {
     key: "paid" as const,
-    amountKey: null,
+    amountKey: "totalAmountPaid" as const,
     label: "Paid",
     icon: DollarSign,
     accent: "text-emerald-600",
     bg: "bg-emerald-50",
     border: "",
+    statusFilter: "PAID",
+    modules: "both" as CardModules,
   },
 ] as const;
 
@@ -137,6 +139,35 @@ export default function DashboardPage() {
   const summary = api.dashboard.getSummary.useQuery();
   const aging = api.dashboard.getAgingData.useQuery();
   const monthly = api.dashboard.getMonthlyTotals.useQuery();
+  const { data: onboardingStatus } = api.onboarding.getStatus.useQuery();
+
+  const companyModule = onboardingStatus?.module;
+  const canSend = companyModule === "SEND" || companyModule === "BOTH";
+  const canReceive = companyModule === "RECEIVE" || companyModule === "BOTH";
+
+  const visibleCards = SUMMARY_CARDS.filter((card) => {
+    if (card.modules === "both") return true;
+    if (card.modules === "send") return canSend;
+    if (card.modules === "receive") return canReceive;
+    return false;
+  });
+
+  // Build the target URL for a card based on its scope and the user's module
+  const buildHref = (card: (typeof SUMMARY_CARDS)[number]): string | null => {
+    const params = new URLSearchParams();
+    // Pick the tab this card pertains to
+    let tab: "sent" | "received" | null = null;
+    if (card.modules === "send") tab = "sent";
+    else if (card.modules === "receive") tab = "received";
+    else if (card.modules === "both") {
+      // For shared cards, prefer the tab the user actually has access to
+      tab = canSend ? "sent" : canReceive ? "received" : null;
+    }
+    if (!tab) return null;
+    params.set("tab", tab);
+    if (card.statusFilter) params.set("status", card.statusFilter);
+    return `/invoices?${params.toString()}`;
+  };
 
   return (
     <div className="space-y-6 p-3 md:space-y-8 md:p-6 lg:p-8">
@@ -148,20 +179,22 @@ export default function DashboardPage() {
             Overview of your invoice activity
           </p>
         </div>
-        <div className="flex gap-3">
-          <Button asChild>
-            <Link href="/invoices/new">
-              <Plus className="mr-2 h-4 w-4" />
-              Create Invoice
-            </Link>
-          </Button>
-          <Button asChild variant="outline" className="border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100">
-            <Link href="/invoices/upload">
-              <Upload className="mr-2 h-4 w-4" />
-              Upload Invoice
-            </Link>
-          </Button>
-        </div>
+        {canSend && (
+          <div className="flex gap-3">
+            <Button variant="outline" asChild>
+              <Link href="/invoices/upload">
+                <Upload className="mr-2 h-4 w-4" />
+                Upload Invoice
+              </Link>
+            </Button>
+            <Button asChild>
+              <Link href="/invoices/new">
+                <Plus className="mr-2 h-4 w-4" />
+                Create Invoice
+              </Link>
+            </Button>
+          </div>
+        )}
       </div>
 
       <PWAInstallBanner />
@@ -170,59 +203,84 @@ export default function DashboardPage() {
 
       {/* Summary Cards */}
       {summary.isLoading ? (
-        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, i) => (
+        <div
+          className={`grid gap-4 grid-cols-2 ${
+            visibleCards.length <= 3
+              ? "lg:grid-cols-3"
+              : visibleCards.length === 4
+                ? "md:grid-cols-2 lg:grid-cols-4"
+                : "md:grid-cols-3 lg:grid-cols-5"
+          }`}
+        >
+          {Array.from({ length: visibleCards.length || 4 }).map((_, i) => (
             <SkeletonCard key={i} />
           ))}
         </div>
       ) : summary.data ? (
-        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
-          {SUMMARY_CARDS.map((card) => {
+        <div
+          className={`grid gap-4 grid-cols-2 ${
+            visibleCards.length <= 3
+              ? "lg:grid-cols-3"
+              : visibleCards.length === 4
+                ? "md:grid-cols-2 lg:grid-cols-4"
+                : "md:grid-cols-3 lg:grid-cols-5"
+          }`}
+        >
+          {visibleCards.map((card) => {
             const count = summary.data[card.key];
             const amount = card.amountKey ? summary.data[card.amountKey] : null;
-            const isOverdueHighlight =
-              card.border === "overdue" && count > 0;
+            const isOverdueHighlight = card.border === "overdue" && count > 0;
             const Icon = card.icon;
+            const href = buildHref(card);
 
-            return (
+            const cardContent = (
               <Card
-                key={card.key}
-                className={
+                className={`group relative h-full overflow-hidden border shadow-sm transition-all ${
                   isOverdueHighlight
-                    ? "border-red-300 bg-red-50/30 shadow-sm"
-                    : "shadow-sm"
-                }
+                    ? "border-red-300 bg-gradient-to-br from-red-50 to-white"
+                    : "bg-white"
+                } ${href ? "cursor-pointer hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-md" : ""}`}
               >
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    {card.label}
-                  </CardTitle>
-                  <div className={`rounded-lg p-2 ${card.bg}`}>
-                    <Icon className={`h-4 w-4 ${card.accent}`} />
+                <div className="flex h-full flex-col gap-3 p-5">
+                  <div className="flex items-start justify-between">
+                    <span className={`text-sm font-medium ${isOverdueHighlight ? "text-red-700" : "text-muted-foreground"}`}>
+                      {card.label}
+                    </span>
+                    <div className={`rounded-lg p-2 ${card.bg}`}>
+                      <Icon className={`h-4 w-4 ${card.accent}`} />
+                    </div>
                   </div>
-                </CardHeader>
-                <CardContent>
-                  <div className={`text-3xl font-bold ${isOverdueHighlight ? "text-red-700" : ""}`}>
-                    {count}
+                  <div className="mt-auto">
+                    <div className={`text-3xl font-bold tracking-tight ${isOverdueHighlight ? "text-red-700" : "text-gray-900"}`}>
+                      {count}
+                    </div>
+                    {amount !== null && Number(amount) > 0 && (
+                      <p className={`mt-1 text-xs ${isOverdueHighlight ? "font-semibold text-red-600" : "text-muted-foreground"}`}>
+                        {formatCurrency(amount)}
+                      </p>
+                    )}
                   </div>
-                  {amount !== null && (
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {formatCurrency(amount)} total
-                    </p>
-                  )}
-                </CardContent>
+                </div>
               </Card>
+            );
+
+            return href ? (
+              <Link key={card.key} href={href} className="block">
+                {cardContent}
+              </Link>
+            ) : (
+              <div key={card.key}>{cardContent}</div>
             );
           })}
         </div>
       ) : null}
 
       {/* Charts */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* Invoice Aging Bar Chart */}
-        {aging.isLoading ? (
+      <div className={`grid gap-6 ${canReceive ? "lg:grid-cols-2" : ""}`}>
+        {/* Invoice Aging Bar Chart — only for RECEIVE-capable accounts */}
+        {canReceive && aging.isLoading ? (
           <SkeletonChart />
-        ) : aging.data ? (
+        ) : canReceive && aging.data ? (
           <Card className="shadow-sm">
             <CardHeader>
               <CardTitle className="text-base font-semibold">

@@ -20,7 +20,16 @@ function InvoicesContent() {
   const canSend = companyModule === "SEND" || companyModule === "BOTH";
   const canReceive = companyModule === "RECEIVE" || companyModule === "BOTH";
   const defaultTab = canReceive && !canSend ? "received" : "sent";
-  const activeTab = searchParams.get("tab") ?? defaultTab;
+  const requestedTab = searchParams.get("tab") ?? defaultTab;
+  // If the requested tab isn't available for this user's module, fall back
+  const activeTab =
+    (requestedTab === "sent" && canSend) || (requestedTab === "received" && canReceive)
+      ? requestedTab
+      : defaultTab;
+
+  const urlStatus = searchParams.get("status") ?? undefined;
+  const urlSearch = searchParams.get("search") ?? undefined;
+  const urlCustomerId = searchParams.get("customerId") ?? undefined;
 
   const handleTabChange = (value: string) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -69,12 +78,12 @@ function InvoicesContent() {
         </TabsList>
         {canSend && (
           <TabsContent value="sent" className="mt-4">
-            <InvoiceTable type="sent" />
+            <InvoiceTable type="sent" initialStatus={urlStatus} initialSearch={urlSearch} initialCustomerId={urlCustomerId} />
           </TabsContent>
         )}
         {canReceive && (
           <TabsContent value="received" className="mt-4">
-            <InvoiceTable type="received" />
+            <InvoiceTable type="received" initialStatus={urlStatus} initialSearch={urlSearch} initialCustomerId={urlCustomerId} />
           </TabsContent>
         )}
       </Tabs>

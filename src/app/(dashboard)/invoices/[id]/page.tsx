@@ -20,6 +20,7 @@ import {
   MapPin,
   Trash2,
   CalendarClock,
+  Pencil,
 } from "lucide-react";
 
 import { api } from "~/trpc/react";
@@ -38,12 +39,23 @@ import {
   CardHeader,
   CardTitle,
 } from "~/components/ui/card";
-
-const routingStatusConfig: Record<string, { label: string; className: string }> = {
-  PENDING: { label: "Pending", className: "border-yellow-500 bg-yellow-50 text-yellow-700 dark:bg-yellow-950 dark:text-yellow-400" },
-  ACKNOWLEDGED: { label: "Acknowledged", className: "border-green-500 bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-400" },
-  FAILED: { label: "Failed", className: "bg-red-100 text-red-700 border-red-500 dark:bg-red-950 dark:text-red-400" },
-};
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "~/components/ui/dialog";
+import { Label } from "~/components/ui/label";
+import { Textarea } from "~/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "~/components/ui/select";
 
 const invoiceStatusConfig: Record<string, { label: string; className: string }> = {
   DRAFT: { label: "Draft", className: "bg-gray-100 text-gray-700 border-gray-300 dark:bg-gray-800 dark:text-gray-300" },
@@ -142,16 +154,6 @@ export default function InvoiceDetailPage() {
     },
   });
 
-  const acknowledgeInvoice = api.invoice.acknowledge.useMutation({
-    onSuccess: () => {
-      toast.success("Invoice acknowledged");
-      void utils.invoice.getById.invalidate({ id: params.id });
-    },
-    onError: () => {
-      toast.error("Failed to acknowledge invoice");
-    },
-  });
-
   const markPaid = api.invoice.markPaid.useMutation({
     onSuccess: () => {
       toast.success("Payment submitted — pending sender approval");
@@ -202,8 +204,47 @@ export default function InvoiceDetailPage() {
     },
   });
 
+  const updateInvoiceMut = api.invoice.update.useMutation({
+    onSuccess: () => {
+      toast.success("Invoice updated");
+      void utils.invoice.getById.invalidate({ id: params.id });
+      void utils.invoice.list.invalidate();
+      setEditOpen(false);
+    },
+    onError: (err) => {
+      toast.error(err.message || "Failed to update invoice");
+    },
+  });
+
+  const { data: customersData } = api.customer.list.useQuery({ limit: 100 });
+  const customerList = customersData?.customers ?? [];
+
   const [scheduleDate, setScheduleDate] = useState("");
   const [showDocument, setShowDocument] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<
+    | null
+    | {
+        title: string;
+        description: string;
+        confirmLabel: string;
+        onConfirm: () => void;
+        destructive?: boolean;
+      }
+  >(null);
+
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState({
+    invoiceNumber: "",
+    reference: "",
+    invoicedDate: "",
+    paymentTerms: 30,
+    currency: "SGD",
+    customerId: "",
+    fromAddress: "",
+    toAddress: "",
+    totalAmount: "",
+    notes: "",
+  });
 
   if (isLoading) {
     return (
@@ -241,30 +282,83 @@ export default function InvoiceDetailPage() {
   const isDueSoon = !isOverdue && daysUntilDue <= 20;
   const showUrgencyBanner = isReceived && (isOverdue || isDueSoon);
 
-  const rStatusConfig = routingStatusConfig[invoice.routingStatus];
   const iStatusConfig = invoiceStatusConfig[invoice.invoiceStatus];
 
   const isSender = !isReceived; // This user's company sent the invoice
   const isReceiver = isReceived; // This user's company received the invoice
 
   const canSend = isSender && invoice.invoiceStatus === "DRAFT";
-  const canAcknowledge = isReceiver && invoice.invoiceStatus === "SENT";
   const canMarkPaid =
     isReceiver &&
     (invoice.invoiceStatus === "SENT" || invoice.invoiceStatus === "OVERDUE");
   const canApprovePayment = isSender && invoice.invoiceStatus === "PENDING_APPROVAL";
   const canRejectPayment = isSender && invoice.invoiceStatus === "PENDING_APPROVAL";
   const canDelete = isSender && invoice.invoiceStatus === "DRAFT";
+  const canEdit = isSender && invoice.invoiceStatus === "DRAFT";
   const canSchedulePayment =
     isReceiver &&
     (invoice.invoiceStatus === "SENT" || invoice.invoiceStatus === "OVERDUE");
+
+  const openEdit = () => {
+    setEditForm({
+      invoiceNumber: invoice.invoiceNumber,
+      reference: invoice.reference ?? "",
+      invoicedDate: dayjs(invoice.invoicedDate).format("YYYY-MM-DD"),
+      paymentTerms: invoice.paymentTerms,
+      currency: invoice.currency,
+      customerId: invoice.customerId ?? "",
+      fromAddress: invoice.fromAddress ?? "",
+      toAddress: invoice.toAddress ?? "",
+      totalAmount: Number(invoice.amount).toFixed(2),
+      notes: invoice.notes ?? "",
+    });
+    setEditOpen(true);
+  };
+
+  const handleEditSave = () => {
+    if (!editForm.invoiceNumber.trim()) {
+      toast.error("Invoice number is required");
+      return;
+    }
+    const total = parseFloat(editForm.totalAmount) || 0;
+    updateInvoiceMut.mutate({
+      id: invoice.id,
+      invoiceNumber: editForm.invoiceNumber.trim(),
+      reference: editForm.reference.trim() || undefined,
+      invoicedDate: new Date(editForm.invoicedDate),
+      paymentTerms: editForm.paymentTerms,
+      currency: editForm.currency,
+      customerId: editForm.customerId || undefined,
+      fromAddress: editForm.fromAddress.trim() || undefined,
+      toAddress: editForm.toAddress.trim() || undefined,
+      notes: editForm.notes.trim() || undefined,
+      // Preserve existing line items; update total by passing a single synthetic item
+      // so the amount recalc reflects the user's edited total.
+      items: total > 0 ? [{
+        description: invoice.description || "Invoice total",
+        quantity: 1,
+        unitPrice: total,
+        amount: total,
+        sortOrder: 0,
+      }] : undefined,
+      taxRate: 0,
+    });
+  };
+
+  const askConfirm = (
+    title: string,
+    description: string,
+    confirmLabel: string,
+    onConfirm: () => void,
+    destructive = false,
+  ) => setConfirmAction({ title, description, confirmLabel, onConfirm, destructive });
 
   const timeline: TimelineEvent[] = (invoice.timelineItems as TimelineEvent[]) ?? [];
   const sortedTimeline = [...timeline].sort(
     (a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf()
   );
 
-  const hasActions = canSend || canAcknowledge || canSchedulePayment || canMarkPaid || canApprovePayment || canRejectPayment || canDelete;
+  const hasActions = canSend || canSchedulePayment || canMarkPaid || canApprovePayment || canRejectPayment || canDelete || canEdit;
 
   return (
     <div className="flex flex-col gap-4 p-3 pb-24 sm:gap-6 sm:p-6 sm:pb-6">
@@ -286,16 +380,15 @@ export default function InvoiceDetailPage() {
               <div>
                 <p className="text-lg font-bold">{invoice.invoiceNumber}</p>
                 <p className="text-sm text-muted-foreground">
-                  {isReceived ? `From ${invoice.senderCompany?.name ?? "Unknown"}` : `To ${invoice.customer?.name ?? "Unknown"}`}
+                  {isReceived ? `From ${invoice.senderCompany?.name ?? "Unknown"}` : `To ${invoice.customer?.company || invoice.customer?.name || "Unknown"}`}
                 </p>
               </div>
               <div className="text-right">
                 <p className="text-xl font-bold">{formatCurrency(invoice.amount, invoice.currency)}</p>
               </div>
             </div>
-            <div className="mt-3 flex flex-wrap gap-1.5">
-              <Badge variant="outline" className={iStatusConfig?.className}>{iStatusConfig?.label ?? invoice.invoiceStatus}</Badge>
-              <Badge variant="outline" className={rStatusConfig?.className}>{rStatusConfig?.label ?? invoice.routingStatus}</Badge>
+            <div className="mt-3 flex flex-wrap items-center gap-1.5">
+              <Badge variant="outline" className={iStatusConfig?.className}>{(invoice.invoiceStatus === "SENT" && isReceived) ? "Received" : (iStatusConfig?.label ?? invoice.invoiceStatus)}</Badge>
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
               <div>
@@ -363,31 +456,33 @@ export default function InvoiceDetailPage() {
         <div className="flex flex-col gap-2">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-3xl font-bold tracking-tight">{invoice.invoiceNumber}</h1>
-            <Badge variant="outline" className={iStatusConfig?.className}>{iStatusConfig?.label ?? invoice.invoiceStatus}</Badge>
-            <Badge variant="outline" className={rStatusConfig?.className}>{rStatusConfig?.label ?? invoice.routingStatus}</Badge>
+            <Badge variant="outline" className={iStatusConfig?.className}>{(invoice.invoiceStatus === "SENT" && isReceived) ? "Received" : (iStatusConfig?.label ?? invoice.invoiceStatus)}</Badge>
           </div>
           <p className="text-muted-foreground">
-            {isReceived ? `From ${invoice.senderCompany?.name ?? "Unknown"}` : `To ${invoice.customer?.name ?? "Unknown"}`}
+            {isReceived ? `From ${invoice.senderCompany?.name ?? "Unknown"}` : `To ${invoice.customer?.company || invoice.customer?.name || "Unknown"}`}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {canEdit && (
+            <Button variant="outline" onClick={openEdit}>
+              <Pencil className="mr-2 h-4 w-4" />
+              Edit
+            </Button>
+          )}
           {canSend && (
             <Button
-              onClick={() => sendInvoice.mutate({ id: invoice.id })}
+              onClick={() =>
+                askConfirm(
+                  "Send invoice?",
+                  `This will mark ${invoice.invoiceNumber} as sent and notify the recipient. You can revert via the status badge.`,
+                  "Send Invoice",
+                  () => sendInvoice.mutate({ id: invoice.id }),
+                )
+              }
               disabled={sendInvoice.isPending}
             >
               <Send className="mr-2 h-4 w-4" />
               {sendInvoice.isPending ? "Sending..." : "Send Invoice"}
-            </Button>
-          )}
-          {canAcknowledge && (
-            <Button
-              onClick={() => acknowledgeInvoice.mutate({ id: invoice.id })}
-              disabled={acknowledgeInvoice.isPending}
-              variant="outline"
-            >
-              <CheckCircle className="mr-2 h-4 w-4" />
-              {acknowledgeInvoice.isPending ? "Acknowledging..." : "Acknowledge"}
             </Button>
           )}
           {canSchedulePayment && (
@@ -426,7 +521,14 @@ export default function InvoiceDetailPage() {
           )}
           {canMarkPaid && (
             <Button
-              onClick={() => markPaid.mutate({ id: invoice.id })}
+              onClick={() =>
+                askConfirm(
+                  "Mark as paid?",
+                  "This submits the payment for sender approval. You can revert via the status badge.",
+                  "Mark as Paid",
+                  () => markPaid.mutate({ id: invoice.id }),
+                )
+              }
               disabled={markPaid.isPending}
               className="bg-green-600 hover:bg-green-700"
             >
@@ -436,7 +538,14 @@ export default function InvoiceDetailPage() {
           )}
           {canApprovePayment && (
             <Button
-              onClick={() => approvePayment.mutate({ id: invoice.id })}
+              onClick={() =>
+                askConfirm(
+                  "Approve this payment?",
+                  "This marks the invoice as paid. You can revert via the status badge.",
+                  "Approve Payment",
+                  () => approvePayment.mutate({ id: invoice.id }),
+                )
+              }
               disabled={approvePayment.isPending}
               className="bg-green-600 hover:bg-green-700"
             >
@@ -446,7 +555,15 @@ export default function InvoiceDetailPage() {
           )}
           {canRejectPayment && (
             <Button
-              onClick={() => rejectPayment.mutate({ id: invoice.id })}
+              onClick={() =>
+                askConfirm(
+                  "Reject this payment?",
+                  "This sends the invoice back to SENT. The receiver will be notified.",
+                  "Reject Payment",
+                  () => rejectPayment.mutate({ id: invoice.id }),
+                  true,
+                )
+              }
               disabled={rejectPayment.isPending}
               variant="destructive"
             >
@@ -457,11 +574,15 @@ export default function InvoiceDetailPage() {
             <Button
               variant="outline"
               className="text-red-600 hover:bg-red-50 hover:text-red-700"
-              onClick={() => {
-                if (window.confirm("Are you sure you want to delete this invoice?")) {
-                  deleteInvoice.mutate({ id: invoice.id });
-                }
-              }}
+              onClick={() =>
+                askConfirm(
+                  "Delete this invoice?",
+                  "This cannot be undone.",
+                  "Delete",
+                  () => deleteInvoice.mutate({ id: invoice.id }),
+                  true,
+                )
+              }
               disabled={deleteInvoice.isPending}
             >
               <Trash2 className="mr-2 h-4 w-4" />
@@ -552,7 +673,7 @@ export default function InvoiceDetailPage() {
                   <DetailRow
                     icon={Building2}
                     label="To"
-                    value={invoice.receiverCompany?.name ?? invoice.customer?.name ?? "-"}
+                    value={invoice.receiverCompany?.name ?? invoice.customer?.company ?? invoice.customer?.name ?? "-"}
                   />
                   <DetailRow
                     icon={MapPin}
@@ -619,33 +740,145 @@ export default function InvoiceDetailPage() {
       {/* Mobile: Sticky Bottom Action Bar */}
       {hasActions && (
         <div className="fixed bottom-0 left-0 right-0 z-50 flex items-center gap-2 border-t bg-white px-4 py-3 shadow-lg sm:hidden">
+          {canEdit && (
+            <Button size="sm" variant="outline" className="flex-1" onClick={openEdit}>
+              <Pencil className="mr-1.5 h-3.5 w-3.5" /> Edit
+            </Button>
+          )}
           {canSend && (
-            <Button size="sm" className="flex-1" onClick={() => sendInvoice.mutate({ id: invoice.id })} disabled={sendInvoice.isPending}>
+            <Button size="sm" className="flex-1" onClick={() => askConfirm("Send invoice?", `Mark ${invoice.invoiceNumber} as sent and notify the recipient.`, "Send", () => sendInvoice.mutate({ id: invoice.id }))} disabled={sendInvoice.isPending}>
               <Send className="mr-1.5 h-3.5 w-3.5" /> Send
             </Button>
           )}
-          {canAcknowledge && (
-            <Button size="sm" variant="outline" className="flex-1" onClick={() => acknowledgeInvoice.mutate({ id: invoice.id })} disabled={acknowledgeInvoice.isPending}>
-              Acknowledge
-            </Button>
-          )}
           {canMarkPaid && (
-            <Button size="sm" className="flex-1 bg-green-600 hover:bg-green-700" onClick={() => markPaid.mutate({ id: invoice.id })} disabled={markPaid.isPending}>
+            <Button size="sm" className="flex-1 bg-green-600 hover:bg-green-700" onClick={() => askConfirm("Mark as paid?", "Submits for sender approval.", "Mark Paid", () => markPaid.mutate({ id: invoice.id }))} disabled={markPaid.isPending}>
               Mark Paid
             </Button>
           )}
           {canApprovePayment && (
-            <Button size="sm" className="flex-1 bg-green-600 hover:bg-green-700" onClick={() => approvePayment.mutate({ id: invoice.id })} disabled={approvePayment.isPending}>
+            <Button size="sm" className="flex-1 bg-green-600 hover:bg-green-700" onClick={() => askConfirm("Approve this payment?", "Marks the invoice as paid.", "Approve", () => approvePayment.mutate({ id: invoice.id }))} disabled={approvePayment.isPending}>
               Approve
             </Button>
           )}
           {canRejectPayment && (
-            <Button size="sm" variant="destructive" className="flex-1" onClick={() => rejectPayment.mutate({ id: invoice.id })} disabled={rejectPayment.isPending}>
+            <Button size="sm" variant="destructive" className="flex-1" onClick={() => askConfirm("Reject this payment?", "Sends the invoice back to SENT.", "Reject", () => rejectPayment.mutate({ id: invoice.id }), true)} disabled={rejectPayment.isPending}>
               Reject
             </Button>
           )}
         </div>
       )}
+
+      {/* Edit Draft Dialog */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Edit Draft Invoice</DialogTitle>
+            <DialogDescription>
+              Update fields below and save. Editing is only available while the invoice is still a draft.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="grid gap-1.5">
+              <Label>Invoice Number <span className="text-red-600">*</span></Label>
+              <Input value={editForm.invoiceNumber} onChange={(e) => setEditForm({ ...editForm, invoiceNumber: e.target.value })} />
+            </div>
+            <div className="grid gap-1.5">
+              <Label>Customer</Label>
+              <Select value={editForm.customerId || "__none__"} onValueChange={(v) => setEditForm({ ...editForm, customerId: v === "__none__" ? "" : v })}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select customer..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">— No customer —</SelectItem>
+                  {customerList.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.company || c.name}
+                      {c.company ? ` · ${c.name}` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-1.5">
+              <Label>Reference</Label>
+              <Input value={editForm.reference} onChange={(e) => setEditForm({ ...editForm, reference: e.target.value })} placeholder="PO number, reference…" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label>Invoice Date</Label>
+                <Input type="date" value={editForm.invoicedDate} onChange={(e) => setEditForm({ ...editForm, invoicedDate: e.target.value })} />
+              </div>
+              <div className="grid gap-1.5">
+                <Label>Payment Terms (days)</Label>
+                <Input type="number" min={0} value={editForm.paymentTerms} onChange={(e) => setEditForm({ ...editForm, paymentTerms: parseInt(e.target.value) || 0 })} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label>Currency</Label>
+                <Input value={editForm.currency} onChange={(e) => setEditForm({ ...editForm, currency: e.target.value.toUpperCase() })} />
+              </div>
+              <div className="grid gap-1.5">
+                <Label>Total Amount</Label>
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  value={editForm.totalAmount}
+                  onChange={(e) => setEditForm({ ...editForm, totalAmount: e.target.value.replace(/[^\d.]/g, "") })}
+                />
+              </div>
+            </div>
+            <div className="grid gap-1.5">
+              <Label>From Address</Label>
+              <Textarea rows={2} value={editForm.fromAddress} onChange={(e) => setEditForm({ ...editForm, fromAddress: e.target.value })} />
+            </div>
+            <div className="grid gap-1.5">
+              <Label>To Address</Label>
+              <Textarea rows={2} value={editForm.toAddress} onChange={(e) => setEditForm({ ...editForm, toAddress: e.target.value })} />
+            </div>
+            <div className="grid gap-1.5">
+              <Label>Notes</Label>
+              <Textarea rows={2} value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
+            <Button onClick={handleEditSave} disabled={updateInvoiceMut.isPending}>
+              {updateInvoiceMut.isPending ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Shared confirmation dialog for status-changing actions */}
+      <Dialog open={!!confirmAction} onOpenChange={(open) => { if (!open) setConfirmAction(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-red-100">
+              <AlertTriangle className="h-5 w-5 text-red-600" />
+            </div>
+            <DialogTitle>{confirmAction?.title}</DialogTitle>
+            <DialogDescription>
+              {confirmAction?.description}
+              <span className="mt-2 block font-medium text-red-600">
+                Once changed, this cannot be undone.
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setConfirmAction(null)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                confirmAction?.onConfirm();
+                setConfirmAction(null);
+              }}
+            >
+              {confirmAction?.confirmLabel}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Mobile: Full-screen Document Viewer */}
       {showDocument && invoice.fileUrl && (

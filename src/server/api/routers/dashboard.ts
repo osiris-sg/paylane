@@ -9,66 +9,64 @@ export const dashboardRouter = createTRPCRouter({
     const companyId = user.companyId;
     const now = new Date();
 
+    const pendingWhere = {
+      OR: [
+        { senderCompanyId: companyId },
+        { receiverCompanyId: companyId },
+      ],
+      invoiceStatus: { in: ["SENT", "PENDING_APPROVAL"] as const },
+    };
+    const paidWhere = {
+      OR: [
+        { senderCompanyId: companyId },
+        { receiverCompanyId: companyId },
+      ],
+      invoiceStatus: "PAID" as const,
+    };
+    const overdueWhere = {
+      OR: [
+        { senderCompanyId: companyId },
+        { receiverCompanyId: companyId },
+      ],
+      dueDate: { lt: now },
+      invoiceStatus: { notIn: ["PAID", "CANCELLED"] as const },
+    };
+
     const [
       totalSent,
       totalReceived,
       pending,
-      acknowledged,
       paid,
       overdue,
       sentAggregation,
       receivedAggregation,
+      pendingAggregation,
+      paidAggregation,
+      overdueAggregation,
     ] = await Promise.all([
-      ctx.db.invoice.count({
-        where: { senderCompanyId: companyId },
-      }),
-      ctx.db.invoice.count({
-        where: { receiverCompanyId: companyId },
-      }),
-      ctx.db.invoice.count({
-        where: { senderCompanyId: companyId, routingStatus: "PENDING" },
-      }),
-      ctx.db.invoice.count({
-        where: { senderCompanyId: companyId, routingStatus: "ACKNOWLEDGED" },
-      }),
-      ctx.db.invoice.count({
-        where: {
-          OR: [
-            { senderCompanyId: companyId },
-            { receiverCompanyId: companyId },
-          ],
-          invoiceStatus: "PAID",
-        },
-      }),
-      ctx.db.invoice.count({
-        where: {
-          OR: [
-            { senderCompanyId: companyId },
-            { receiverCompanyId: companyId },
-          ],
-          dueDate: { lt: now },
-          invoiceStatus: { notIn: ["PAID", "CANCELLED"] },
-        },
-      }),
-      ctx.db.invoice.aggregate({
-        where: { senderCompanyId: companyId },
-        _sum: { amount: true },
-      }),
-      ctx.db.invoice.aggregate({
-        where: { receiverCompanyId: companyId },
-        _sum: { amount: true },
-      }),
+      ctx.db.invoice.count({ where: { senderCompanyId: companyId } }),
+      ctx.db.invoice.count({ where: { receiverCompanyId: companyId } }),
+      ctx.db.invoice.count({ where: pendingWhere }),
+      ctx.db.invoice.count({ where: paidWhere }),
+      ctx.db.invoice.count({ where: overdueWhere }),
+      ctx.db.invoice.aggregate({ where: { senderCompanyId: companyId }, _sum: { amount: true } }),
+      ctx.db.invoice.aggregate({ where: { receiverCompanyId: companyId }, _sum: { amount: true } }),
+      ctx.db.invoice.aggregate({ where: pendingWhere, _sum: { amount: true } }),
+      ctx.db.invoice.aggregate({ where: paidWhere, _sum: { amount: true } }),
+      ctx.db.invoice.aggregate({ where: overdueWhere, _sum: { amount: true } }),
     ]);
 
     return {
       totalSent,
       totalReceived,
       pending,
-      acknowledged,
       overdue,
       paid,
       totalAmountSent: sentAggregation._sum.amount ?? 0,
       totalAmountReceived: receivedAggregation._sum.amount ?? 0,
+      totalAmountPending: pendingAggregation._sum.amount ?? 0,
+      totalAmountPaid: paidAggregation._sum.amount ?? 0,
+      totalAmountOverdue: overdueAggregation._sum.amount ?? 0,
     };
   }),
 

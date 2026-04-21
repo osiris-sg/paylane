@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { api } from "~/trpc/react";
 import { toast } from "sonner";
 import {
@@ -30,7 +31,6 @@ import {
   Mail,
   Phone,
   MapPin,
-  Building2,
   FileText,
   ChevronLeft,
   ChevronRight,
@@ -54,6 +54,7 @@ const emptyForm: CustomerFormData = {
 };
 
 export default function CustomersPage() {
+  const router = useRouter();
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -150,17 +151,17 @@ export default function CustomersPage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name.trim()) {
-      toast.error("Customer name is required");
+    if (!formData.company.trim()) {
+      toast.error("Company name is required");
       return;
     }
 
     const payload = {
-      name: formData.name.trim(),
+      company: formData.company.trim(),
+      name: formData.name.trim() || undefined,
       email: formData.email.trim() || undefined,
       phone: formData.phone.trim() || undefined,
       address: formData.address.trim() || undefined,
-      company: formData.company.trim() || undefined,
     };
 
     if (editingId) {
@@ -181,28 +182,28 @@ export default function CustomersPage() {
   return (
     <div className="flex flex-col gap-6">
       {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Customers</h1>
-          <p className="text-muted-foreground">
-            Manage your customers and their information.
-          </p>
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight">Customers</h1>
+        <p className="text-muted-foreground">
+          Manage your customers and their information.
+        </p>
+      </div>
+
+      {/* Search + Add Customer */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative w-full max-w-sm">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search customers..."
+            value={search}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            className="pl-9"
+          />
         </div>
         <Button onClick={openCreateDialog}>
           <Plus className="mr-2 h-4 w-4" />
           Add Customer
         </Button>
-      </div>
-
-      {/* Search */}
-      <div className="relative max-w-sm">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder="Search customers..."
-          value={search}
-          onChange={(e) => handleSearchChange(e.target.value)}
-          className="pl-9"
-        />
       </div>
 
       {/* Loading Skeleton */}
@@ -252,17 +253,20 @@ export default function CustomersPage() {
         <>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {data.customers.map((customer) => (
-              <Card key={customer.id} className="transition-shadow hover:shadow-md">
+              <Card
+                key={customer.id}
+                onClick={() => router.push(`/invoices?tab=sent&customerId=${customer.id}`)}
+                className="cursor-pointer transition-shadow hover:shadow-md"
+              >
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
                     <div className="min-w-0 flex-1">
                       <CardTitle className="truncate text-lg">
-                        {customer.name}
+                        {customer.company || customer.name}
                       </CardTitle>
                       {customer.company && (
                         <p className="flex items-center gap-1 truncate text-sm text-muted-foreground">
-                          <Building2 className="h-3 w-3 shrink-0" />
-                          {customer.company}
+                          {customer.name}
                         </p>
                       )}
                     </div>
@@ -298,7 +302,7 @@ export default function CustomersPage() {
                       {customer._count.invoices}{" "}
                       {customer._count.invoices === 1 ? "invoice" : "invoices"}
                     </Badge>
-                    <div className="flex gap-1">
+                    <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
                       <Button
                         variant="ghost"
                         size="icon"
@@ -376,9 +380,21 @@ export default function CustomersPage() {
           <form onSubmit={handleSubmit}>
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
-                <Label htmlFor="name">
-                  Name <span className="text-destructive">*</span>
+                <Label htmlFor="company">
+                  Company <span className="text-destructive">*</span>
                 </Label>
+                <Input
+                  id="company"
+                  placeholder="Acme Inc."
+                  value={formData.company}
+                  onChange={(e) =>
+                    setFormData((prev) => ({ ...prev, company: e.target.value }))
+                  }
+                  required
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="name">Contact Name</Label>
                 <Input
                   id="name"
                   placeholder="John Doe"
@@ -386,7 +402,6 @@ export default function CustomersPage() {
                   onChange={(e) =>
                     setFormData((prev) => ({ ...prev, name: e.target.value }))
                   }
-                  required
                 />
               </div>
               <div className="grid gap-2">
@@ -394,7 +409,7 @@ export default function CustomersPage() {
                 <Input
                   id="email"
                   type="email"
-                  placeholder="john@example.com"
+                  placeholder="accounts@acme.com"
                   value={formData.email}
                   onChange={(e) =>
                     setFormData((prev) => ({ ...prev, email: e.target.value }))
@@ -410,17 +425,6 @@ export default function CustomersPage() {
                   value={formData.phone}
                   onChange={(e) =>
                     setFormData((prev) => ({ ...prev, phone: e.target.value }))
-                  }
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="company">Company</Label>
-                <Input
-                  id="company"
-                  placeholder="Acme Inc."
-                  value={formData.company}
-                  onChange={(e) =>
-                    setFormData((prev) => ({ ...prev, company: e.target.value }))
                   }
                 />
               </div>

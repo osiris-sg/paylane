@@ -38,6 +38,16 @@ import {
   PopoverTrigger,
 } from "~/components/ui/popover";
 import { Input } from "~/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "~/components/ui/dialog";
+import { Label } from "~/components/ui/label";
+import { UserPlus } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -45,6 +55,7 @@ type InvoiceStatus = "extracting" | "ready" | "error" | "saving" | "saved" | "se
 
 interface UploadedInvoice {
   id: string;
+  dbId?: string; // Set after auto-save as draft
   fileName: string;
   fileSize: number;
   file: File;
@@ -84,12 +95,16 @@ function CustomerPicker({
   customers,
   selectedId,
   onSelect,
+  onAddNew,
   label,
+  warnWhenEmpty = true,
 }: {
   customers: { id: string; name: string; company: string | null; email: string | null }[];
   selectedId: string;
   onSelect: (id: string) => void;
+  onAddNew?: () => void;
   label?: string;
+  warnWhenEmpty?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -99,14 +114,30 @@ function CustomerPicker({
     return c.name.toLowerCase().includes(q) || (c.company ?? "").toLowerCase().includes(q) || (c.email ?? "").toLowerCase().includes(q);
   });
 
+  const hasSelection = !!selected;
+  const showWarning = !hasSelection && warnWhenEmpty;
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button className="flex w-full items-center gap-1 rounded px-1 py-0.5 text-left text-sm hover:bg-gray-50">
+        <button
+          className={`flex w-full items-center gap-1 rounded border px-2 py-1 text-left text-sm transition ${
+            hasSelection
+              ? "border-transparent hover:bg-gray-50"
+              : showWarning
+                ? "border-red-300 bg-red-50 text-red-700 hover:bg-red-100"
+                : "border-gray-200 hover:bg-gray-50"
+          }`}
+        >
           {selected ? (
-            <span className="truncate font-medium">{selected.name}</span>
+            <span className="truncate font-medium">{selected.company || selected.name}</span>
+          ) : showWarning ? (
+            <>
+              <AlertCircle className="h-3.5 w-3.5 shrink-0 text-red-600" />
+              <span className="truncate font-medium">{label ?? "Assign customer"}</span>
+            </>
           ) : (
-            <span className="text-muted-foreground">{label ?? "Select..."}</span>
+            <span className="truncate text-muted-foreground">{label ?? "Assign customer..."}</span>
           )}
           <ChevronsUpDown className="ml-auto h-3 w-3 shrink-0 opacity-50" />
         </button>
@@ -122,14 +153,32 @@ function CustomerPicker({
           {filtered.length === 0 ? (
             <p className="py-3 text-center text-xs text-muted-foreground">No customers</p>
           ) : (
-            filtered.map((c) => (
-              <button key={c.id} onClick={() => { onSelect(c.id); setOpen(false); setSearch(""); }} className={`flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-100 ${c.id === selectedId ? "bg-blue-50" : ""}`}>
-                <span className="truncate">{c.name}</span>
-                {c.id === selectedId && <Check className="ml-auto h-3.5 w-3.5 text-blue-600" />}
-              </button>
-            ))
+            filtered.map((c) => {
+              const primary = c.company || c.name;
+              const secondary = c.company ? c.name : null;
+              return (
+                <button key={c.id} onClick={() => { onSelect(c.id); setOpen(false); setSearch(""); }} className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-gray-100 ${c.id === selectedId ? "bg-blue-50" : ""}`}>
+                  <div className="min-w-0 flex-1 text-left">
+                    <p className="truncate text-left">{primary}</p>
+                    {secondary && <p className="truncate text-left text-xs text-muted-foreground">{secondary}</p>}
+                  </div>
+                  {c.id === selectedId && <Check className="ml-auto h-3.5 w-3.5 shrink-0 text-blue-600" />}
+                </button>
+              );
+            })
           )}
         </div>
+        {onAddNew && (
+          <div className="border-t p-1">
+            <button
+              onClick={() => { setOpen(false); setSearch(""); onAddNew(); }}
+              className="flex w-full items-center gap-2 rounded px-3 py-1.5 text-left text-sm font-medium text-blue-600 hover:bg-blue-50"
+            >
+              <UserPlus className="h-3.5 w-3.5" />
+              Add Customer
+            </button>
+          </div>
+        )}
       </PopoverContent>
     </Popover>
   );
@@ -137,12 +186,16 @@ function CustomerPicker({
 
 // ─── Status Badge ─────────────────────────────────────────────────────────────
 
-function StatusBadge({ status }: { status: InvoiceStatus }) {
+function StatusBadge({ status, hasDbId }: { status: InvoiceStatus; hasDbId?: boolean }) {
   switch (status) {
     case "extracting":
       return <Badge variant="outline" className="gap-1 border-blue-300 bg-blue-50 text-blue-700"><Loader2 className="h-3 w-3 animate-spin" />Extracting</Badge>;
     case "ready":
-      return <Badge variant="outline" className="gap-1 border-green-300 bg-green-50 text-green-700"><Check className="h-3 w-3" />Ready</Badge>;
+      return hasDbId ? (
+        <Badge variant="outline" className="gap-1 border-green-300 bg-green-50 text-green-700"><Check className="h-3 w-3" />Draft Saved</Badge>
+      ) : (
+        <Badge variant="outline" className="gap-1 border-amber-300 bg-amber-50 text-amber-700"><Loader2 className="h-3 w-3 animate-spin" />Saving…</Badge>
+      );
     case "error":
       return <Badge variant="outline" className="gap-1 border-red-300 bg-red-50 text-red-700"><AlertCircle className="h-3 w-3" />Error</Badge>;
     case "saving":
@@ -164,11 +217,61 @@ export default function UploadInvoicePage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [dragOver, setDragOver] = useState(false);
 
-  const { data: customersData } = api.customer.list.useQuery({ limit: 100 });
+  const utils = api.useUtils();
+
+  const { data: customersData, refetch: refetchCustomers } = api.customer.list.useQuery({ limit: 100 });
   const customers = customersData?.customers ?? [];
 
-  const createInvoice = api.invoice.create.useMutation();
-  const sendInvoice = api.invoice.send.useMutation();
+  const invalidateInvoices = () => {
+    void utils.invoice.list.invalidate();
+  };
+
+  const createInvoice = api.invoice.create.useMutation({ onSuccess: invalidateInvoices });
+  const updateInvoiceMut = api.invoice.update.useMutation({ onSuccess: invalidateInvoices });
+  const deleteInvoice = api.invoice.delete.useMutation({ onSuccess: invalidateInvoices });
+  const sendInvoice = api.invoice.send.useMutation({ onSuccess: invalidateInvoices });
+  const createCustomer = api.customer.create.useMutation();
+
+  // Add-customer dialog state
+  const [addCustomerFor, setAddCustomerFor] = useState<string | null>(null); // invoice id or "bulk"
+  const [newCust, setNewCust] = useState({ name: "", email: "", phone: "", company: "", address: "" });
+
+  const resetNewCust = () => setNewCust({ name: "", email: "", phone: "", company: "", address: "" });
+
+  const openAddCustomer = (forId: string, prefill?: { name?: string; email?: string }) => {
+    resetNewCust();
+    if (prefill) {
+      // AI usually extracts the company/bill-to name — prefill that as the company
+      setNewCust((p) => ({ ...p, company: prefill.name ?? "", email: prefill.email ?? "" }));
+    }
+    setAddCustomerFor(forId);
+  };
+
+  const handleCreateCustomer = async () => {
+    if (!newCust.company.trim()) { toast.error("Company name is required"); return; }
+    try {
+      const created = await createCustomer.mutateAsync({
+        company: newCust.company.trim(),
+        name: newCust.name.trim() || undefined,
+        email: newCust.email.trim() || undefined,
+        phone: newCust.phone.trim() || undefined,
+        address: newCust.address.trim() || undefined,
+      });
+      await refetchCustomers();
+      toast.success("Customer added");
+      // Auto-assign to the triggering invoice (or all selected if bulk)
+      if (addCustomerFor === "bulk") {
+        setInvoices((prev) => prev.map((inv) => (selectedIds.has(inv.id) ? { ...inv, customerId: created.id } : inv)));
+      } else if (addCustomerFor) {
+        updateInvoice(addCustomerFor, { customerId: created.id });
+      }
+      setAddCustomerFor(null);
+      resetNewCust();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to add customer";
+      toast.error(msg);
+    }
+  };
 
   // ─── Add Files & Extract Immediately ─────────────────────────────────
 
@@ -203,6 +306,12 @@ export default function UploadInvoicePage() {
       const taxAmt = data.taxAmount ?? sub * ((data.taxRate ?? 9) / 100);
       const total = data.totalAmount ?? sub + taxAmt;
 
+      const invoiceNumber = data.invoiceNumber || `DRAFT-${id}`;
+      const invoicedDate = data.invoicedDate || dayjs().format("YYYY-MM-DD");
+      const paymentTerms = data.paymentTerms ?? 30;
+      const currency = data.currency ?? "SGD";
+      const taxRate = data.taxRate ?? 9;
+
       setInvoices((prev) =>
         prev.map((x) =>
           x.id === id
@@ -210,15 +319,15 @@ export default function UploadInvoicePage() {
                 ...x,
                 status: "ready" as const,
                 fileDataUrl,
-                invoiceNumber: data.invoiceNumber ?? "",
+                invoiceNumber,
                 customerName: data.customerName ?? "",
                 customerEmail: data.customerEmail ?? "",
                 reference: data.reference ?? "",
-                invoicedDate: data.invoicedDate ?? dayjs().format("YYYY-MM-DD"),
+                invoicedDate,
                 dueDate: data.dueDate ?? "",
-                paymentTerms: data.paymentTerms ?? 30,
-                currency: data.currency ?? "SGD",
-                taxRate: data.taxRate ?? 9,
+                paymentTerms,
+                currency,
+                taxRate,
                 totalAmount: total,
                 subtotal: sub,
                 taxAmount: taxAmt,
@@ -229,6 +338,57 @@ export default function UploadInvoicePage() {
             : x,
         ),
       );
+
+      // Auto-save as DRAFT so user sees it in the invoice list even if they exit now.
+      // If the AI-extracted invoice number collides with an existing one, retry with a
+      // unique suffix so the draft still gets saved.
+      const tryAutoSave = async (numberToUse: string) => {
+        return createInvoice.mutateAsync({
+          invoiceNumber: numberToUse,
+          reference: data.reference || undefined,
+          invoicedDate: new Date(invoicedDate),
+          paymentTerms,
+          currency,
+          customerId: matchedCustomerId || undefined,
+          taxRate,
+          notes: data.notes || undefined,
+          fileUrl: fileDataUrl,
+          items: (data.items ?? []).filter((i: { description?: string }) => i.description).map((item: { description: string; quantity: number; unitPrice: number; amount: number }, idx: number) => ({
+            description: item.description,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            amount: item.amount,
+            sortOrder: idx,
+          })),
+          totalAmount: total,
+          subtotal: sub,
+          taxAmount: taxAmt,
+        });
+      };
+
+      try {
+        let created;
+        try {
+          created = await tryAutoSave(invoiceNumber);
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (msg.toLowerCase().includes("already exists")) {
+            // Unique-constraint conflict — retry with a disambiguated number
+            const retryNumber = `${invoiceNumber}-${id.slice(0, 6)}`;
+            created = await tryAutoSave(retryNumber);
+            setInvoices((prev) => prev.map((x) => (x.id === id ? { ...x, invoiceNumber: retryNumber } : x)));
+            toast.info(`Invoice number conflicted — saved as ${retryNumber}`);
+          } else {
+            throw err;
+          }
+        }
+        setInvoices((prev) => prev.map((x) => (x.id === id ? { ...x, dbId: created!.id } : x)));
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "Auto-save failed";
+        console.error("Auto-save draft failed:", err);
+        toast.error(`Auto-save failed: ${msg}`);
+        setInvoices((prev) => prev.map((x) => (x.id === id ? { ...x, status: "error" as const, error: msg } : x)));
+      }
     } catch (error) {
       setInvoices((prev) =>
         prev.map((x) => (x.id === id ? { ...x, status: "error" as const, error: String(error), fileDataUrl } : x)),
@@ -306,6 +466,11 @@ export default function UploadInvoicePage() {
   };
 
   const removeInvoice = (id: string) => {
+    const inv = invoices.find((x) => x.id === id);
+    if (inv?.dbId) {
+      // Also delete the auto-saved draft from the DB so it doesn't linger
+      deleteInvoice.mutate({ id: inv.dbId });
+    }
     setInvoices((prev) => prev.filter((inv) => inv.id !== id));
     setSelectedIds((prev) => { const next = new Set(prev); next.delete(id); return next; });
   };
@@ -327,7 +492,35 @@ export default function UploadInvoicePage() {
     items: inv.items.filter((i) => i.description).map((item, idx) => ({
       description: item.description, quantity: item.quantity, unitPrice: item.unitPrice, amount: item.amount, sortOrder: idx,
     })),
+    totalAmount: inv.totalAmount,
+    subtotal: inv.subtotal,
+    taxAmount: inv.taxAmount,
   });
+
+  // Persist latest local edits to the already-saved draft
+  const persistEdits = async (inv: UploadedInvoice) => {
+    if (!inv.dbId) {
+      // Fallback: create if auto-save didn't happen
+      const created = await createInvoice.mutateAsync(buildPayload(inv));
+      return created.id;
+    }
+    await updateInvoiceMut.mutateAsync({
+      id: inv.dbId,
+      invoiceNumber: inv.invoiceNumber,
+      reference: inv.reference || undefined,
+      invoicedDate: new Date(inv.invoicedDate || new Date()),
+      paymentTerms: inv.paymentTerms,
+      currency: inv.currency,
+      customerId: inv.customerId || undefined,
+      taxRate: inv.taxRate,
+      notes: inv.notes || undefined,
+      fileUrl: inv.fileDataUrl ?? undefined,
+      items: inv.items.filter((i) => i.description).map((item, idx) => ({
+        description: item.description, quantity: item.quantity, unitPrice: item.unitPrice, amount: item.amount, sortOrder: idx,
+      })),
+    });
+    return inv.dbId;
+  };
 
   const handleBulkSave = async () => {
     const toSave = invoices.filter((i) => selectedIds.has(i.id) && i.status === "ready");
@@ -336,7 +529,7 @@ export default function UploadInvoicePage() {
       if (!inv.invoiceNumber) { toast.error(`Missing invoice number for ${inv.fileName}`); continue; }
       updateInvoice(inv.id, { status: "saving" });
       try {
-        await createInvoice.mutateAsync(buildPayload(inv));
+        await persistEdits(inv);
         updateInvoice(inv.id, { status: "saved" });
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "Save failed";
@@ -356,8 +549,8 @@ export default function UploadInvoicePage() {
       if (!inv.customerId) { toast.error(`No customer selected for ${inv.invoiceNumber}`); continue; }
       updateInvoice(inv.id, { status: "saving" });
       try {
-        const created = await createInvoice.mutateAsync(buildPayload(inv));
-        await sendInvoice.mutateAsync({ id: created.id });
+        const persistedId = await persistEdits(inv);
+        await sendInvoice.mutateAsync({ id: persistedId });
         updateInvoice(inv.id, { status: "sent" });
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "Send failed";
@@ -370,6 +563,12 @@ export default function UploadInvoicePage() {
   };
 
   const handleBulkRemove = () => {
+    // Delete any auto-saved drafts from DB too
+    invoices.forEach((inv) => {
+      if (selectedIds.has(inv.id) && inv.dbId) {
+        deleteInvoice.mutate({ id: inv.dbId });
+      }
+    });
     setInvoices((prev) => prev.filter((inv) => !selectedIds.has(inv.id)));
     setSelectedIds(new Set());
   };
@@ -463,9 +662,11 @@ export default function UploadInvoicePage() {
               {isSomeSelected ? (
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-sm font-medium">{selectedIds.size} selected</span>
-                  <div className="w-[180px]">
-                    <CustomerPicker customers={customers} selectedId="" onSelect={bulkAssignCustomer} label="Assign customer..." />
-                  </div>
+                  {invoices.some((i) => selectedIds.has(i.id) && !i.customerId) && (
+                    <div className="w-[180px]">
+                      <CustomerPicker customers={customers} selectedId="" onSelect={bulkAssignCustomer} onAddNew={() => openAddCustomer("bulk")} label="Assign customer..." />
+                    </div>
+                  )}
                   <Button size="sm" variant="outline" onClick={handleBulkSave} disabled={false} className="border-green-300 text-green-700 hover:bg-green-50">
                     <Save className="mr-1.5 h-3.5 w-3.5" />Save Drafts
                   </Button>
@@ -532,6 +733,7 @@ export default function UploadInvoicePage() {
                               customers={customers}
                               selectedId={inv.customerId}
                               onSelect={(id) => updateInvoice(inv.id, { customerId: id })}
+                              onAddNew={() => openAddCustomer(inv.id, { name: inv.customerName, email: inv.customerEmail })}
                             />
                           ) : (
                             <span className="text-sm text-muted-foreground">—</span>
@@ -560,12 +762,22 @@ export default function UploadInvoicePage() {
                         </TableCell>
                         <TableCell>
                           {isActionable ? (
-                            <Input type="number" min={0} step={0.01} className="h-7 w-28 border-gray-200 text-right text-sm" value={inv.totalAmount} onChange={(e) => updateInvoice(inv.id, { totalAmount: parseFloat(e.target.value) || 0 })} />
+                            <Input
+                              type="text"
+                              inputMode="decimal"
+                              className="h-7 w-28 border-gray-200 text-right text-sm"
+                              value={inv.totalAmount > 0 ? inv.totalAmount.toFixed(2) : ""}
+                              onChange={(e) => {
+                                const raw = e.target.value.replace(/[^\d.]/g, "");
+                                const num = parseFloat(raw);
+                                updateInvoice(inv.id, { totalAmount: isNaN(num) ? 0 : num });
+                              }}
+                            />
                           ) : (
                             <span className="text-right font-medium tabular-nums">{inv.totalAmount > 0 ? formatCurrency(inv.totalAmount, inv.currency) : "—"}</span>
                           )}
                         </TableCell>
-                        <TableCell><StatusBadge status={inv.status} /></TableCell>
+                        <TableCell><StatusBadge status={inv.status} hasDbId={!!inv.dbId} /></TableCell>
                         <TableCell>
                           <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-red-500" onClick={() => removeInvoice(inv.id)}>
                             <X className="h-3.5 w-3.5" />
@@ -580,6 +792,49 @@ export default function UploadInvoicePage() {
           </div>
         )}
       </div>
+
+      {/* Add Customer Dialog */}
+      <Dialog open={!!addCustomerFor} onOpenChange={(open) => { if (!open) { setAddCustomerFor(null); resetNewCust(); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add a new customer</DialogTitle>
+            <DialogDescription>
+              This customer will be saved to your account and auto-assigned to{" "}
+              {addCustomerFor === "bulk" ? "the selected invoices" : "this invoice"}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid gap-1.5">
+              <Label htmlFor="cust-company">
+                Company <span className="text-red-600">*</span>
+              </Label>
+              <Input id="cust-company" value={newCust.company} onChange={(e) => setNewCust({ ...newCust, company: e.target.value })} placeholder="Acme Pte Ltd" />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="cust-name">Contact Name</Label>
+              <Input id="cust-name" value={newCust.name} onChange={(e) => setNewCust({ ...newCust, name: e.target.value })} placeholder="John Doe" />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="cust-email">Email</Label>
+              <Input id="cust-email" type="email" value={newCust.email} onChange={(e) => setNewCust({ ...newCust, email: e.target.value })} placeholder="john@acme.com" />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="cust-phone">Phone</Label>
+              <Input id="cust-phone" value={newCust.phone} onChange={(e) => setNewCust({ ...newCust, phone: e.target.value })} placeholder="+65 1234 5678" />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="cust-address">Address</Label>
+              <Input id="cust-address" value={newCust.address} onChange={(e) => setNewCust({ ...newCust, address: e.target.value })} placeholder="123 Example St, Singapore" />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => { setAddCustomerFor(null); resetNewCust(); }}>Cancel</Button>
+            <Button onClick={handleCreateCustomer} disabled={createCustomer.isPending || !newCust.company.trim()}>
+              {createCustomer.isPending ? "Saving..." : "Add Customer"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

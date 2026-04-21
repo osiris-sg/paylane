@@ -1,7 +1,9 @@
 "use client";
 
-import { Bell } from "lucide-react";
+import { Bell, LogOut } from "lucide-react";
 import Link from "next/link";
+import { useClerk } from "@clerk/nextjs";
+import { useRouter } from "next/navigation";
 import { Button } from "~/components/ui/button";
 import { Badge } from "~/components/ui/badge";
 import { api } from "~/trpc/react";
@@ -10,6 +12,12 @@ import { MobileSidebar } from "~/components/layout/sidebar";
 export function Header() {
   const { data } = api.notification.getUnreadCount.useQuery();
   const unreadCount = data?.count ?? 0;
+  const { signOut } = useClerk();
+  const router = useRouter();
+
+  const handleSignOut = () => {
+    void signOut(() => router.push("/sign-in"));
+  };
 
   return (
     <header className="flex h-14 items-center justify-between border-b bg-white px-4 md:px-6">
@@ -33,6 +41,9 @@ export function Header() {
             ) : null}
           </Button>
         </Link>
+        <Button variant="ghost" size="icon" onClick={handleSignOut} aria-label="Sign out">
+          <LogOut className="h-5 w-5" />
+        </Button>
       </div>
     </header>
   );

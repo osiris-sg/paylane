@@ -24,7 +24,7 @@ export const invoiceRouter = createTRPCRouter({
         page: z.number().min(1).default(1),
         limit: z.number().min(1).max(100).default(20),
         search: z.string().optional(),
-        status: z.enum(["DRAFT", "SENT", "PAID", "OVERDUE", "CANCELLED"]).optional(),
+        status: z.enum(["DRAFT", "SENT", "PENDING_APPROVAL", "PAID", "OVERDUE", "CANCELLED"]).optional(),
         customerId: z.string().optional(),
       }),
     )
@@ -41,7 +41,12 @@ export const invoiceRouter = createTRPCRouter({
         where.receiverCompanyId = user.companyId;
       }
 
-      if (input.status) {
+      if (input.status === "OVERDUE") {
+        // Overdue = due date passed and not yet paid or cancelled.
+        // Invoices don't get a literal "OVERDUE" status in the DB; derive it.
+        where.dueDate = { lt: new Date() };
+        where.invoiceStatus = { notIn: ["PAID", "CANCELLED", "DRAFT"] };
+      } else if (input.status) {
         where.invoiceStatus = input.status;
       }
 
@@ -129,6 +134,9 @@ export const invoiceRouter = createTRPCRouter({
         taxRate: z.number().min(0).default(9),
         notes: z.string().optional(),
         fileUrl: z.string().optional(),
+        totalAmount: z.number().min(0).optional(),
+        subtotal: z.number().min(0).optional(),
+        taxAmount: z.number().min(0).optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -139,9 +147,10 @@ export const invoiceRouter = createTRPCRouter({
       const dueDate = new Date(input.invoicedDate);
       dueDate.setDate(dueDate.getDate() + input.paymentTerms);
 
-      const subtotal = input.items.reduce((sum, item) => sum + item.amount, 0);
-      const taxAmount = subtotal * (input.taxRate / 100);
-      const totalAmount = subtotal + taxAmount;
+      const itemsSubtotal = input.items.reduce((sum, item) => sum + item.amount, 0);
+      const subtotal = input.subtotal ?? itemsSubtotal;
+      const taxAmount = input.taxAmount ?? subtotal * (input.taxRate / 100);
+      const totalAmount = input.totalAmount ?? subtotal + taxAmount;
 
       try {
         const invoice = await ctx.db.invoice.create({
@@ -462,37 +471,6 @@ export const invoiceRouter = createTRPCRouter({
         where: { id: input.id },
         data: { pinned: !existing.pinned },
       });
-    }),
-
-  acknowledge: protectedProcedure
-    .input(z.object({ id: z.string() }))
-    .mutation(async ({ ctx, input }) => {
-      const invoice = await ctx.db.invoice.update({
-        where: { id: input.id },
-        data: {
-          routingStatus: "ACKNOWLEDGED",
-          timelineItems: {
-            create: { message: "Invoice acknowledged" },
-          },
-        },
-      });
-
-      if (invoice.senderCompanyId) {
-        const senderUsers = await ctx.db.user.findMany({
-          where: { companyId: invoice.senderCompanyId },
-        });
-
-        await ctx.db.notification.createMany({
-          data: senderUsers.map((u) => ({
-            message: `Invoice ${invoice.invoiceNumber} has been acknowledged`,
-            type: "INVOICE_ACKNOWLEDGED" as const,
-            userId: u.id,
-            invoiceId: invoice.id,
-          })),
-        });
-      }
-
-      return invoice;
     }),
 
   /** Receiver schedules payment — "payment will come in X days" */
