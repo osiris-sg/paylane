@@ -18,6 +18,9 @@ import {
   Search,
   X,
   Plus,
+  Copy,
+  RefreshCw,
+  ExternalLink,
 } from "lucide-react";
 
 import { api } from "~/trpc/react";
@@ -52,6 +55,8 @@ import { UserPlus } from "lucide-react";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type InvoiceStatus = "extracting" | "ready" | "error" | "saving" | "saved" | "sent";
+type UploadResult = "created" | "duplicate" | "updated";
+type ExistingInvoiceStatus = "DRAFT" | "SENT" | "PENDING_APPROVAL" | "PAID" | "CANCELLED";
 
 interface UploadedInvoice {
   id: string;
@@ -60,6 +65,8 @@ interface UploadedInvoice {
   fileSize: number;
   file: File;
   status: InvoiceStatus;
+  uploadResult?: UploadResult;
+  existingStatus?: ExistingInvoiceStatus | null;
   error?: string;
   invoiceNumber: string;
   customerName: string;
@@ -186,7 +193,36 @@ function CustomerPicker({
 
 // ─── Status Badge ─────────────────────────────────────────────────────────────
 
-function StatusBadge({ status, hasDbId }: { status: InvoiceStatus; hasDbId?: boolean }) {
+function StatusBadge({
+  status,
+  hasDbId,
+  uploadResult,
+  existingStatus,
+}: {
+  status: InvoiceStatus;
+  hasDbId?: boolean;
+  uploadResult?: UploadResult;
+  existingStatus?: ExistingInvoiceStatus | null;
+}) {
+  // When auto-saved and the server detected a duplicate, show that prominently
+  if (status === "ready" && hasDbId && uploadResult === "duplicate") {
+    const label = existingStatus ? `Duplicate — ${existingStatus}` : "Duplicate";
+    return (
+      <Badge variant="outline" className="gap-1 border-amber-300 bg-amber-50 text-amber-800">
+        <Copy className="h-3 w-3" />
+        {label}
+      </Badge>
+    );
+  }
+  if (status === "ready" && hasDbId && uploadResult === "updated") {
+    return (
+      <Badge variant="outline" className="gap-1 border-purple-300 bg-purple-50 text-purple-700">
+        <RefreshCw className="h-3 w-3" />
+        Overrode Draft
+      </Badge>
+    );
+  }
+
   switch (status) {
     case "extracting":
       return <Badge variant="outline" className="gap-1 border-blue-300 bg-blue-50 text-blue-700"><Loader2 className="h-3 w-3 animate-spin" />Extracting</Badge>;
@@ -227,6 +263,7 @@ export default function UploadInvoicePage() {
   };
 
   const createInvoice = api.invoice.create.useMutation({ onSuccess: invalidateInvoices });
+  const upsertInvoice = api.invoice.upsertFromUpload.useMutation({ onSuccess: invalidateInvoices });
   const updateInvoiceMut = api.invoice.update.useMutation({ onSuccess: invalidateInvoices });
   const deleteInvoice = api.invoice.delete.useMutation({ onSuccess: invalidateInvoices });
   const sendInvoice = api.invoice.send.useMutation({ onSuccess: invalidateInvoices });
@@ -339,11 +376,11 @@ export default function UploadInvoicePage() {
         ),
       );
 
-      // Auto-save as DRAFT so user sees it in the invoice list even if they exit now.
-      // If the AI-extracted invoice number collides with an existing one, retry with a
-      // unique suffix so the draft still gets saved.
-      const tryAutoSave = async (numberToUse: string) => {
-        return createInvoice.mutateAsync({
+      // Auto-save as DRAFT (or detect duplicate / override existing draft).
+      // If the extracted invoice number already belongs to a SENT/PAID invoice,
+      // we retry with a disambiguated suffix so the draft still gets saved.
+      const tryUpsert = async (numberToUse: string) => {
+        return upsertInvoice.mutateAsync({
           invoiceNumber: numberToUse,
           reference: data.reference || undefined,
           invoicedDate: new Date(invoicedDate),
@@ -367,22 +404,33 @@ export default function UploadInvoicePage() {
       };
 
       try {
-        let created;
+        let result;
         try {
-          created = await tryAutoSave(invoiceNumber);
+          result = await tryUpsert(invoiceNumber);
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
-          if (msg.toLowerCase().includes("already exists")) {
-            // Unique-constraint conflict — retry with a disambiguated number
+          if (msg.toLowerCase().includes("cannot override")) {
+            // Existing invoice is SENT/PAID — save under a new number
             const retryNumber = `${invoiceNumber}-${id.slice(0, 6)}`;
-            created = await tryAutoSave(retryNumber);
+            result = await tryUpsert(retryNumber);
             setInvoices((prev) => prev.map((x) => (x.id === id ? { ...x, invoiceNumber: retryNumber } : x)));
-            toast.info(`Invoice number conflicted — saved as ${retryNumber}`);
+            toast.info(`Invoice ${invoiceNumber} is already sent — saved as ${retryNumber}`);
           } else {
             throw err;
           }
         }
-        setInvoices((prev) => prev.map((x) => (x.id === id ? { ...x, dbId: created!.id } : x)));
+        setInvoices((prev) =>
+          prev.map((x) =>
+            x.id === id
+              ? { ...x, dbId: result!.invoice.id, uploadResult: result!.status, existingStatus: result!.existingStatus as ExistingInvoiceStatus | null }
+              : x,
+          ),
+        );
+        if (result.status === "duplicate") {
+          toast.info(`${invoiceNumber} is a duplicate of an existing invoice`);
+        } else if (result.status === "updated") {
+          toast.success(`${invoiceNumber} draft overridden with new data`);
+        }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "Auto-save failed";
         console.error("Auto-save draft failed:", err);
@@ -777,7 +825,20 @@ export default function UploadInvoicePage() {
                             <span className="text-right font-medium tabular-nums">{inv.totalAmount > 0 ? formatCurrency(inv.totalAmount, inv.currency) : "—"}</span>
                           )}
                         </TableCell>
-                        <TableCell><StatusBadge status={inv.status} hasDbId={!!inv.dbId} /></TableCell>
+                        <TableCell>
+                          <div className="flex flex-col items-start gap-1">
+                            <StatusBadge status={inv.status} hasDbId={!!inv.dbId} uploadResult={inv.uploadResult} existingStatus={inv.existingStatus} />
+                            {inv.uploadResult === "duplicate" && inv.dbId && (
+                              <button
+                                onClick={() => router.push(`/invoices/${inv.dbId}`)}
+                                className="flex items-center gap-0.5 text-[11px] text-amber-700 underline underline-offset-2 hover:text-amber-900"
+                              >
+                                View existing
+                                <ExternalLink className="h-2.5 w-2.5" />
+                              </button>
+                            )}
+                          </div>
+                        </TableCell>
                         <TableCell>
                           <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-red-500" onClick={() => removeInvoice(inv.id)}>
                             <X className="h-3.5 w-3.5" />

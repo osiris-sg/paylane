@@ -204,6 +204,189 @@ export const invoiceRouter = createTRPCRouter({
       }
     }),
 
+  /**
+   * Upload-oriented create:
+   * - If (invoiceNumber + senderCompany) already exists and key details match → returns status "duplicate"
+   * - If exists but details differ and the existing invoice is still DRAFT → overrides it, returns "updated"
+   * - If exists and is already SENT/PAID/etc → throws CONFLICT (can't override a sent invoice)
+   * - If it doesn't exist → creates a new DRAFT, returns "created"
+   */
+  upsertFromUpload: protectedProcedure
+    .input(
+      z.object({
+        invoiceNumber: z.string(),
+        reference: z.string().optional(),
+        invoicedDate: z.coerce.date(),
+        paymentTerms: z.number().int().min(0),
+        currency: z.string().default("SGD"),
+        customerId: z.string().optional(),
+        items: z.array(itemSchema).default([]),
+        taxRate: z.number().min(0).default(9),
+        notes: z.string().optional(),
+        fileUrl: z.string().optional(),
+        totalAmount: z.number().min(0).optional(),
+        subtotal: z.number().min(0).optional(),
+        taxAmount: z.number().min(0).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const user = await ctx.db.user.findUniqueOrThrow({
+        where: { clerkId: ctx.auth.userId },
+      });
+
+      const dueDate = new Date(input.invoicedDate);
+      dueDate.setDate(dueDate.getDate() + input.paymentTerms);
+
+      const itemsSubtotal = input.items.reduce((sum, item) => sum + item.amount, 0);
+      const subtotal = input.subtotal ?? itemsSubtotal;
+      const taxAmount = input.taxAmount ?? subtotal * (input.taxRate / 100);
+      const totalAmount = input.totalAmount ?? subtotal + taxAmount;
+
+      const existing = await ctx.db.invoice.findUnique({
+        where: {
+          invoiceNumber_senderCompanyId: {
+            invoiceNumber: input.invoiceNumber,
+            senderCompanyId: user.companyId,
+          },
+        },
+        include: { items: true, customer: true },
+      });
+
+      if (existing) {
+        const eq = (a: number, b: number) => Math.abs(a - b) < 0.01;
+        const sameDate =
+          new Date(existing.invoicedDate).toDateString() ===
+          input.invoicedDate.toDateString();
+
+        const sortedExisting = [...existing.items].sort((a, b) =>
+          a.description.localeCompare(b.description),
+        );
+        const sortedIncoming = [...input.items].sort((a, b) =>
+          a.description.localeCompare(b.description),
+        );
+        const sameItems =
+          sortedExisting.length === sortedIncoming.length &&
+          sortedExisting.every((ex, i) => {
+            const nx = sortedIncoming[i];
+            return (
+              !!nx &&
+              ex.description === nx.description &&
+              eq(Number(ex.quantity), nx.quantity) &&
+              eq(Number(ex.unitPrice), nx.unitPrice) &&
+              eq(Number(ex.amount), nx.amount)
+            );
+          });
+
+        const isSame =
+          eq(Number(existing.amount), totalAmount) &&
+          eq(Number(existing.subtotal), subtotal) &&
+          eq(Number(existing.taxAmount), taxAmount) &&
+          eq(Number(existing.taxRate), input.taxRate) &&
+          existing.currency === input.currency &&
+          (existing.customerId ?? null) === (input.customerId ?? null) &&
+          (existing.reference ?? "") === (input.reference ?? "") &&
+          (existing.notes ?? "") === (input.notes ?? "") &&
+          existing.paymentTerms === input.paymentTerms &&
+          sameDate &&
+          sameItems;
+
+        if (isSame) {
+          return {
+            status: "duplicate" as const,
+            invoice: existing,
+            existingStatus: existing.invoiceStatus,
+          };
+        }
+
+        if (existing.invoiceStatus !== "DRAFT") {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: `Invoice ${existing.invoiceNumber} already exists and is ${existing.invoiceStatus}. Cannot override a sent invoice.`,
+          });
+        }
+
+        await ctx.db.$executeRaw`DELETE FROM "InvoiceItem" WHERE "invoiceId" = ${existing.id}`;
+
+        const updated = await ctx.db.invoice.update({
+          where: { id: existing.id },
+          data: {
+            reference: input.reference,
+            invoicedDate: input.invoicedDate,
+            dueDate,
+            paymentTerms: input.paymentTerms,
+            amount: totalAmount,
+            currency: input.currency,
+            fileUrl: input.fileUrl,
+            customerId: input.customerId,
+            subtotal,
+            taxRate: input.taxRate,
+            taxAmount,
+            notes: input.notes,
+            items: {
+              create: input.items.map((item, index) => ({
+                description: item.description,
+                quantity: item.quantity,
+                unitPrice: item.unitPrice,
+                amount: item.amount,
+                sortOrder: index,
+              })),
+            },
+            timelineItems: {
+              create: { message: "Invoice overridden via re-upload" },
+            },
+          },
+          include: { customer: true, items: true },
+        });
+
+        return {
+          status: "updated" as const,
+          invoice: updated,
+          existingStatus: existing.invoiceStatus,
+        };
+      }
+
+      const created = await ctx.db.invoice.create({
+        data: {
+          invoiceNumber: input.invoiceNumber,
+          reference: input.reference,
+          invoicedDate: input.invoicedDate,
+          dueDate,
+          paymentTerms: input.paymentTerms,
+          amount: totalAmount,
+          currency: input.currency,
+          fileUrl: input.fileUrl,
+          customerId: input.customerId,
+          senderCompanyId: user.companyId,
+          createdById: user.id,
+          invoiceStatus: "DRAFT",
+          routingStatus: "PENDING",
+          subtotal,
+          taxRate: input.taxRate,
+          taxAmount,
+          notes: input.notes,
+          items: {
+            create: input.items.map((item, index) => ({
+              description: item.description,
+              quantity: item.quantity,
+              unitPrice: item.unitPrice,
+              amount: item.amount,
+              sortOrder: index,
+            })),
+          },
+          timelineItems: {
+            create: { message: "Invoice created" },
+          },
+        },
+        include: { customer: true, items: true },
+      });
+
+      return {
+        status: "created" as const,
+        invoice: created,
+        existingStatus: null,
+      };
+    }),
+
   update: protectedProcedure
     .input(
       z.object({
