@@ -11,6 +11,7 @@ import {
   DollarSign,
   Plus,
   Upload,
+  FileSpreadsheet,
 } from "lucide-react";
 import {
   BarChart,
@@ -185,6 +186,12 @@ export default function DashboardPage() {
               <Link href="/invoices/upload">
                 <Upload className="mr-2 h-4 w-4" />
                 Upload Invoice
+              </Link>
+            </Button>
+            <Button variant="outline" asChild>
+              <Link href="/invoices/import-statement">
+                <FileSpreadsheet className="mr-2 h-4 w-4" />
+                Import Statement
               </Link>
             </Button>
             <Button asChild>

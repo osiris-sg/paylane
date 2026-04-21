@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import dayjs from "dayjs";
 import { toast } from "sonner";
@@ -62,7 +62,7 @@ interface UploadedInvoice {
   dbId?: string; // Set after auto-save as draft
   fileName: string;
   fileSize: number;
-  file: File;
+  file?: File;
   status: InvoiceStatus;
   uploadResult?: UploadResult;
   existingStatus?: ExistingInvoiceStatus | null;
@@ -482,6 +482,147 @@ export default function UploadInvoicePage() {
       );
     }
   };
+
+  // ─── Hydrate from Statement of Account import ─────────────────────────
+  // When /invoices/import-statement redirects here, it stores the extracted
+  // statement in sessionStorage. We read it once, match/create the customer,
+  // then stage one row per invoice and auto-save each as a draft.
+
+  const hydrateFromStatement = async (payload: {
+    extraction: {
+      customer: { company: string; name?: string | null; email?: string | null };
+      currency: string;
+      invoices: { invoiceNumber: string; invoicedDate: string; amount: number; description?: string | null; xReference?: string | null }[];
+    };
+    fileDataUrl: string;
+    fileName: string;
+  }) => {
+    const { extraction, fileDataUrl, fileName } = payload;
+
+    // Match or create the customer once so every staged invoice shares it
+    let customerId = "";
+    const needle = extraction.customer.company.trim().toLowerCase();
+    const match = customers.find((c) => {
+      const company = (c.company ?? "").toLowerCase();
+      const name = c.name.toLowerCase();
+      return company.includes(needle) || name.includes(needle) || needle.includes(company) || needle.includes(name);
+    });
+    if (match) {
+      customerId = match.id;
+    } else {
+      try {
+        const created = await createCustomer.mutateAsync({
+          company: extraction.customer.company.trim(),
+          name: extraction.customer.name?.trim() || undefined,
+          email: extraction.customer.email?.trim() || undefined,
+        });
+        customerId = created.id;
+        await refetchCustomers();
+        toast.success(`Customer "${extraction.customer.company}" added`);
+      } catch (err) {
+        console.error("Failed to create statement customer:", err);
+        toast.error(`Could not create customer "${extraction.customer.company}" — you can assign one manually`);
+      }
+    }
+
+    // Stage each extracted invoice as a ready row (skip re-extraction)
+    const paymentTerms = 30;
+    const currency = extraction.currency || "SGD";
+    const newEntries: UploadedInvoice[] = extraction.invoices.map((inv, idx) => {
+      const id = `${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`;
+      const invoicedDate = inv.invoicedDate || dayjs().format("YYYY-MM-DD");
+      const dueDate = dayjs(invoicedDate).add(paymentTerms, "day").format("YYYY-MM-DD");
+      const amount = Number(inv.amount) || 0;
+      return {
+        id,
+        fileName: `${fileName} — ${inv.invoiceNumber}`,
+        fileSize: 0,
+        status: "ready",
+        invoiceNumber: inv.invoiceNumber,
+        customerName: extraction.customer.company,
+        customerEmail: extraction.customer.email ?? "",
+        reference: inv.xReference ?? "",
+        invoicedDate,
+        dueDate,
+        paymentTerms,
+        currency,
+        taxRate: 0,
+        totalAmount: amount,
+        subtotal: amount,
+        taxAmount: 0,
+        notes: inv.description ?? "",
+        items: [
+          {
+            description: inv.description || `Invoice ${inv.invoiceNumber}`,
+            quantity: 1,
+            unitPrice: amount,
+            amount,
+          },
+        ],
+        customerId,
+        fileDataUrl,
+      };
+    });
+
+    setInvoices(newEntries);
+
+    // Auto-save each as draft using upsertFromUpload (same as regular uploads).
+    // Sequential to avoid hammering the DB and to match the existing pattern.
+    for (const entry of newEntries) {
+      try {
+        const result = await upsertInvoice.mutateAsync({
+          invoiceNumber: entry.invoiceNumber,
+          invoicedDate: new Date(entry.invoicedDate),
+          paymentTerms: entry.paymentTerms,
+          currency: entry.currency,
+          customerId: customerId || undefined,
+          extractedCustomerName: extraction.customer.company || undefined,
+          taxRate: entry.taxRate,
+          notes: entry.notes || undefined,
+          fileUrl: entry.fileDataUrl ?? undefined,
+          items: entry.items.map((item, i) => ({
+            description: item.description,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            amount: item.amount,
+            sortOrder: i,
+          })),
+          totalAmount: entry.totalAmount,
+          subtotal: entry.subtotal,
+          taxAmount: entry.taxAmount,
+        });
+        setInvoices((prev) =>
+          prev.map((x) =>
+            x.id === entry.id
+              ? { ...x, dbId: result.invoice.id, uploadResult: result.status, existingStatus: result.existingStatus as ExistingInvoiceStatus | null }
+              : x,
+          ),
+        );
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "Auto-save failed";
+        setInvoices((prev) => prev.map((x) => (x.id === entry.id ? { ...x, status: "error", error: msg } : x)));
+      }
+    }
+  };
+
+  // Consume the pending statement payload on mount (once customers have loaded)
+  const hydratedRef = useRef(false);
+  useEffect(() => {
+    if (hydratedRef.current) return;
+    if (!customersData) return;
+    const stored = typeof window !== "undefined" ? sessionStorage.getItem("paylane:pending-statement") : null;
+    if (!stored) return;
+    hydratedRef.current = true;
+    sessionStorage.removeItem("paylane:pending-statement");
+    try {
+      const payload = JSON.parse(stored);
+      void hydrateFromStatement(payload);
+    } catch (err) {
+      console.error("Failed to parse pending statement payload:", err);
+      toast.error("Couldn't load the imported statement");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customersData]);
 
   const addFiles = (files: FileList | File[]) => {
     const validTypes = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
