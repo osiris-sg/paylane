@@ -253,90 +253,14 @@ export const invoiceRouter = createTRPCRouter({
       });
 
       if (existing) {
-        const eq = (a: number, b: number) => Math.abs(a - b) < 0.01;
-        const sameDate =
-          new Date(existing.invoicedDate).toDateString() ===
-          input.invoicedDate.toDateString();
-
-        const sortedExisting = [...existing.items].sort((a, b) =>
-          a.description.localeCompare(b.description),
-        );
-        const sortedIncoming = [...input.items].sort((a, b) =>
-          a.description.localeCompare(b.description),
-        );
-        const sameItems =
-          sortedExisting.length === sortedIncoming.length &&
-          sortedExisting.every((ex, i) => {
-            const nx = sortedIncoming[i];
-            return (
-              !!nx &&
-              ex.description === nx.description &&
-              eq(Number(ex.quantity), nx.quantity) &&
-              eq(Number(ex.unitPrice), nx.unitPrice) &&
-              eq(Number(ex.amount), nx.amount)
-            );
-          });
-
-        const isSame =
-          eq(Number(existing.amount), totalAmount) &&
-          eq(Number(existing.subtotal), subtotal) &&
-          eq(Number(existing.taxAmount), taxAmount) &&
-          eq(Number(existing.taxRate), input.taxRate) &&
-          existing.currency === input.currency &&
-          (existing.customerId ?? null) === (input.customerId ?? null) &&
-          (existing.reference ?? "") === (input.reference ?? "") &&
-          (existing.notes ?? "") === (input.notes ?? "") &&
-          existing.paymentTerms === input.paymentTerms &&
-          sameDate &&
-          sameItems;
-
-        if (isSame) {
-          return {
-            status: "duplicate" as const,
-            invoice: existing,
-            existingStatus: existing.invoiceStatus,
-          };
-        }
-
-        // Details differ — override the existing invoice's data fields.
-        // We intentionally do NOT touch invoiceStatus / routingStatus / receiver
-        // so a SENT/PAID invoice stays SENT/PAID but its content is refreshed.
-        await ctx.db.$executeRaw`DELETE FROM "InvoiceItem" WHERE "invoiceId" = ${existing.id}`;
-
-        const updated = await ctx.db.invoice.update({
-          where: { id: existing.id },
-          data: {
-            reference: input.reference,
-            invoicedDate: input.invoicedDate,
-            dueDate,
-            paymentTerms: input.paymentTerms,
-            amount: totalAmount,
-            currency: input.currency,
-            fileUrl: input.fileUrl,
-            customerId: input.customerId,
-            subtotal,
-            taxRate: input.taxRate,
-            taxAmount,
-            notes: input.notes,
-            items: {
-              create: input.items.map((item, index) => ({
-                description: item.description,
-                quantity: item.quantity,
-                unitPrice: item.unitPrice,
-                amount: item.amount,
-                sortOrder: index,
-              })),
-            },
-            timelineItems: {
-              create: { message: "Invoice overridden via re-upload" },
-            },
-          },
-          include: { customer: true, items: true },
-        });
-
+        // Re-upload of an existing invoice number is always a "duplicate".
+        // We don't silently override on AI-extracted differences because the
+        // extraction may be missing fields the user set manually (e.g.
+        // customerId, reference). If the user wants to change the invoice,
+        // they can edit it from the invoice detail page.
         return {
-          status: "updated" as const,
-          invoice: updated,
+          status: "duplicate" as const,
+          invoice: existing,
           existingStatus: existing.invoiceStatus,
         };
       }
