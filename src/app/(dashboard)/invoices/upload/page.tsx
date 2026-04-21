@@ -386,6 +386,7 @@ export default function UploadInvoicePage() {
           paymentTerms,
           currency,
           customerId: matchedCustomerId || undefined,
+          extractedCustomerName: data.customerName || undefined,
           taxRate,
           notes: data.notes || undefined,
           fileUrl: fileDataUrl,
@@ -423,8 +424,22 @@ export default function UploadInvoicePage() {
           const label = result.existingStatus ? ` (${result.existingStatus})` : "";
           toast.info(`${invoiceNumber} already exists${label}`);
         } else if (result.status === "updated") {
-          const diffs = (result as { diffFields?: { field: string }[] }).diffFields?.map((d) => d.field).join(", ") ?? "";
-          console.log(`[upload] ${invoiceNumber} overrode existing invoice. Diff fields:`, (result as { diffFields?: unknown }).diffFields);
+          const raw = (result as { diffFields?: { field: string }[] }).diffFields ?? [];
+          const labelMap: Record<string, string> = {
+            amount: "amount",
+            subtotal: "subtotal",
+            taxAmount: "tax amount",
+            taxRate: "tax rate",
+            currency: "currency",
+            customer: "customer",
+            reference: "reference",
+            notes: "notes",
+            paymentTerms: "payment terms",
+            invoicedDate: "invoice date",
+            items: "line items",
+          };
+          const diffs = raw.map((d) => labelMap[d.field] ?? d.field).join(", ");
+          console.log(`[upload] ${invoiceNumber} overrode existing invoice. Diff fields:`, raw);
           toast.success(`${invoiceNumber} updated${diffs ? ` — changed: ${diffs}` : ""}`);
         }
       } catch (err: unknown) {

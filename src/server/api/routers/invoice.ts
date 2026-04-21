@@ -220,6 +220,7 @@ export const invoiceRouter = createTRPCRouter({
         paymentTerms: z.number().int().min(0),
         currency: z.string().default("SGD"),
         customerId: z.string().optional(),
+        extractedCustomerName: z.string().optional(),
         items: z.array(itemSchema).default([]),
         taxRate: z.number().min(0).default(9),
         notes: z.string().optional(),
@@ -277,6 +278,23 @@ export const invoiceRouter = createTRPCRouter({
             );
           });
 
+        // Customer comparison: if ids match, same. If uploaded id is missing,
+        // fall back to comparing the AI-extracted customer name against the
+        // existing customer's company/name (fuzzy, case-insensitive substring).
+        const customerSame = (() => {
+          const dbId = existing.customerId ?? null;
+          const upId = input.customerId ?? null;
+          if (dbId === upId) return true;
+          if (!upId && input.extractedCustomerName && existing.customer) {
+            const needle = input.extractedCustomerName.trim().toLowerCase();
+            const company = (existing.customer.company ?? "").toLowerCase();
+            const name = existing.customer.name.toLowerCase();
+            if (!needle) return true;
+            return company.includes(needle) || name.includes(needle) || needle.includes(company) || needle.includes(name);
+          }
+          return false;
+        })();
+
         // Per-field comparison so we can log exactly what differs
         const fieldChecks: Record<string, { same: boolean; db: unknown; uploaded: unknown }> = {
           amount: { same: eq(Number(existing.amount), totalAmount), db: Number(existing.amount), uploaded: totalAmount },
@@ -284,7 +302,11 @@ export const invoiceRouter = createTRPCRouter({
           taxAmount: { same: eq(Number(existing.taxAmount), taxAmount), db: Number(existing.taxAmount), uploaded: taxAmount },
           taxRate: { same: eq(Number(existing.taxRate), input.taxRate), db: Number(existing.taxRate), uploaded: input.taxRate },
           currency: { same: existing.currency === input.currency, db: existing.currency, uploaded: input.currency },
-          customerId: { same: (existing.customerId ?? null) === (input.customerId ?? null), db: existing.customerId, uploaded: input.customerId ?? null },
+          customer: {
+            same: customerSame,
+            db: existing.customer ? { id: existing.customer.id, company: existing.customer.company, name: existing.customer.name } : null,
+            uploaded: input.customerId ? { id: input.customerId } : { extractedName: input.extractedCustomerName ?? null },
+          },
           reference: { same: (existing.reference ?? "") === (input.reference ?? ""), db: existing.reference, uploaded: input.reference ?? null },
           notes: { same: (existing.notes ?? "") === (input.notes ?? ""), db: existing.notes, uploaded: input.notes ?? null },
           paymentTerms: { same: existing.paymentTerms === input.paymentTerms, db: existing.paymentTerms, uploaded: input.paymentTerms },
@@ -319,23 +341,25 @@ export const invoiceRouter = createTRPCRouter({
         // Details differ — override the existing invoice's data fields.
         // We intentionally do NOT touch invoiceStatus / routingStatus / receiver
         // so a SENT/PAID invoice stays SENT/PAID but its content is refreshed.
+        // Also preserve fields that the AI couldn't reliably re-extract
+        // (customerId, reference, notes) when the upload didn't supply them.
         await ctx.db.$executeRaw`DELETE FROM "InvoiceItem" WHERE "invoiceId" = ${existing.id}`;
 
         const updated = await ctx.db.invoice.update({
           where: { id: existing.id },
           data: {
-            reference: input.reference,
+            reference: input.reference ?? existing.reference,
             invoicedDate: input.invoicedDate,
             dueDate,
             paymentTerms: input.paymentTerms,
             amount: totalAmount,
             currency: input.currency,
             fileUrl: input.fileUrl,
-            customerId: input.customerId,
+            customerId: input.customerId ?? existing.customerId,
             subtotal,
             taxRate: input.taxRate,
             taxAmount,
-            notes: input.notes,
+            notes: input.notes ?? existing.notes,
             items: {
               create: input.items.map((item, index) => ({
                 description: item.description,
