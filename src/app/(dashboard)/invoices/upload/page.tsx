@@ -190,6 +190,21 @@ function CustomerPicker({
   );
 }
 
+function existingStatusClasses(status: ExistingInvoiceStatus): string {
+  switch (status) {
+    case "DRAFT":
+      return "bg-gray-100 text-gray-700 border-l border-gray-300";
+    case "SENT":
+      return "bg-blue-100 text-blue-800 border-l border-blue-300";
+    case "PENDING_APPROVAL":
+      return "bg-orange-100 text-orange-800 border-l border-orange-300";
+    case "PAID":
+      return "bg-green-100 text-green-800 border-l border-green-300";
+    case "CANCELLED":
+      return "bg-red-100 text-red-800 border-l border-red-300";
+  }
+}
+
 // ─── Status Badge ─────────────────────────────────────────────────────────────
 
 function StatusBadge({
@@ -203,23 +218,36 @@ function StatusBadge({
   uploadResult?: UploadResult;
   existingStatus?: ExistingInvoiceStatus | null;
 }) {
-  // When auto-saved and the server detected a duplicate, show that prominently
+  // When auto-saved and the server detected a duplicate, show a compound badge
+  // with the duplicate marker + the invoice's current canonical status.
   if (status === "ready" && hasDbId && uploadResult === "duplicate") {
-    const label = existingStatus ? `Duplicate — ${existingStatus}` : "Duplicate";
     return (
-      <Badge variant="outline" className="gap-1 border-amber-300 bg-amber-50 text-amber-800">
-        <Copy className="h-3 w-3" />
-        {label}
-      </Badge>
+      <div className="inline-flex items-center overflow-hidden rounded-full border border-amber-300 bg-amber-50 text-[11px] font-semibold leading-none">
+        <span className="flex items-center gap-1 px-2 py-1 text-amber-800">
+          <Copy className="h-3 w-3" />
+          DUPLICATE
+        </span>
+        {existingStatus && (
+          <span className={`px-2 py-1 font-semibold ${existingStatusClasses(existingStatus)}`}>
+            {existingStatus.replace("_", " ")}
+          </span>
+        )}
+      </div>
     );
   }
   if (status === "ready" && hasDbId && uploadResult === "updated") {
-    const label = existingStatus ? `Updated — ${existingStatus}` : "Updated";
     return (
-      <Badge variant="outline" className="gap-1 border-purple-300 bg-purple-50 text-purple-700">
-        <RefreshCw className="h-3 w-3" />
-        {label}
-      </Badge>
+      <div className="inline-flex items-center overflow-hidden rounded-full border border-purple-300 bg-purple-50 text-[11px] font-semibold leading-none">
+        <span className="flex items-center gap-1 px-2 py-1 text-purple-700">
+          <RefreshCw className="h-3 w-3" />
+          UPDATED
+        </span>
+        {existingStatus && (
+          <span className={`px-2 py-1 font-semibold ${existingStatusClasses(existingStatus)}`}>
+            {existingStatus.replace("_", " ")}
+          </span>
+        )}
+      </div>
     );
   }
   switch (status) {

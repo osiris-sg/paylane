@@ -295,6 +295,24 @@ export const invoiceRouter = createTRPCRouter({
           return false;
         })();
 
+        // Free-text fields are compared loosely: AI re-extractions of the same
+        // content can differ in whitespace, punctuation, or filler words. We
+        // normalise to alphanumerics + a length tolerance so cosmetic rewordings
+        // don't trigger an override.
+        const normaliseText = (s: string | null | undefined) =>
+          (s ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+        const textRoughlySame = (a: string | null | undefined, b: string | null | undefined) => {
+          const na = normaliseText(a);
+          const nb = normaliseText(b);
+          if (na === nb) return true;
+          if (!na || !nb) return false;
+          const longer = Math.max(na.length, nb.length);
+          const shorter = Math.min(na.length, nb.length);
+          if (longer === 0) return true;
+          const contains = na.includes(nb) || nb.includes(na);
+          return contains && shorter / longer >= 0.85;
+        };
+
         // Per-field comparison so we can log exactly what differs
         const fieldChecks: Record<string, { same: boolean; db: unknown; uploaded: unknown }> = {
           amount: { same: eq(Number(existing.amount), totalAmount), db: Number(existing.amount), uploaded: totalAmount },
@@ -307,8 +325,8 @@ export const invoiceRouter = createTRPCRouter({
             db: existing.customer ? { id: existing.customer.id, company: existing.customer.company, name: existing.customer.name } : null,
             uploaded: input.customerId ? { id: input.customerId } : { extractedName: input.extractedCustomerName ?? null },
           },
-          reference: { same: (existing.reference ?? "") === (input.reference ?? ""), db: existing.reference, uploaded: input.reference ?? null },
-          notes: { same: (existing.notes ?? "") === (input.notes ?? ""), db: existing.notes, uploaded: input.notes ?? null },
+          reference: { same: textRoughlySame(existing.reference, input.reference), db: existing.reference, uploaded: input.reference ?? null },
+          notes: { same: textRoughlySame(existing.notes, input.notes), db: existing.notes, uploaded: input.notes ?? null },
           paymentTerms: { same: existing.paymentTerms === input.paymentTerms, db: existing.paymentTerms, uploaded: input.paymentTerms },
           invoicedDate: { same: sameDate, db: existing.invoicedDate, uploaded: input.invoicedDate },
           items: {
