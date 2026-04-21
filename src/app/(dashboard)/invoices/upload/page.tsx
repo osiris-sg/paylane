@@ -19,6 +19,7 @@ import {
   X,
   Plus,
   Copy,
+  RefreshCw,
 } from "lucide-react";
 
 import { api } from "~/trpc/react";
@@ -53,7 +54,7 @@ import { UserPlus } from "lucide-react";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type InvoiceStatus = "extracting" | "ready" | "error" | "saving" | "saved" | "sent";
-type UploadResult = "created" | "duplicate";
+type UploadResult = "created" | "duplicate" | "updated";
 type ExistingInvoiceStatus = "DRAFT" | "SENT" | "PENDING_APPROVAL" | "PAID" | "CANCELLED";
 
 interface UploadedInvoice {
@@ -208,6 +209,15 @@ function StatusBadge({
     return (
       <Badge variant="outline" className="gap-1 border-amber-300 bg-amber-50 text-amber-800">
         <Copy className="h-3 w-3" />
+        {label}
+      </Badge>
+    );
+  }
+  if (status === "ready" && hasDbId && uploadResult === "updated") {
+    const label = existingStatus ? `Updated — ${existingStatus}` : "Updated";
+    return (
+      <Badge variant="outline" className="gap-1 border-purple-300 bg-purple-50 text-purple-700">
+        <RefreshCw className="h-3 w-3" />
         {label}
       </Badge>
     );
@@ -412,6 +422,10 @@ export default function UploadInvoicePage() {
         if (result.status === "duplicate") {
           const label = result.existingStatus ? ` (${result.existingStatus})` : "";
           toast.info(`${invoiceNumber} already exists${label}`);
+        } else if (result.status === "updated") {
+          const diffs = (result as { diffFields?: { field: string }[] }).diffFields?.map((d) => d.field).join(", ") ?? "";
+          console.log(`[upload] ${invoiceNumber} overrode existing invoice. Diff fields:`, (result as { diffFields?: unknown }).diffFields);
+          toast.success(`${invoiceNumber} updated${diffs ? ` — changed: ${diffs}` : ""}`);
         }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "Auto-save failed";

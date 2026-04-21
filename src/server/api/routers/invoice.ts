@@ -253,15 +253,110 @@ export const invoiceRouter = createTRPCRouter({
       });
 
       if (existing) {
-        // Re-upload of an existing invoice number is always a "duplicate".
-        // We don't silently override on AI-extracted differences because the
-        // extraction may be missing fields the user set manually (e.g.
-        // customerId, reference). If the user wants to change the invoice,
-        // they can edit it from the invoice detail page.
+        const eq = (a: number, b: number) => Math.abs(a - b) < 0.01;
+        const sameDate =
+          new Date(existing.invoicedDate).toDateString() ===
+          input.invoicedDate.toDateString();
+
+        const sortedExisting = [...existing.items].sort((a, b) =>
+          a.description.localeCompare(b.description),
+        );
+        const sortedIncoming = [...input.items].sort((a, b) =>
+          a.description.localeCompare(b.description),
+        );
+        const sameItems =
+          sortedExisting.length === sortedIncoming.length &&
+          sortedExisting.every((ex, i) => {
+            const nx = sortedIncoming[i];
+            return (
+              !!nx &&
+              ex.description === nx.description &&
+              eq(Number(ex.quantity), nx.quantity) &&
+              eq(Number(ex.unitPrice), nx.unitPrice) &&
+              eq(Number(ex.amount), nx.amount)
+            );
+          });
+
+        // Per-field comparison so we can log exactly what differs
+        const fieldChecks: Record<string, { same: boolean; db: unknown; uploaded: unknown }> = {
+          amount: { same: eq(Number(existing.amount), totalAmount), db: Number(existing.amount), uploaded: totalAmount },
+          subtotal: { same: eq(Number(existing.subtotal), subtotal), db: Number(existing.subtotal), uploaded: subtotal },
+          taxAmount: { same: eq(Number(existing.taxAmount), taxAmount), db: Number(existing.taxAmount), uploaded: taxAmount },
+          taxRate: { same: eq(Number(existing.taxRate), input.taxRate), db: Number(existing.taxRate), uploaded: input.taxRate },
+          currency: { same: existing.currency === input.currency, db: existing.currency, uploaded: input.currency },
+          customerId: { same: (existing.customerId ?? null) === (input.customerId ?? null), db: existing.customerId, uploaded: input.customerId ?? null },
+          reference: { same: (existing.reference ?? "") === (input.reference ?? ""), db: existing.reference, uploaded: input.reference ?? null },
+          notes: { same: (existing.notes ?? "") === (input.notes ?? ""), db: existing.notes, uploaded: input.notes ?? null },
+          paymentTerms: { same: existing.paymentTerms === input.paymentTerms, db: existing.paymentTerms, uploaded: input.paymentTerms },
+          invoicedDate: { same: sameDate, db: existing.invoicedDate, uploaded: input.invoicedDate },
+          items: {
+            same: sameItems,
+            db: existing.items.map((i) => ({ description: i.description, quantity: Number(i.quantity), unitPrice: Number(i.unitPrice), amount: Number(i.amount) })),
+            uploaded: input.items,
+          },
+        };
+
+        const isSame = Object.values(fieldChecks).every((f) => f.same);
+        const diffFields = Object.entries(fieldChecks)
+          .filter(([, v]) => !v.same)
+          .map(([k, v]) => ({ field: k, db: v.db, uploaded: v.uploaded }));
+
+        console.log(
+          `[upsertFromUpload] invoice ${input.invoiceNumber} (${existing.invoiceStatus}) — ${isSame ? "DUPLICATE" : "WILL OVERRIDE"}`,
+        );
+        if (diffFields.length > 0) {
+          console.log("[upsertFromUpload] differing fields:", JSON.stringify(diffFields, null, 2));
+        }
+
+        if (isSame) {
+          return {
+            status: "duplicate" as const,
+            invoice: existing,
+            existingStatus: existing.invoiceStatus,
+          };
+        }
+
+        // Details differ — override the existing invoice's data fields.
+        // We intentionally do NOT touch invoiceStatus / routingStatus / receiver
+        // so a SENT/PAID invoice stays SENT/PAID but its content is refreshed.
+        await ctx.db.$executeRaw`DELETE FROM "InvoiceItem" WHERE "invoiceId" = ${existing.id}`;
+
+        const updated = await ctx.db.invoice.update({
+          where: { id: existing.id },
+          data: {
+            reference: input.reference,
+            invoicedDate: input.invoicedDate,
+            dueDate,
+            paymentTerms: input.paymentTerms,
+            amount: totalAmount,
+            currency: input.currency,
+            fileUrl: input.fileUrl,
+            customerId: input.customerId,
+            subtotal,
+            taxRate: input.taxRate,
+            taxAmount,
+            notes: input.notes,
+            items: {
+              create: input.items.map((item, index) => ({
+                description: item.description,
+                quantity: item.quantity,
+                unitPrice: item.unitPrice,
+                amount: item.amount,
+                sortOrder: index,
+              })),
+            },
+            timelineItems: {
+              create: { message: "Invoice overridden via re-upload" },
+            },
+          },
+          include: { customer: true, items: true },
+        });
+
         return {
-          status: "duplicate" as const,
-          invoice: existing,
+          status: "updated" as const,
+          invoice: updated,
           existingStatus: existing.invoiceStatus,
+          diffFields,
         };
       }
 
