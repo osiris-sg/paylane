@@ -73,8 +73,8 @@ function InvoicesContent() {
 
       <Tabs value={activeTab} onValueChange={handleTabChange}>
         <TabsList>
-          {canSend && <TabsTrigger value="sent">Customer</TabsTrigger>}
-          {canReceive && <TabsTrigger value="received">Supplier</TabsTrigger>}
+          {canSend && <TabsTrigger value="sent">CUSTOMER</TabsTrigger>}
+          {canReceive && <TabsTrigger value="received">SUPPLIER</TabsTrigger>}
         </TabsList>
         {canSend && (
           <TabsContent value="sent" className="mt-4">
