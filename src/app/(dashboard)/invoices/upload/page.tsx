@@ -20,7 +20,6 @@ import {
   Plus,
   Copy,
   RefreshCw,
-  ExternalLink,
 } from "lucide-react";
 
 import { api } from "~/trpc/react";
@@ -741,8 +740,8 @@ export default function UploadInvoicePage() {
                     <TableHead className="w-10">
                       <Checkbox checked={isAllSelected} onCheckedChange={toggleSelectAll} />
                     </TableHead>
-                    <TableHead>File</TableHead>
-                    <TableHead>Invoice #</TableHead>
+                    <TableHead className="w-[180px]">File</TableHead>
+                    <TableHead className="min-w-[160px]">Invoice #</TableHead>
                     <TableHead>Customer</TableHead>
                     <TableHead>Reference</TableHead>
                     <TableHead>Invoice Date</TableHead>
@@ -755,10 +754,13 @@ export default function UploadInvoicePage() {
                 <TableBody>
                   {invoices.map((inv) => {
                     const isSelected = selectedIds.has(inv.id);
-                    const isActionable = inv.status === "ready";
+                    const isDuplicate = inv.uploadResult === "duplicate";
+                    const isActionable = inv.status === "ready" && !isDuplicate;
+                    const customer = customers.find((c) => c.id === inv.customerId);
+                    const customerLabel = customer ? customer.company || customer.name : null;
 
                     return (
-                      <TableRow key={inv.id} className={isSelected ? "bg-blue-50" : ""}>
+                      <TableRow key={inv.id} className={isSelected ? "bg-blue-50" : isDuplicate ? "bg-amber-50/40" : ""}>
                         <TableCell>
                           <Checkbox checked={isSelected} onCheckedChange={() => toggleSelect(inv.id)} disabled={!isActionable} />
                         </TableCell>
@@ -768,11 +770,11 @@ export default function UploadInvoicePage() {
                             <p className="text-xs text-muted-foreground">{formatFileSize(inv.fileSize)}</p>
                           </div>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="min-w-[160px]">
                           {isActionable ? (
                             <Input className="h-7 border-gray-200 text-sm" value={inv.invoiceNumber} onChange={(e) => updateInvoice(inv.id, { invoiceNumber: e.target.value })} placeholder="Invoice #" />
                           ) : (
-                            <span className="text-sm font-medium">{inv.invoiceNumber || "—"}</span>
+                            <span className="whitespace-nowrap text-sm font-medium">{inv.invoiceNumber || "—"}</span>
                           )}
                         </TableCell>
                         <TableCell className="min-w-[160px]">
@@ -784,7 +786,7 @@ export default function UploadInvoicePage() {
                               onAddNew={() => openAddCustomer(inv.id, { name: inv.customerName, email: inv.customerEmail })}
                             />
                           ) : (
-                            <span className="text-sm text-muted-foreground">—</span>
+                            <span className="text-sm font-medium">{customerLabel ?? "—"}</span>
                           )}
                         </TableCell>
                         <TableCell>
@@ -826,18 +828,7 @@ export default function UploadInvoicePage() {
                           )}
                         </TableCell>
                         <TableCell>
-                          <div className="flex flex-col items-start gap-1">
-                            <StatusBadge status={inv.status} hasDbId={!!inv.dbId} uploadResult={inv.uploadResult} existingStatus={inv.existingStatus} />
-                            {inv.uploadResult === "duplicate" && inv.dbId && (
-                              <button
-                                onClick={() => router.push(`/invoices/${inv.dbId}`)}
-                                className="flex items-center gap-0.5 text-[11px] text-amber-700 underline underline-offset-2 hover:text-amber-900"
-                              >
-                                View existing
-                                <ExternalLink className="h-2.5 w-2.5" />
-                              </button>
-                            )}
-                          </div>
+                          <StatusBadge status={inv.status} hasDbId={!!inv.dbId} uploadResult={inv.uploadResult} existingStatus={inv.existingStatus} />
                         </TableCell>
                         <TableCell>
                           <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-red-500" onClick={() => removeInvoice(inv.id)}>
