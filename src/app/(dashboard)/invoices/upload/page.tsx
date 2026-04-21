@@ -87,6 +87,27 @@ interface UploadedInvoice {
 
 import { formatCurrency } from "~/lib/currency";
 
+// Module-level tracker so in-flight saves persist across component unmounts
+// (e.g. user navigates away mid-save). The async save closures keep running
+// in the browser; we use this set to drive a beforeunload warning so the user
+// doesn't accidentally hard-close the tab and abort in-flight requests.
+const inFlightSaves: Set<string> = new Set();
+let beforeUnloadHandler: ((e: BeforeUnloadEvent) => void) | null = null;
+
+function updateBeforeUnload() {
+  if (typeof window === "undefined") return;
+  if (inFlightSaves.size > 0 && !beforeUnloadHandler) {
+    beforeUnloadHandler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", beforeUnloadHandler);
+  } else if (inFlightSaves.size === 0 && beforeUnloadHandler) {
+    window.removeEventListener("beforeunload", beforeUnloadHandler);
+    beforeUnloadHandler = null;
+  }
+}
+
 function formatFileSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -429,6 +450,8 @@ export default function UploadInvoicePage() {
         });
       };
 
+      inFlightSaves.add(id);
+      updateBeforeUnload();
       try {
         const result = await tryUpsert(invoiceNumber);
         setInvoices((prev) =>
@@ -473,6 +496,9 @@ export default function UploadInvoicePage() {
         console.error("Auto-save draft failed:", err);
         toast.error(`Auto-save failed: ${msg}`);
         setInvoices((prev) => prev.map((x) => (x.id === id ? { ...x, status: "error" as const, error: msg } : x)));
+      } finally {
+        inFlightSaves.delete(id);
+        updateBeforeUnload();
       }
     } catch (error) {
       setInvoices((prev) =>
@@ -586,43 +612,53 @@ export default function UploadInvoicePage() {
 
     setInvoices(newEntries);
 
-    // Auto-save each as draft using upsertFromUpload (same as regular uploads).
-    // Sequential to avoid hammering the DB and to match the existing pattern.
-    for (const entry of newEntries) {
-      try {
-        const result = await upsertInvoice.mutateAsync({
-          invoiceNumber: entry.invoiceNumber,
-          invoicedDate: new Date(entry.invoicedDate),
-          paymentTerms: entry.paymentTerms,
-          currency: entry.currency,
-          customerId: customerId || undefined,
-          extractedCustomerName: extraction.customer.company || undefined,
-          taxRate: entry.taxRate,
-          notes: entry.notes || undefined,
-          fileUrl: entry.fileDataUrl ?? undefined,
-          items: entry.items.map((item, i) => ({
-            description: item.description,
-            quantity: item.quantity,
-            unitPrice: item.unitPrice,
-            amount: item.amount,
-            sortOrder: i,
-          })),
-          totalAmount: entry.totalAmount,
-          subtotal: entry.subtotal,
-          taxAmount: entry.taxAmount,
-        });
-        setInvoices((prev) =>
-          prev.map((x) =>
-            x.id === entry.id
-              ? { ...x, dbId: result.invoice.id, uploadResult: result.status, existingStatus: result.existingStatus as ExistingInvoiceStatus | null }
-              : x,
-          ),
-        );
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : "Auto-save failed";
-        setInvoices((prev) => prev.map((x) => (x.id === entry.id ? { ...x, status: "error", error: msg } : x)));
-      }
-    }
+    // Save everything in parallel via upsertFromUpload. tRPC queues requests
+    // over the same HTTP/2 connection so this scales to ~50+ invoices fine.
+    // Each save is independent — if the user navigates away, the in-flight
+    // requests still complete against the server even though this component
+    // has unmounted (JS doesn't stop an async closure just because React did).
+    await Promise.allSettled(
+      newEntries.map(async (entry) => {
+        inFlightSaves.add(entry.id);
+        updateBeforeUnload();
+        try {
+          const result = await upsertInvoice.mutateAsync({
+            invoiceNumber: entry.invoiceNumber,
+            invoicedDate: new Date(entry.invoicedDate),
+            paymentTerms: entry.paymentTerms,
+            currency: entry.currency,
+            customerId: customerId || undefined,
+            extractedCustomerName: extraction.customer.company || undefined,
+            taxRate: entry.taxRate,
+            notes: entry.notes || undefined,
+            fileUrl: entry.fileDataUrl ?? undefined,
+            items: entry.items.map((item, i) => ({
+              description: item.description,
+              quantity: item.quantity,
+              unitPrice: item.unitPrice,
+              amount: item.amount,
+              sortOrder: i,
+            })),
+            totalAmount: entry.totalAmount,
+            subtotal: entry.subtotal,
+            taxAmount: entry.taxAmount,
+          });
+          setInvoices((prev) =>
+            prev.map((x) =>
+              x.id === entry.id
+                ? { ...x, dbId: result.invoice.id, uploadResult: result.status, existingStatus: result.existingStatus as ExistingInvoiceStatus | null }
+                : x,
+            ),
+          );
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : "Auto-save failed";
+          setInvoices((prev) => prev.map((x) => (x.id === entry.id ? { ...x, status: "error", error: msg } : x)));
+        } finally {
+          inFlightSaves.delete(entry.id);
+          updateBeforeUnload();
+        }
+      }),
+    );
   };
 
   // Consume the pending statement payload on mount (once customers have loaded)
