@@ -51,8 +51,9 @@ export function NotificationToggle() {
         return;
       }
 
-      const registration = await navigator.serviceWorker.register("/push-sw.js", { scope: "/" });
-      await navigator.serviceWorker.ready;
+      // Use the already-registered main SW (/sw.js) which handles push events.
+      await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+      const registration = await navigator.serviceWorker.ready;
 
       const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
       if (!vapidPublicKey) {
@@ -91,7 +92,7 @@ export function NotificationToggle() {
   async function unsubscribe() {
     setIsLoading(true);
     try {
-      const registration = await navigator.serviceWorker.getRegistration("/push-sw.js");
+      const registration = await navigator.serviceWorker.getRegistration("/");
       if (registration) {
         const subscription = await registration.pushManager.getSubscription();
         if (subscription) {
