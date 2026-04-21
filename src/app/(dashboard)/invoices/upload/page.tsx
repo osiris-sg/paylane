@@ -497,16 +497,38 @@ export default function UploadInvoicePage() {
   }) => {
     const { extraction, fileDataUrl, fileName } = payload;
 
-    // Match or create the customer once so every staged invoice shares it
+    // Match or create the customer once so every staged invoice shares it.
+    // Normalise aggressively so "PT. ASIANFAST MARINE INDUSTRIES" matches
+    // "Asianfast Marine Industries Pte Ltd" etc.
+    const normaliseCompany = (raw: string) =>
+      raw
+        .toLowerCase()
+        .replace(/\b(pt\.?|pte\.?|ltd\.?|limited|corp\.?|corporation|inc\.?|llc|co\.?|company|gmbh|sdn|bhd|private)\b/g, " ")
+        .replace(/[^a-z0-9]+/g, " ")
+        .trim();
+
     let customerId = "";
-    const needle = extraction.customer.company.trim().toLowerCase();
+    const needleRaw = extraction.customer.company.trim();
+    const needle = normaliseCompany(needleRaw);
     const match = customers.find((c) => {
-      const company = (c.company ?? "").toLowerCase();
-      const name = c.name.toLowerCase();
-      return company.includes(needle) || name.includes(needle) || needle.includes(company) || needle.includes(name);
+      const company = normaliseCompany(c.company ?? "");
+      const name = normaliseCompany(c.name);
+      if (!needle) return false;
+      return (
+        (company && (company === needle || company.includes(needle) || needle.includes(company))) ||
+        (name && (name === needle || name.includes(needle) || needle.includes(name)))
+      );
     });
+    console.log("[statement] customer match attempt:", {
+      needleRaw,
+      normalisedNeedle: needle,
+      candidates: customers.map((c) => ({ id: c.id, company: c.company, name: c.name })),
+      match: match ? { id: match.id, company: match.company, name: match.name } : null,
+    });
+
     if (match) {
       customerId = match.id;
+      toast.success(`Matched existing customer: ${match.company || match.name}`);
     } else {
       try {
         const created = await createCustomer.mutateAsync({
@@ -516,7 +538,7 @@ export default function UploadInvoicePage() {
         });
         customerId = created.id;
         await refetchCustomers();
-        toast.success(`Customer "${extraction.customer.company}" added`);
+        toast.success(`New customer created: ${extraction.customer.company}`);
       } catch (err) {
         console.error("Failed to create statement customer:", err);
         toast.error(`Could not create customer "${extraction.customer.company}" — you can assign one manually`);
