@@ -9,27 +9,22 @@ export const dashboardRouter = createTRPCRouter({
     const companyId = user.companyId;
     const now = new Date();
 
+    const orCompany = [
+      { senderCompanyId: companyId },
+      { receiverCompanyId: companyId },
+    ];
     const pendingWhere = {
-      OR: [
-        { senderCompanyId: companyId },
-        { receiverCompanyId: companyId },
-      ],
-      invoiceStatus: { in: ["SENT", "PENDING_APPROVAL"] as const },
+      OR: orCompany,
+      invoiceStatus: { in: ["SENT" as const, "PENDING_APPROVAL" as const] },
     };
     const paidWhere = {
-      OR: [
-        { senderCompanyId: companyId },
-        { receiverCompanyId: companyId },
-      ],
+      OR: orCompany,
       invoiceStatus: "PAID" as const,
     };
     const overdueWhere = {
-      OR: [
-        { senderCompanyId: companyId },
-        { receiverCompanyId: companyId },
-      ],
+      OR: orCompany,
       dueDate: { lt: now },
-      invoiceStatus: { notIn: ["PAID", "CANCELLED"] as const },
+      invoiceStatus: { notIn: ["PAID" as const, "CANCELLED" as const] },
     };
 
     const [
