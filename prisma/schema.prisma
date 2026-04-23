@@ -203,3 +203,9 @@ enum NotificationType {
   INVOICE_PAID
   INVOICE_ACKNOWLEDGED
 }
+
+model FeatureFlag {
+  key       String   @id
+  enabled   Boolean  @default(false)
+  updatedAt DateTime @updatedAt
+}

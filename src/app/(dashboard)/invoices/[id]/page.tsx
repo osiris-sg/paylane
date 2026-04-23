@@ -137,6 +137,7 @@ export default function InvoiceDetailPage() {
   const { data: invoice, isLoading } = api.invoice.getById.useQuery({
     id: params.id,
   });
+  const { data: featureFlags } = api.featureFlag.getAll.useQuery();
 
   const sendInvoice = api.invoice.send.useMutation({
     onSuccess: () => {
@@ -281,15 +282,19 @@ export default function InvoiceDetailPage() {
   const isSender = !isReceived; // This user's company sent the invoice
   const isReceiver = isReceived; // This user's company received the invoice
 
+  const paymentApprovalEnabled = featureFlags?.paymentApprovalFlow ?? false;
+
   const canSend = isSender && invoice.invoiceStatus === "DRAFT";
   const canMarkPaid =
+    paymentApprovalEnabled &&
     isReceiver &&
     (invoice.invoiceStatus === "SENT" || invoice.invoiceStatus === "OVERDUE");
-  const canApprovePayment = isSender && invoice.invoiceStatus === "PENDING_APPROVAL";
-  const canRejectPayment = isSender && invoice.invoiceStatus === "PENDING_APPROVAL";
+  const canApprovePayment = paymentApprovalEnabled && isSender && invoice.invoiceStatus === "PENDING_APPROVAL";
+  const canRejectPayment = paymentApprovalEnabled && isSender && invoice.invoiceStatus === "PENDING_APPROVAL";
   const canDelete = isSender && invoice.invoiceStatus === "DRAFT";
   const canEdit = isSender && invoice.invoiceStatus === "DRAFT";
   const canSchedulePayment =
+    paymentApprovalEnabled &&
     isReceiver &&
     (invoice.invoiceStatus === "SENT" || invoice.invoiceStatus === "OVERDUE");
 

@@ -163,6 +163,9 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
 
   const utils = api.useUtils();
 
+  const { data: featureFlags } = api.featureFlag.getAll.useQuery();
+  const paymentApprovalEnabled = featureFlags?.paymentApprovalFlow ?? false;
+
   const { data, isLoading } = api.invoice.list.useQuery({
     type,
     page,
@@ -307,9 +310,9 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
 
   // Determine which bulk actions apply based on the current selection
   const canBulkSend = type === "sent" && selectedInvoices.length > 0 && selectedInvoices.every((i) => i.invoiceStatus === "DRAFT");
-  const canBulkApprove = type === "sent" && selectedInvoices.length > 0 && selectedInvoices.every((i) => i.invoiceStatus === "PENDING_APPROVAL");
+  const canBulkApprove = paymentApprovalEnabled && type === "sent" && selectedInvoices.length > 0 && selectedInvoices.every((i) => i.invoiceStatus === "PENDING_APPROVAL");
   const canBulkReject = canBulkApprove;
-  const canBulkMarkPaid = type === "received" && selectedInvoices.length > 0 && selectedInvoices.every((i) => i.invoiceStatus === "SENT" || i.invoiceStatus === "OVERDUE");
+  const canBulkMarkPaid = paymentApprovalEnabled && type === "received" && selectedInvoices.length > 0 && selectedInvoices.every((i) => i.invoiceStatus === "SENT" || i.invoiceStatus === "OVERDUE");
   const canBulkDeleteDrafts = type === "sent" && selectedInvoices.length > 0 && selectedInvoices.every((i) => i.invoiceStatus === "DRAFT");
 
   const handleBulkDelete = () => {

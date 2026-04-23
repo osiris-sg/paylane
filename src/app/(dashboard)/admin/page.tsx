@@ -19,8 +19,10 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui/table";
-import { Building2, Users, FileText, FileDown } from "lucide-react";
+import { Building2, Users, FileText, FileDown, Flag } from "lucide-react";
 import dayjs from "dayjs";
+import { Button } from "~/components/ui/button";
+import { FEATURE_FLAGS, type FeatureFlagKey } from "~/lib/feature-flags";
 
 const moduleConfig: Record<string, { label: string; className: string }> = {
   RECEIVE: { label: "Receive", className: "bg-purple-100 text-purple-700 border-purple-300" },
@@ -30,6 +32,8 @@ const moduleConfig: Record<string, { label: string; className: string }> = {
 
 export default function AdminPage() {
   const { data: companies, isLoading, refetch } = api.admin.listCompanies.useQuery();
+  const { data: flags, refetch: refetchFlags } = api.featureFlag.getAll.useQuery();
+  const utils = api.useUtils();
 
   const setModule = api.admin.setModule.useMutation({
     onSuccess: () => {
@@ -38,6 +42,17 @@ export default function AdminPage() {
     },
     onError: (err) => {
       toast.error(err.message || "Failed to update module");
+    },
+  });
+
+  const setFlag = api.featureFlag.set.useMutation({
+    onSuccess: () => {
+      toast.success("Feature flag updated");
+      void refetchFlags();
+      void utils.featureFlag.getAll.invalidate();
+    },
+    onError: (err) => {
+      toast.error(err.message || "Failed to update feature flag");
     },
   });
 
@@ -109,6 +124,39 @@ export default function AdminPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Feature Flags */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Flag className="h-4 w-4" />
+            Feature Flags
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {(Object.keys(FEATURE_FLAGS) as FeatureFlagKey[]).map((key) => {
+            const meta = FEATURE_FLAGS[key];
+            const enabled = flags?.[key] ?? meta.defaultEnabled;
+            return (
+              <div key={key} className="flex items-start justify-between gap-4 rounded-md border p-4">
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium">{meta.label}</p>
+                  <p className="mt-0.5 text-sm text-muted-foreground">{meta.description}</p>
+                </div>
+                <Button
+                  variant={enabled ? "default" : "outline"}
+                  size="sm"
+                  disabled={setFlag.isPending}
+                  onClick={() => setFlag.mutate({ key, enabled: !enabled })}
+                  className={enabled ? "bg-green-600 hover:bg-green-700" : ""}
+                >
+                  {enabled ? "Enabled" : "Disabled"}
+                </Button>
+              </div>
+            );
+          })}
+        </CardContent>
+      </Card>
 
       {/* Companies Table */}
       <Card>

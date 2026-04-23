@@ -1,12 +1,24 @@
 import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
 import { TRPCError } from "@trpc/server";
-import { Prisma } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { Resend } from "resend";
 import { sendPushToCompany } from "~/lib/push-notifications";
+import { FEATURE_FLAGS, type FeatureFlagKey } from "~/lib/feature-flags";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const FROM_EMAIL = process.env.EMAIL_FROM ?? "PayLane <onboarding@resend.dev>";
+
+async function assertFeatureEnabled(db: PrismaClient, key: FeatureFlagKey) {
+  const row = await db.featureFlag.findUnique({ where: { key } });
+  const enabled = row?.enabled ?? FEATURE_FLAGS[key].defaultEnabled;
+  if (!enabled) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: `This action is currently disabled (${FEATURE_FLAGS[key].label} is off). Contact an admin.`,
+    });
+  }
+}
 
 const itemSchema = z.object({
   description: z.string().min(1),
@@ -538,6 +550,7 @@ export const invoiceRouter = createTRPCRouter({
   bulkMarkPaid: protectedProcedure
     .input(z.object({ ids: z.array(z.string()).min(1) }))
     .mutation(async ({ ctx, input }) => {
+      await assertFeatureEnabled(ctx.db as unknown as PrismaClient, "paymentApprovalFlow");
       // Move to PENDING_APPROVAL (receiver claiming payment)
       await ctx.db.invoice.updateMany({
         where: { id: { in: input.ids } },
@@ -722,6 +735,7 @@ export const invoiceRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      await assertFeatureEnabled(ctx.db as unknown as PrismaClient, "paymentApprovalFlow");
       const invoice = await ctx.db.invoice.update({
         where: { id: input.id },
         data: {
@@ -757,6 +771,7 @@ export const invoiceRouter = createTRPCRouter({
   markPaid: protectedProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
+      await assertFeatureEnabled(ctx.db as unknown as PrismaClient, "paymentApprovalFlow");
       const invoice = await ctx.db.invoice.update({
         where: { id: input.id },
         data: {
@@ -797,6 +812,7 @@ export const invoiceRouter = createTRPCRouter({
   approvePayment: protectedProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
+      await assertFeatureEnabled(ctx.db as unknown as PrismaClient, "paymentApprovalFlow");
       const invoice = await ctx.db.invoice.update({
         where: { id: input.id },
         data: {
@@ -837,6 +853,7 @@ export const invoiceRouter = createTRPCRouter({
   rejectPayment: protectedProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
+      await assertFeatureEnabled(ctx.db as unknown as PrismaClient, "paymentApprovalFlow");
       const invoice = await ctx.db.invoice.update({
         where: { id: input.id },
         data: {
