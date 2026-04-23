@@ -735,6 +735,7 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
                 <TableHead>{type === "sent" ? "Customer" : "Supplier"}</TableHead>
                 <TableHead>Reference</TableHead>
                 <TableHead>Invoice Date</TableHead>
+                <TableHead>{type === "sent" ? "Date Sent" : "Date Received"}</TableHead>
                 <TableHead>Due Date</TableHead>
                 <TableHead className="text-right">Amount</TableHead>
                 <TableHead>Status</TableHead>
@@ -817,6 +818,11 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
                       {/* Invoice Date */}
                       <TableCell>
                         {dayjs(invoice.invoicedDate).format("MMM D, YYYY")}
+                      </TableCell>
+
+                      {/* Date Sent / Date Received */}
+                      <TableCell>
+                        {invoice.sentAt ? dayjs(invoice.sentAt).format("MMM D, YYYY") : <span className="text-muted-foreground">—</span>}
                       </TableCell>
 
                       {/* Due Date */}

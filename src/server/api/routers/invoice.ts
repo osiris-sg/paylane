@@ -628,6 +628,7 @@ export const invoiceRouter = createTRPCRouter({
           invoiceStatus: "SENT",
           routingStatus: receiverCompanyId ? "PENDING" : "PENDING",
           receiverCompanyId,
+          sentAt: existing.sentAt ?? new Date(),
           timelineItems: {
             create: {
               message: receiverCompanyId
