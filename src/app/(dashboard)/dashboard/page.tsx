@@ -12,6 +12,7 @@ import {
   Plus,
   Upload,
   FileSpreadsheet,
+  FileClock,
 } from "lucide-react";
 import {
   BarChart,
@@ -76,65 +77,95 @@ function SkeletonChart() {
   );
 }
 
-type CardModules = "send" | "receive" | "both";
+type CardDef = {
+  key: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  accent: string;
+  bg: string;
+  highlight?: "overdue";
+  statusFilter: string | null;
+};
 
-const SUMMARY_CARDS = [
-  {
-    key: "totalSent" as const,
-    amountKey: "totalAmountSent" as const,
-    label: "Total Sent",
-    icon: FileText,
-    accent: "text-blue-600",
-    bg: "bg-blue-50",
-    border: "",
-    statusFilter: null,
-    modules: "send" as CardModules,
-  },
-  {
-    key: "totalReceived" as const,
-    amountKey: "totalAmountReceived" as const,
-    label: "Total Received",
-    icon: FileDown,
-    accent: "text-purple-600",
-    bg: "bg-purple-50",
-    border: "",
-    statusFilter: null,
-    modules: "receive" as CardModules,
-  },
-  {
-    key: "pending" as const,
-    amountKey: "totalAmountPending" as const,
-    label: "Pending",
-    icon: Clock,
-    accent: "text-amber-600",
-    bg: "bg-amber-50",
-    border: "",
-    statusFilter: "SENT",
-    modules: "both" as CardModules,
-  },
-  {
-    key: "overdue" as const,
-    amountKey: "totalAmountOverdue" as const,
-    label: "Overdue",
-    icon: AlertTriangle,
-    accent: "text-red-600",
-    bg: "bg-red-50",
-    border: "overdue",
-    statusFilter: "OVERDUE",
-    modules: "both" as CardModules,
-  },
-  {
-    key: "paid" as const,
-    amountKey: "totalAmountPaid" as const,
-    label: "Paid",
-    icon: DollarSign,
-    accent: "text-emerald-600",
-    bg: "bg-emerald-50",
-    border: "",
-    statusFilter: "PAID",
-    modules: "both" as CardModules,
-  },
-] as const;
+const CUSTOMER_CARDS: CardDef[] = [
+  { key: "total", label: "Total", icon: FileText, accent: "text-blue-600", bg: "bg-blue-50", statusFilter: null },
+  { key: "draft", label: "Draft", icon: FileClock, accent: "text-gray-600", bg: "bg-gray-100", statusFilter: "DRAFT" },
+  { key: "pending", label: "Pending", icon: Clock, accent: "text-amber-600", bg: "bg-amber-50", statusFilter: "SENT" },
+  { key: "overdue", label: "Overdue", icon: AlertTriangle, accent: "text-red-600", bg: "bg-red-50", highlight: "overdue", statusFilter: "OVERDUE" },
+  { key: "paid", label: "Paid", icon: DollarSign, accent: "text-emerald-600", bg: "bg-emerald-50", statusFilter: "PAID" },
+];
+
+const SUPPLIER_CARDS: CardDef[] = [
+  { key: "total", label: "Total", icon: FileDown, accent: "text-purple-600", bg: "bg-purple-50", statusFilter: null },
+  { key: "pending", label: "Pending", icon: Clock, accent: "text-amber-600", bg: "bg-amber-50", statusFilter: "SENT" },
+  { key: "overdue", label: "Overdue", icon: AlertTriangle, accent: "text-red-600", bg: "bg-red-50", highlight: "overdue", statusFilter: "OVERDUE" },
+  { key: "paid", label: "Paid", icon: DollarSign, accent: "text-emerald-600", bg: "bg-emerald-50", statusFilter: "PAID" },
+];
+
+type Bucket = { count: number; amount: number };
+
+function SummaryCard({
+  card,
+  bucket,
+  href,
+}: {
+  card: CardDef;
+  bucket: Bucket | undefined;
+  href: string | null;
+}) {
+  const count = bucket?.count ?? 0;
+  const amount = bucket?.amount ?? 0;
+  const isOverdueHighlight = card.highlight === "overdue" && count > 0;
+  const Icon = card.icon;
+
+  const cardContent = (
+    <Card
+      className={`group relative h-full overflow-hidden border shadow-sm transition-all ${
+        isOverdueHighlight
+          ? "border-red-300 bg-gradient-to-br from-red-50 to-white"
+          : "bg-white"
+      } ${href ? "cursor-pointer hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-md" : ""}`}
+    >
+      <div className="flex h-full flex-col gap-3 p-5">
+        <div className="flex items-start justify-between">
+          <span className={`text-sm font-medium ${isOverdueHighlight ? "text-red-700" : "text-muted-foreground"}`}>
+            {card.label}
+          </span>
+          <div className={`rounded-lg p-2 ${card.bg}`}>
+            <Icon className={`h-4 w-4 ${card.accent}`} />
+          </div>
+        </div>
+        <div className="mt-auto">
+          <div className={`text-3xl font-bold tracking-tight ${isOverdueHighlight ? "text-red-700" : "text-gray-900"}`}>
+            {count}
+          </div>
+          {amount > 0 && (
+            <p className={`mt-1 text-xs ${isOverdueHighlight ? "font-semibold text-red-600" : "text-muted-foreground"}`}>
+              {formatCurrency(amount)}
+            </p>
+          )}
+        </div>
+      </div>
+    </Card>
+  );
+
+  return href ? (
+    <Link href={href} className="block">
+      {cardContent}
+    </Link>
+  ) : (
+    <div>{cardContent}</div>
+  );
+}
+
+function SectionHeading({ title, subtitle }: { title: string; subtitle: string }) {
+  return (
+    <div>
+      <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
+      <p className="text-xs text-muted-foreground">{subtitle}</p>
+    </div>
+  );
+}
 
 export default function DashboardPage() {
   const summary = api.dashboard.getSummary.useQuery();
@@ -146,29 +177,14 @@ export default function DashboardPage() {
   const canSend = companyModule === "SEND" || companyModule === "BOTH";
   const canReceive = companyModule === "RECEIVE" || companyModule === "BOTH";
 
-  const visibleCards = SUMMARY_CARDS.filter((card) => {
-    if (card.modules === "both") return true;
-    if (card.modules === "send") return canSend;
-    if (card.modules === "receive") return canReceive;
-    return false;
-  });
-
-  // Build the target URL for a card based on its scope and the user's module
-  const buildHref = (card: (typeof SUMMARY_CARDS)[number]): string | null => {
-    const params = new URLSearchParams();
-    // Pick the tab this card pertains to
-    let tab: "sent" | "received" | null = null;
-    if (card.modules === "send") tab = "sent";
-    else if (card.modules === "receive") tab = "received";
-    else if (card.modules === "both") {
-      // For shared cards, prefer the tab the user actually has access to
-      tab = canSend ? "sent" : canReceive ? "received" : null;
-    }
-    if (!tab) return null;
-    params.set("tab", tab);
-    if (card.statusFilter) params.set("status", card.statusFilter);
+  const buildHref = (tab: "sent" | "received", statusFilter: string | null) => {
+    const params = new URLSearchParams({ tab });
+    if (statusFilter) params.set("status", statusFilter);
     return `/invoices?${params.toString()}`;
   };
+
+  const sent = summary.data?.sent;
+  const received = summary.data?.received;
 
   return (
     <div className="space-y-6 p-3 md:space-y-8 md:p-6 lg:p-8">
@@ -208,82 +224,58 @@ export default function DashboardPage() {
 
       <Separator />
 
-      {/* Summary Cards */}
-      {summary.isLoading ? (
-        <div
-          className={`grid gap-4 grid-cols-2 ${
-            visibleCards.length <= 3
-              ? "lg:grid-cols-3"
-              : visibleCards.length === 4
-                ? "md:grid-cols-2 lg:grid-cols-4"
-                : "md:grid-cols-3 lg:grid-cols-5"
-          }`}
-        >
-          {Array.from({ length: visibleCards.length || 4 }).map((_, i) => (
-            <SkeletonCard key={i} />
-          ))}
-        </div>
-      ) : summary.data ? (
-        <div
-          className={`grid gap-4 grid-cols-2 ${
-            visibleCards.length <= 3
-              ? "lg:grid-cols-3"
-              : visibleCards.length === 4
-                ? "md:grid-cols-2 lg:grid-cols-4"
-                : "md:grid-cols-3 lg:grid-cols-5"
-          }`}
-        >
-          {visibleCards.map((card) => {
-            const count = summary.data[card.key];
-            const amount = card.amountKey ? summary.data[card.amountKey] : null;
-            const isOverdueHighlight = card.border === "overdue" && count > 0;
-            const Icon = card.icon;
-            const href = buildHref(card);
+      {/* Customer (sent) section */}
+      {canSend && (
+        <section className="space-y-3">
+          <SectionHeading title="Customer" subtitle="Invoices you sent to customers" />
+          {summary.isLoading ? (
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <SkeletonCard key={i} />
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
+              {CUSTOMER_CARDS.map((card) => (
+                <SummaryCard
+                  key={card.key}
+                  card={card}
+                  bucket={sent?.[card.key as keyof typeof sent]}
+                  href={buildHref("sent", card.statusFilter)}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
-            const cardContent = (
-              <Card
-                className={`group relative h-full overflow-hidden border shadow-sm transition-all ${
-                  isOverdueHighlight
-                    ? "border-red-300 bg-gradient-to-br from-red-50 to-white"
-                    : "bg-white"
-                } ${href ? "cursor-pointer hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-md" : ""}`}
-              >
-                <div className="flex h-full flex-col gap-3 p-5">
-                  <div className="flex items-start justify-between">
-                    <span className={`text-sm font-medium ${isOverdueHighlight ? "text-red-700" : "text-muted-foreground"}`}>
-                      {card.label}
-                    </span>
-                    <div className={`rounded-lg p-2 ${card.bg}`}>
-                      <Icon className={`h-4 w-4 ${card.accent}`} />
-                    </div>
-                  </div>
-                  <div className="mt-auto">
-                    <div className={`text-3xl font-bold tracking-tight ${isOverdueHighlight ? "text-red-700" : "text-gray-900"}`}>
-                      {count}
-                    </div>
-                    {amount !== null && Number(amount) > 0 && (
-                      <p className={`mt-1 text-xs ${isOverdueHighlight ? "font-semibold text-red-600" : "text-muted-foreground"}`}>
-                        {formatCurrency(amount)}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </Card>
-            );
-
-            return href ? (
-              <Link key={card.key} href={href} className="block">
-                {cardContent}
-              </Link>
-            ) : (
-              <div key={card.key}>{cardContent}</div>
-            );
-          })}
-        </div>
-      ) : null}
+      {/* Supplier (received) section */}
+      {canReceive && (
+        <section className="space-y-3">
+          <SectionHeading title="Supplier" subtitle="Invoices you received from suppliers" />
+          {summary.isLoading ? (
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <SkeletonCard key={i} />
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+              {SUPPLIER_CARDS.map((card) => (
+                <SummaryCard
+                  key={card.key}
+                  card={card}
+                  bucket={received?.[card.key as keyof typeof received]}
+                  href={buildHref("received", card.statusFilter)}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
       {/* Charts */}
-      <div className={`grid gap-6 ${canReceive ? "lg:grid-cols-2" : ""}`}>
+      <div className={`grid gap-6 ${canReceive && canSend ? "lg:grid-cols-2" : ""}`}>
         {/* Invoice Aging Bar Chart — only for RECEIVE-capable accounts */}
         {canReceive && aging.isLoading ? (
           <SkeletonChart />
@@ -294,7 +286,7 @@ export default function DashboardPage() {
                 Invoice Aging
               </CardTitle>
               <p className="text-xs text-muted-foreground">
-                Received unpaid invoices grouped by days outstanding
+                Unpaid supplier invoices grouped by days outstanding
               </p>
             </CardHeader>
             <CardContent>
@@ -305,7 +297,7 @@ export default function DashboardPage() {
                 >
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
                   <XAxis
-                    dataKey="bucket"
+                    dataKey="label"
                     tickLine={false}
                     axisLine={false}
                     fontSize={12}
@@ -348,7 +340,11 @@ export default function DashboardPage() {
                 Monthly Totals
               </CardTitle>
               <p className="text-xs text-muted-foreground">
-                Invoices sent and received over the last 6 months
+                {canSend && canReceive
+                  ? "Invoices sent and received over the last 6 months"
+                  : canSend
+                    ? "Invoices sent over the last 6 months"
+                    : "Invoices received over the last 6 months"}
               </p>
             </CardHeader>
             <CardContent>
@@ -378,24 +374,28 @@ export default function DashboardPage() {
                       fontSize: "13px",
                     }}
                   />
-                  <Line
-                    type="monotone"
-                    dataKey="sent"
-                    stroke="#3b82f6"
-                    strokeWidth={2}
-                    dot={{ r: 4, fill: "#3b82f6" }}
-                    activeDot={{ r: 6 }}
-                    name="Sent"
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="received"
-                    stroke="#8b5cf6"
-                    strokeWidth={2}
-                    dot={{ r: 4, fill: "#8b5cf6" }}
-                    activeDot={{ r: 6 }}
-                    name="Received"
-                  />
+                  {canSend && (
+                    <Line
+                      type="monotone"
+                      dataKey="sent"
+                      stroke="#3b82f6"
+                      strokeWidth={2}
+                      dot={{ r: 4, fill: "#3b82f6" }}
+                      activeDot={{ r: 6 }}
+                      name="Customer"
+                    />
+                  )}
+                  {canReceive && (
+                    <Line
+                      type="monotone"
+                      dataKey="received"
+                      stroke="#8b5cf6"
+                      strokeWidth={2}
+                      dot={{ r: 4, fill: "#8b5cf6" }}
+                      activeDot={{ r: 6 }}
+                      name="Supplier"
+                    />
+                  )}
                 </LineChart>
               </ResponsiveContainer>
             </CardContent>

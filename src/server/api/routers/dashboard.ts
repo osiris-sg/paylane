@@ -9,59 +9,69 @@ export const dashboardRouter = createTRPCRouter({
     const companyId = user.companyId;
     const now = new Date();
 
-    const orCompany = [
-      { senderCompanyId: companyId },
-      { receiverCompanyId: companyId },
-    ];
-    const pendingWhere = {
-      OR: orCompany,
-      invoiceStatus: { in: ["SENT" as const, "PENDING_APPROVAL" as const] },
-    };
-    const paidWhere = {
-      OR: orCompany,
-      invoiceStatus: "PAID" as const,
-    };
-    const overdueWhere = {
-      OR: orCompany,
-      dueDate: { lt: now },
-      invoiceStatus: { notIn: ["PAID" as const, "CANCELLED" as const] },
+    const sentBase = { senderCompanyId: companyId } as const;
+    const receivedBase = { receiverCompanyId: companyId } as const;
+
+    const countAndSum = async (where: Record<string, unknown>) => {
+      const [count, agg] = await Promise.all([
+        ctx.db.invoice.count({ where }),
+        ctx.db.invoice.aggregate({ where, _sum: { amount: true } }),
+      ]);
+      return { count, amount: Number(agg._sum.amount ?? 0) };
     };
 
     const [
-      totalSent,
-      totalReceived,
-      pending,
-      paid,
-      overdue,
-      sentAggregation,
-      receivedAggregation,
-      pendingAggregation,
-      paidAggregation,
-      overdueAggregation,
+      sentTotal,
+      sentDraft,
+      sentPending,
+      sentOverdue,
+      sentPaid,
+      receivedTotal,
+      receivedPending,
+      receivedOverdue,
+      receivedPaid,
     ] = await Promise.all([
-      ctx.db.invoice.count({ where: { senderCompanyId: companyId } }),
-      ctx.db.invoice.count({ where: { receiverCompanyId: companyId } }),
-      ctx.db.invoice.count({ where: pendingWhere }),
-      ctx.db.invoice.count({ where: paidWhere }),
-      ctx.db.invoice.count({ where: overdueWhere }),
-      ctx.db.invoice.aggregate({ where: { senderCompanyId: companyId }, _sum: { amount: true } }),
-      ctx.db.invoice.aggregate({ where: { receiverCompanyId: companyId }, _sum: { amount: true } }),
-      ctx.db.invoice.aggregate({ where: pendingWhere, _sum: { amount: true } }),
-      ctx.db.invoice.aggregate({ where: paidWhere, _sum: { amount: true } }),
-      ctx.db.invoice.aggregate({ where: overdueWhere, _sum: { amount: true } }),
+      countAndSum(sentBase),
+      countAndSum({ ...sentBase, invoiceStatus: "DRAFT" }),
+      countAndSum({
+        ...sentBase,
+        invoiceStatus: { in: ["SENT", "PENDING_APPROVAL"] },
+        OR: [{ dueDate: null }, { dueDate: { gte: now } }],
+      }),
+      countAndSum({
+        ...sentBase,
+        invoiceStatus: { notIn: ["PAID", "CANCELLED", "DRAFT"] },
+        dueDate: { lt: now },
+      }),
+      countAndSum({ ...sentBase, invoiceStatus: "PAID" }),
+      countAndSum(receivedBase),
+      countAndSum({
+        ...receivedBase,
+        invoiceStatus: { in: ["SENT", "PENDING_APPROVAL"] },
+        OR: [{ dueDate: null }, { dueDate: { gte: now } }],
+      }),
+      countAndSum({
+        ...receivedBase,
+        invoiceStatus: { notIn: ["PAID", "CANCELLED", "DRAFT"] },
+        dueDate: { lt: now },
+      }),
+      countAndSum({ ...receivedBase, invoiceStatus: "PAID" }),
     ]);
 
     return {
-      totalSent,
-      totalReceived,
-      pending,
-      overdue,
-      paid,
-      totalAmountSent: sentAggregation._sum.amount ?? 0,
-      totalAmountReceived: receivedAggregation._sum.amount ?? 0,
-      totalAmountPending: pendingAggregation._sum.amount ?? 0,
-      totalAmountPaid: paidAggregation._sum.amount ?? 0,
-      totalAmountOverdue: overdueAggregation._sum.amount ?? 0,
+      sent: {
+        total: sentTotal,
+        draft: sentDraft,
+        pending: sentPending,
+        overdue: sentOverdue,
+        paid: sentPaid,
+      },
+      received: {
+        total: receivedTotal,
+        pending: receivedPending,
+        overdue: receivedOverdue,
+        paid: receivedPaid,
+      },
     };
   }),
 
