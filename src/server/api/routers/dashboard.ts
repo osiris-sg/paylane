@@ -36,7 +36,7 @@ export const dashboardRouter = createTRPCRouter({
       countAndSum({
         ...sentBase,
         invoiceStatus: { in: ["SENT", "PENDING_APPROVAL"] },
-        OR: [{ dueDate: null }, { dueDate: { gte: now } }],
+        dueDate: { gte: now },
       }),
       countAndSum({
         ...sentBase,
@@ -48,7 +48,7 @@ export const dashboardRouter = createTRPCRouter({
       countAndSum({
         ...receivedBase,
         invoiceStatus: { in: ["SENT", "PENDING_APPROVAL"] },
-        OR: [{ dueDate: null }, { dueDate: { gte: now } }],
+        dueDate: { gte: now },
       }),
       countAndSum({
         ...receivedBase,

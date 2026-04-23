@@ -136,14 +136,12 @@ function SummaryCard({
           </div>
         </div>
         <div className="mt-auto">
-          <div className={`text-3xl font-bold tracking-tight ${isOverdueHighlight ? "text-red-700" : "text-gray-900"}`}>
-            {count}
+          <div className={`text-2xl font-bold tracking-tight md:text-3xl ${isOverdueHighlight ? "text-red-700" : "text-gray-900"}`}>
+            {formatCurrency(amount)}
           </div>
-          {amount > 0 && (
-            <p className={`mt-1 text-xs ${isOverdueHighlight ? "font-semibold text-red-600" : "text-muted-foreground"}`}>
-              {formatCurrency(amount)}
-            </p>
-          )}
+          <p className={`mt-1 text-xs ${isOverdueHighlight ? "font-semibold text-red-600" : "text-muted-foreground"}`}>
+            {count} invoice{count === 1 ? "" : "s"}
+          </p>
         </div>
       </div>
     </Card>
