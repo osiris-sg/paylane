@@ -287,8 +287,12 @@ export default function OnboardingPage() {
   const completeOnboarding = api.onboarding.complete.useMutation({
     onSuccess: () => {
       toast.success("Welcome to PayLane!");
-      // Deep-link to first invoice if they were invited
-      if (status?.firstInvoiceId) {
+      // Priority: signed invite token (from email) > linked-customer fallback > dashboard
+      const inviteToken =
+        typeof window !== "undefined" ? sessionStorage.getItem("paylane:pending-invite-token") : null;
+      if (inviteToken) {
+        router.push("/invoices/accept-invite");
+      } else if (status?.firstInvoiceId) {
         router.push(`/invoices/${status.firstInvoiceId}`);
       } else {
         router.push("/dashboard");

@@ -5,6 +5,7 @@ import { z } from "zod";
 import { Resend } from "resend";
 import { sendPushToCompany } from "~/lib/push-notifications";
 import { FEATURE_FLAGS, type FeatureFlagKey } from "~/lib/feature-flags";
+import { signInviteToken, verifyInviteToken } from "~/lib/invoice-invite";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const FROM_EMAIL = process.env.EMAIL_FROM ?? "PayLane <onboarding@resend.dev>";
@@ -669,7 +670,12 @@ export const invoiceRouter = createTRPCRouter({
           where: { id: invoice.senderCompanyId },
         });
 
-        const signupUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/sign-up?email=${encodeURIComponent(existing.customer.email)}`;
+        const inviteToken = signInviteToken({
+          invoiceId: invoice.id,
+          email: existing.customer.email,
+        });
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+        const signupUrl = `${baseUrl}/sign-up?email=${encodeURIComponent(existing.customer.email)}&invite=${inviteToken}`;
 
         try {
           const result = await resend.emails.send({
@@ -712,6 +718,66 @@ export const invoiceRouter = createTRPCRouter({
       }
 
       return invoice;
+    }),
+
+  /**
+   * Receiver-side: accept an invite token from a "you have a new invoice" email.
+   * Idempotent: if the invoice is already linked to this caller's company, just
+   * returns the invoice id. Used post-signup/post-onboarding to deep-link the
+   * new account to the invoice they were invited about.
+   */
+  acceptInvite: protectedProcedure
+    .input(z.object({ token: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const payload = verifyInviteToken(input.token);
+      if (!payload) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Invite link is invalid or expired" });
+      }
+
+      const user = await ctx.db.user.findUniqueOrThrow({
+        where: { clerkId: ctx.auth.userId },
+        include: { company: true },
+      });
+
+      const invoice = await ctx.db.invoice.findUnique({
+        where: { id: payload.invoiceId },
+        include: { customer: true },
+      });
+      if (!invoice) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Invoice from invite no longer exists" });
+      }
+
+      // Already linked to this user's company → just return.
+      if (invoice.receiverCompanyId === user.companyId) {
+        return { invoiceId: invoice.id };
+      }
+
+      // Already linked to a DIFFERENT company → don't silently override.
+      if (invoice.receiverCompanyId && invoice.receiverCompanyId !== user.companyId) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "This invoice is already linked to a different account",
+        });
+      }
+
+      // Link the invoice to the new receiver company, and link the customer
+      // record on the sender's side so future invoices route automatically.
+      await ctx.db.invoice.update({
+        where: { id: invoice.id },
+        data: {
+          receiverCompanyId: user.companyId,
+          timelineItems: { create: { message: "Receiver linked via invite" } },
+        },
+      });
+
+      if (invoice.customer && !invoice.customer.linkedCompanyId) {
+        await ctx.db.customer.update({
+          where: { id: invoice.customer.id },
+          data: { linkedCompanyId: user.companyId },
+        });
+      }
+
+      return { invoiceId: invoice.id };
     }),
 
   togglePin: protectedProcedure

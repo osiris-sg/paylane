@@ -21,12 +21,21 @@ function SignUpForm() {
   // If already signed in, go to dashboard
   useEffect(() => {
     if (isSignedIn) {
-      router.replace("/dashboard");
+      router.replace(typeof window !== "undefined" && sessionStorage.getItem("paylane:pending-invite-token") ? "/invoices/accept-invite" : "/dashboard");
     }
   }, [isSignedIn, router]);
 
   const prefilledEmail = searchParams.get("email") ?? "";
+  const inviteToken = searchParams.get("invite") ?? "";
   const isEmailLocked = !!prefilledEmail;
+
+  // Stash the invite token in sessionStorage so it survives the Clerk
+  // verification + onboarding chain; it gets consumed by /invoices/accept-invite.
+  useEffect(() => {
+    if (inviteToken && typeof window !== "undefined") {
+      sessionStorage.setItem("paylane:pending-invite-token", inviteToken);
+    }
+  }, [inviteToken]);
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -69,7 +78,7 @@ function SignUpForm() {
       if (createResult.status === "complete") {
         console.log("[SignUp] Complete immediately, setting session...");
         await setActive({ session: createResult.createdSessionId });
-        router.replace("/dashboard");
+        router.replace(typeof window !== "undefined" && sessionStorage.getItem("paylane:pending-invite-token") ? "/invoices/accept-invite" : "/dashboard");
         return;
       }
 
@@ -112,7 +121,7 @@ function SignUpForm() {
         console.log("[SignUp] Verification complete, setting active session...");
         await setActive({ session: result.createdSessionId });
         console.log("[SignUp] Session active, redirecting to dashboard");
-        router.replace("/dashboard");
+        router.replace(typeof window !== "undefined" && sessionStorage.getItem("paylane:pending-invite-token") ? "/invoices/accept-invite" : "/dashboard");
       } else {
         console.log("[SignUp] Verification not complete, status:", result.status);
       }

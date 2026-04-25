@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useSignIn, useAuth } from "@clerk/nextjs";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Loader2, Mail, Lock, Eye, EyeOff, ArrowLeft } from "lucide-react";
 import { Button } from "~/components/ui/button";
@@ -11,10 +11,24 @@ import { Label } from "~/components/ui/label";
 import { Card, CardContent, CardHeader } from "~/components/ui/card";
 import { Separator } from "~/components/ui/separator";
 
-export default function SignInPage() {
+function SignInForm() {
   const { isLoaded, signIn, setActive } = useSignIn();
   const { isSignedIn } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const inviteToken = searchParams.get("invite") ?? "";
+
+  // Same flow as sign-up: stash the invite so post-signin we can deep-link.
+  useEffect(() => {
+    if (inviteToken && typeof window !== "undefined") {
+      sessionStorage.setItem("paylane:pending-invite-token", inviteToken);
+    }
+  }, [inviteToken]);
+
+  const targetAfterAuth = () =>
+    typeof window !== "undefined" && sessionStorage.getItem("paylane:pending-invite-token")
+      ? "/invoices/accept-invite"
+      : "/dashboard";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -26,7 +40,7 @@ export default function SignInPage() {
 
   useEffect(() => {
     if (isLoaded && isSignedIn) {
-      router.replace("/dashboard");
+      router.replace(targetAfterAuth());
     }
   }, [isLoaded, isSignedIn, router]);
 
@@ -49,7 +63,7 @@ export default function SignInPage() {
 
       if (result.status === "complete") {
         await setActive({ session: result.createdSessionId });
-        router.replace("/dashboard");
+        router.replace(targetAfterAuth());
       } else if (result.status === "needs_second_factor") {
         await signIn.prepareSecondFactor({ strategy: "email_code" });
         setNeedsOtp(true);
@@ -87,7 +101,7 @@ export default function SignInPage() {
       const result = await signIn.attemptSecondFactor({ strategy: "email_code", code: otpCode });
       if (result.status === "complete") {
         await setActive({ session: result.createdSessionId });
-        router.replace("/dashboard");
+        router.replace(targetAfterAuth());
       } else {
         setError("Verification incomplete. Please try again.");
       }
@@ -189,5 +203,19 @@ export default function SignInPage() {
         <p className="mt-6 text-center text-xs text-muted-foreground">PayLane - Get paid faster</p>
       </div>
     </div>
+  );
+}
+
+export default function SignInPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-blue-50 to-gray-100">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+        </div>
+      }
+    >
+      <SignInForm />
+    </Suspense>
   );
 }
