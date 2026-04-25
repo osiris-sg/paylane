@@ -1,5 +1,6 @@
 import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
 import { z } from "zod";
+import { clerkClient } from "@clerk/nextjs/server";
 
 export const customerRouter = createTRPCRouter({
   list: protectedProcedure
@@ -130,9 +131,49 @@ export const customerRouter = createTRPCRouter({
         where: { clerkId: ctx.auth.userId },
       });
 
+      // Snapshot the customer before delete so we can clean up Clerk too.
+      const customer = await ctx.db.customer.findUniqueOrThrow({
+        where: { id: input.id, companyId: user.companyId },
+      });
+
       await ctx.db.customer.delete({
         where: { id: input.id, companyId: user.companyId },
       });
+
+      // Best-effort Clerk cleanup. Only fires if (a) the customer had an email,
+      // and (b) no other Customer record across the platform still references
+      // that same email — otherwise we'd lock out someone another sender still
+      // does business with. Deleting the Clerk user also deletes the local
+      // User row by FK cascade (clerkId is unique), and any orphan Company
+      // with no remaining Users gets deleted to keep the DB clean.
+      if (customer.email) {
+        const otherRefs = await ctx.db.customer.count({
+          where: { email: customer.email, NOT: { id: customer.id } },
+        });
+        if (otherRefs === 0) {
+          try {
+            const dbUsers = await ctx.db.user.findMany({
+              where: { email: customer.email },
+              select: { id: true, clerkId: true, companyId: true },
+            });
+            const client = await clerkClient();
+            for (const dbUser of dbUsers) {
+              try {
+                await client.users.deleteUser(dbUser.clerkId);
+              } catch (err) {
+                console.error(`[customer.delete] Failed to delete Clerk user ${dbUser.clerkId}:`, err);
+              }
+              await ctx.db.user.delete({ where: { id: dbUser.id } }).catch(() => {});
+              const remaining = await ctx.db.user.count({ where: { companyId: dbUser.companyId } });
+              if (remaining === 0) {
+                await ctx.db.company.delete({ where: { id: dbUser.companyId } }).catch(() => {});
+              }
+            }
+          } catch (err) {
+            console.error("[customer.delete] Clerk cleanup failed:", err);
+          }
+        }
+      }
 
       return { success: true };
     }),
