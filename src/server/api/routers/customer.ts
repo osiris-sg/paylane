@@ -140,12 +140,12 @@ export const customerRouter = createTRPCRouter({
         where: { id: input.id, companyId: user.companyId },
       });
 
-      // Best-effort Clerk cleanup. Only fires if (a) the customer had an email,
-      // and (b) no other Customer record across the platform still references
-      // that same email — otherwise we'd lock out someone another sender still
-      // does business with. Deleting the Clerk user also deletes the local
-      // User row by FK cascade (clerkId is unique), and any orphan Company
-      // with no remaining Users gets deleted to keep the DB clean.
+      // Best-effort Clerk + local cleanup when deleting a customer.
+      // Only fires if no other Customer record across the platform still
+      // references the same email — otherwise we'd kick out someone another
+      // sender still does business with.
+      // Order matters because Notification.userId is a hard FK (now Cascade)
+      // and PushSubscription has no FK at all (uses raw clerkId).
       if (customer.email) {
         const otherRefs = await ctx.db.customer.count({
           where: { email: customer.email, NOT: { id: customer.id } },
@@ -158,15 +158,54 @@ export const customerRouter = createTRPCRouter({
             });
             const client = await clerkClient();
             for (const dbUser of dbUsers) {
+              // Push subs are keyed off clerkId, no FK — clean explicitly.
+              await ctx.db.pushSubscription
+                .deleteMany({ where: { clerkId: dbUser.clerkId } })
+                .catch((err) => console.error("[customer.delete] pushSub cleanup:", err));
+
+              // Notifications cascade now, invoices.createdById is SetNull.
+              await ctx.db.user
+                .delete({ where: { id: dbUser.id } })
+                .catch((err) => console.error("[customer.delete] user delete:", err));
+
               try {
                 await client.users.deleteUser(dbUser.clerkId);
               } catch (err) {
-                console.error(`[customer.delete] Failed to delete Clerk user ${dbUser.clerkId}:`, err);
+                console.error(`[customer.delete] Clerk user delete failed (${dbUser.clerkId}):`, err);
               }
-              await ctx.db.user.delete({ where: { id: dbUser.id } }).catch(() => {});
+
+              // If the company is now userless, scrub it too. Customers and
+              // Invitations belonging to the company go first since they FK
+              // to the company without cascade.
               const remaining = await ctx.db.user.count({ where: { companyId: dbUser.companyId } });
               if (remaining === 0) {
-                await ctx.db.company.delete({ where: { id: dbUser.companyId } }).catch(() => {});
+                await ctx.db.invitation
+                  .deleteMany({ where: { senderCompanyId: dbUser.companyId } })
+                  .catch(() => {});
+                await ctx.db.customer
+                  .deleteMany({ where: { companyId: dbUser.companyId } })
+                  .catch(() => {});
+                // Detach receiver-side links so we don't break sent invoices.
+                await ctx.db.invoice
+                  .updateMany({
+                    where: { receiverCompanyId: dbUser.companyId },
+                    data: { receiverCompanyId: null },
+                  })
+                  .catch(() => {});
+                await ctx.db.customer
+                  .updateMany({
+                    where: { linkedCompanyId: dbUser.companyId },
+                    data: { linkedCompanyId: null },
+                  })
+                  .catch(() => {});
+                // Delete invoices the userless company sent (will cascade
+                // items/timeline because those are already onDelete: Cascade).
+                await ctx.db.invoice
+                  .deleteMany({ where: { senderCompanyId: dbUser.companyId } })
+                  .catch(() => {});
+                await ctx.db.company
+                  .delete({ where: { id: dbUser.companyId } })
+                  .catch((err) => console.error("[customer.delete] company delete:", err));
               }
             }
           } catch (err) {

@@ -87,8 +87,8 @@ model Invoice {
   receiverCompanyId String?
   receiverCompany   Company?  @relation("ReceivedInvoices", fields: [receiverCompanyId], references: [id])
 
-  createdById    String
-  createdBy      User          @relation(fields: [createdById], references: [id])
+  createdById    String?
+  createdBy      User?         @relation(fields: [createdById], references: [id], onDelete: SetNull)
 
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
@@ -125,7 +125,7 @@ model Notification {
   read      Boolean          @default(false)
   type      NotificationType @default(GENERAL)
   userId    String
-  user      User             @relation(fields: [userId], references: [id])
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   invoiceId String?
   invoice   Invoice?         @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
   createdAt DateTime         @default(now())
