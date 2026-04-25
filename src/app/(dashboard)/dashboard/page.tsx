@@ -30,6 +30,7 @@ import { api } from "~/trpc/react";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { Separator } from "~/components/ui/separator";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 
 const formatCurrency = (value: number | { toNumber?: () => number } | unknown) =>
   new Intl.NumberFormat("en-SG", {
@@ -222,55 +223,89 @@ export default function DashboardPage() {
 
       <Separator />
 
-      {/* Customer (sent) section */}
-      {canSend && (
-        <section className="space-y-3">
-          <SectionHeading title="Customer" subtitle="Invoices you sent to customers" />
-          {summary.isLoading ? (
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <SkeletonCard key={i} />
-              ))}
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
-              {CUSTOMER_CARDS.map((card) => (
-                <SummaryCard
-                  key={card.key}
-                  card={card}
-                  bucket={sent?.[card.key as keyof typeof sent]}
-                  href={buildHref("sent", card.statusFilter)}
-                />
-              ))}
-            </div>
-          )}
-        </section>
-      )}
+      {(() => {
+        const customerCards = summary.isLoading ? (
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <SkeletonCard key={i} />
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
+            {CUSTOMER_CARDS.map((card) => (
+              <SummaryCard
+                key={card.key}
+                card={card}
+                bucket={sent?.[card.key as keyof typeof sent]}
+                href={buildHref("sent", card.statusFilter)}
+              />
+            ))}
+          </div>
+        );
 
-      {/* Supplier (received) section */}
-      {canReceive && (
-        <section className="space-y-3">
-          <SectionHeading title="Supplier" subtitle="Invoices you received from suppliers" />
-          {summary.isLoading ? (
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <SkeletonCard key={i} />
-              ))}
+        const supplierCards = summary.isLoading ? (
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <SkeletonCard key={i} />
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+            {SUPPLIER_CARDS.map((card) => (
+              <SummaryCard
+                key={card.key}
+                card={card}
+                bucket={received?.[card.key as keyof typeof received]}
+                href={buildHref("received", card.statusFilter)}
+              />
+            ))}
+          </div>
+        );
+
+        const customerSection = canSend ? (
+          <section className="space-y-3">
+            <SectionHeading title="Customer" subtitle="Invoices you sent to customers" />
+            {customerCards}
+          </section>
+        ) : null;
+
+        const supplierSection = canReceive ? (
+          <section className="space-y-3">
+            <SectionHeading title="Supplier" subtitle="Invoices you received from suppliers" />
+            {supplierCards}
+          </section>
+        ) : null;
+
+        // On mobile (< md) when both modules are active, swap stacked sections
+        // for tabs so the user can switch instead of scrolling past 5 customer
+        // cards before reaching supplier. Desktop keeps the stacked layout.
+        return (
+          <>
+            {canSend && canReceive ? (
+              <div className="md:hidden">
+                <Tabs defaultValue="customer">
+                  <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="customer" className="font-bold">CUSTOMER</TabsTrigger>
+                    <TabsTrigger value="supplier" className="font-bold">SUPPLIER</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="customer" className="mt-4">{customerCards}</TabsContent>
+                  <TabsContent value="supplier" className="mt-4">{supplierCards}</TabsContent>
+                </Tabs>
+              </div>
+            ) : (
+              <div className="space-y-6 md:hidden">
+                {customerSection}
+                {supplierSection}
+              </div>
+            )}
+
+            <div className="hidden space-y-6 md:block md:space-y-8">
+              {customerSection}
+              {supplierSection}
             </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-              {SUPPLIER_CARDS.map((card) => (
-                <SummaryCard
-                  key={card.key}
-                  card={card}
-                  bucket={received?.[card.key as keyof typeof received]}
-                  href={buildHref("received", card.statusFilter)}
-                />
-              ))}
-            </div>
-          )}
-        </section>
-      )}
+          </>
+        );
+      })()}
 
       {/* Charts */}
       <div className={`grid gap-6 ${canReceive && canSend ? "lg:grid-cols-2" : ""}`}>
