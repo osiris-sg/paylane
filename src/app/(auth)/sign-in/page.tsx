@@ -21,12 +21,12 @@ function SignInForm() {
   // Same flow as sign-up: stash the invite so post-signin we can deep-link.
   useEffect(() => {
     if (inviteToken && typeof window !== "undefined") {
-      sessionStorage.setItem("paylane:pending-invite-token", inviteToken);
+      localStorage.setItem("paylane:pending-invite-token", inviteToken);
     }
   }, [inviteToken]);
 
   const targetAfterAuth = () =>
-    typeof window !== "undefined" && sessionStorage.getItem("paylane:pending-invite-token")
+    typeof window !== "undefined" && localStorage.getItem("paylane:pending-invite-token")
       ? "/invoices/accept-invite"
       : "/dashboard";
 

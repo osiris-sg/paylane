@@ -289,7 +289,7 @@ export default function OnboardingPage() {
       toast.success("Welcome to PayLane!");
       // Priority: signed invite token (from email) > linked-customer fallback > dashboard
       const inviteToken =
-        typeof window !== "undefined" ? sessionStorage.getItem("paylane:pending-invite-token") : null;
+        typeof window !== "undefined" ? localStorage.getItem("paylane:pending-invite-token") : null;
       if (inviteToken) {
         router.push("/invoices/accept-invite");
       } else if (status?.firstInvoiceId) {

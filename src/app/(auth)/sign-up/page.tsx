@@ -21,7 +21,7 @@ function SignUpForm() {
   // If already signed in, go to dashboard
   useEffect(() => {
     if (isSignedIn) {
-      router.replace(typeof window !== "undefined" && sessionStorage.getItem("paylane:pending-invite-token") ? "/invoices/accept-invite" : "/dashboard");
+      router.replace(typeof window !== "undefined" && localStorage.getItem("paylane:pending-invite-token") ? "/invoices/accept-invite" : "/dashboard");
     }
   }, [isSignedIn, router]);
 
@@ -33,7 +33,7 @@ function SignUpForm() {
   // verification + onboarding chain; it gets consumed by /invoices/accept-invite.
   useEffect(() => {
     if (inviteToken && typeof window !== "undefined") {
-      sessionStorage.setItem("paylane:pending-invite-token", inviteToken);
+      localStorage.setItem("paylane:pending-invite-token", inviteToken);
     }
   }, [inviteToken]);
 
@@ -78,7 +78,7 @@ function SignUpForm() {
       if (createResult.status === "complete") {
         console.log("[SignUp] Complete immediately, setting session...");
         await setActive({ session: createResult.createdSessionId });
-        router.replace(typeof window !== "undefined" && sessionStorage.getItem("paylane:pending-invite-token") ? "/invoices/accept-invite" : "/dashboard");
+        router.replace(typeof window !== "undefined" && localStorage.getItem("paylane:pending-invite-token") ? "/invoices/accept-invite" : "/dashboard");
         return;
       }
 
@@ -121,7 +121,7 @@ function SignUpForm() {
         console.log("[SignUp] Verification complete, setting active session...");
         await setActive({ session: result.createdSessionId });
         console.log("[SignUp] Session active, redirecting to dashboard");
-        router.replace(typeof window !== "undefined" && sessionStorage.getItem("paylane:pending-invite-token") ? "/invoices/accept-invite" : "/dashboard");
+        router.replace(typeof window !== "undefined" && localStorage.getItem("paylane:pending-invite-token") ? "/invoices/accept-invite" : "/dashboard");
       } else {
         console.log("[SignUp] Verification not complete, status:", result.status);
       }

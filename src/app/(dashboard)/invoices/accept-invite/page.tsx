@@ -33,11 +33,11 @@ function AcceptInviteInner() {
       { token },
       {
         onSuccess: ({ invoiceId }) => {
-          if (typeof window !== "undefined") sessionStorage.removeItem(STORAGE_KEY);
+          if (typeof window !== "undefined") localStorage.removeItem(STORAGE_KEY);
           router.replace(`/invoices/${invoiceId}`);
         },
         onError: (err) => {
-          if (typeof window !== "undefined") sessionStorage.removeItem(STORAGE_KEY);
+          if (typeof window !== "undefined") localStorage.removeItem(STORAGE_KEY);
           toast.error(err.message || "Couldn't open the invited invoice");
           router.replace("/dashboard");
         },
