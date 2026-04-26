@@ -266,15 +266,6 @@ export default function OnboardingPage() {
     }
   }, [status, router, prefilled]);
 
-  // Show loading while checking status
-  if (statusLoading || (status?.onboarded)) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent" />
-      </div>
-    );
-  }
-
   const updateCompany = api.onboarding.updateCompany.useMutation({
     onSuccess: () => {
       // RECEIVE/BOTH: go to suppliers step. SEND: go straight to done.
@@ -322,6 +313,18 @@ export default function OnboardingPage() {
       console.error("[Onboarding] complete mutation error:", err.message, err);
     },
   });
+
+  // Show loading while checking status. MUST be after every hook above so
+  // hook order stays consistent across renders — otherwise an onboarded:true
+  // flip mid-session (e.g. setData after complete) skips later hooks and
+  // triggers React #300.
+  if (statusLoading || status?.onboarded) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent" />
+      </div>
+    );
+  }
 
   // Supplier row management
   const addSupplierRow = () => {
