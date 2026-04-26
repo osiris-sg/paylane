@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { PWAInstallGuide } from "~/components/pwa-install-guide";
+import { PWAInstallGuide, isStandalone as isStandaloneCheck } from "~/components/pwa-install-guide";
 import {
   Building2,
   Mail,
@@ -199,10 +199,20 @@ export default function OnboardingPage() {
   const [step, setStep] = useState(0);
   const [pwaGuideOpen, setPwaGuideOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [isStandalone, setIsStandalone] = useState(true); // assume true on SSR so we don't flash the gate
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     setIsMobile(/iphone|ipad|ipod|android/i.test(navigator.userAgent));
+    const refresh = () => setIsStandalone(isStandaloneCheck());
+    refresh();
+    const mq = window.matchMedia("(display-mode: standalone)");
+    mq.addEventListener("change", refresh);
+    window.addEventListener("focus", refresh);
+    return () => {
+      mq.removeEventListener("change", refresh);
+      window.removeEventListener("focus", refresh);
+    };
   }, []);
 
   // Company form
@@ -380,6 +390,41 @@ export default function OnboardingPage() {
   const handleFinish = () => {
     completeOnboarding.mutate();
   };
+
+  // Mobile / tablet users have to install the PWA before continuing. We
+  // detect standalone mode (matchMedia + iOS navigator.standalone) and gate
+  // the rest of onboarding behind it. Once they open the app from their
+  // home screen, isStandalone flips and they see the normal flow.
+  if (isMobile && !isStandalone) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-b from-blue-50 to-white p-4">
+        <div className="w-full max-w-md space-y-6 text-center">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-600 shadow-lg">
+            <Sparkles className="h-8 w-8 text-white" />
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-2xl font-bold tracking-tight">Install PayLane first</h1>
+            <p className="text-sm text-muted-foreground">
+              On your phone, PayLane runs as an app. Install it to your home screen, then open
+              it from there to finish setting up your company.
+            </p>
+          </div>
+          <Card className="text-left">
+            <CardContent className="space-y-4 pt-6">
+              <Button className="w-full" size="lg" onClick={() => setPwaGuideOpen(true)}>
+                Show me how
+              </Button>
+              <p className="text-center text-xs text-muted-foreground">
+                After you tap <strong>Add to Home Screen</strong>, open PayLane from the new
+                icon — this page will continue automatically.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+        <PWAInstallGuide open={pwaGuideOpen} onOpenChange={setPwaGuideOpen} />
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-[calc(100vh-7rem)] flex-col items-center justify-center p-3 sm:p-6">
