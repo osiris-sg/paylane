@@ -468,14 +468,18 @@ export default function InvoiceDetailPage() {
           )}
           {canSend && (
             <Button
-              onClick={() =>
+              onClick={() => {
+                if (!invoice.customerId) {
+                  toast.error("Assign a customer before sending — click Edit to add one.");
+                  return;
+                }
                 askConfirm(
                   "Send invoice?",
                   `This will mark ${invoice.invoiceNumber} as sent and notify the recipient.`,
                   "Send Invoice",
                   () => sendInvoice.mutate({ id: invoice.id }),
-                )
-              }
+                );
+              }}
               disabled={sendInvoice.isPending}
             >
               <Send className="mr-2 h-4 w-4" />
@@ -704,7 +708,23 @@ export default function InvoiceDetailPage() {
             </Button>
           )}
           {canSend && (
-            <Button size="sm" className="flex-1" onClick={() => askConfirm("Send invoice?", `Mark ${invoice.invoiceNumber} as sent and notify the recipient.`, "Send", () => sendInvoice.mutate({ id: invoice.id }))} disabled={sendInvoice.isPending}>
+            <Button
+              size="sm"
+              className="flex-1"
+              onClick={() => {
+                if (!invoice.customerId) {
+                  toast.error("Assign a customer before sending — tap Edit to add one.");
+                  return;
+                }
+                askConfirm(
+                  "Send invoice?",
+                  `Mark ${invoice.invoiceNumber} as sent and notify the recipient.`,
+                  "Send",
+                  () => sendInvoice.mutate({ id: invoice.id }),
+                );
+              }}
+              disabled={sendInvoice.isPending}
+            >
               <Send className="mr-1.5 h-3.5 w-3.5" /> Send
             </Button>
           )}

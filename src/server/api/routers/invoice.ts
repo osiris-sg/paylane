@@ -597,6 +597,13 @@ export const invoiceRouter = createTRPCRouter({
         include: { customer: true },
       });
 
+      if (!existing.customerId) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Assign a customer before sending this invoice.",
+        });
+      }
+
       let receiverCompanyId = existing.receiverCompanyId;
 
       // If no receiverCompany yet, try to link via customer email
