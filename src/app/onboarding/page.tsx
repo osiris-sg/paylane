@@ -222,6 +222,8 @@ export default function OnboardingPage() {
     { email: string; status: "created" | "linked" | "exists" }[]
   >([]);
 
+  const utils = api.useUtils();
+
   // Load current company info
   const { data: status, isLoading: statusLoading } = api.onboarding.getStatus.useQuery();
 
@@ -285,8 +287,11 @@ export default function OnboardingPage() {
   });
 
   const completeOnboarding = api.onboarding.complete.useMutation({
-    onSuccess: () => {
+    onSuccess: async () => {
       toast.success("Welcome to PayLane!");
+      // Bust the getStatus cache so OnboardingGuard sees onboarded:true on
+      // the next route. Without this, the user gets bounced back here.
+      await utils.onboarding.getStatus.invalidate();
       // Priority: signed invite token (from email) > linked-customer fallback > dashboard
       const inviteToken =
         typeof window !== "undefined" ? localStorage.getItem("paylane:pending-invite-token") : null;
