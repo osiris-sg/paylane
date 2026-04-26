@@ -471,7 +471,7 @@ export default function InvoiceDetailPage() {
               onClick={() =>
                 askConfirm(
                   "Send invoice?",
-                  `This will mark ${invoice.invoiceNumber} as sent and notify the recipient. You can revert via the status badge.`,
+                  `This will mark ${invoice.invoiceNumber} as sent and notify the recipient.`,
                   "Send Invoice",
                   () => sendInvoice.mutate({ id: invoice.id }),
                 )
@@ -521,7 +521,7 @@ export default function InvoiceDetailPage() {
               onClick={() =>
                 askConfirm(
                   "Mark as paid?",
-                  "This submits the payment for sender approval. You can revert via the status badge.",
+                  "This submits the payment for sender approval.",
                   "Mark as Paid",
                   () => markPaid.mutate({ id: invoice.id }),
                 )
@@ -538,7 +538,7 @@ export default function InvoiceDetailPage() {
               onClick={() =>
                 askConfirm(
                   "Approve this payment?",
-                  "This marks the invoice as paid. You can revert via the status badge.",
+                  "This marks the invoice as paid.",
                   "Approve Payment",
                   () => approvePayment.mutate({ id: invoice.id }),
                 )

@@ -4,13 +4,14 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import dayjs from "dayjs";
 import { toast } from "sonner";
-import { ArrowLeft, Loader2, Save } from "lucide-react";
+import { ArrowLeft, Check, ChevronsUpDown, Loader2, Save, Search } from "lucide-react";
 
 import { api } from "~/trpc/react";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
+import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { formatCurrency } from "~/lib/currency";
 
 export default function NewInvoicePage() {
@@ -23,6 +24,21 @@ export default function NewInvoicePage() {
   const [dueDate, setDueDate] = useState(dayjs().add(30, "day").format("YYYY-MM-DD"));
   const [totalAmount, setTotalAmount] = useState("");
   const [taxRate, setTaxRate] = useState("9");
+  const [customerId, setCustomerId] = useState("");
+  const [customerOpen, setCustomerOpen] = useState(false);
+  const [customerSearch, setCustomerSearch] = useState("");
+
+  const { data: customersData } = api.customer.list.useQuery({ limit: 100 });
+  const customers = customersData?.customers ?? [];
+  const selectedCustomer = customers.find((c) => c.id === customerId);
+  const filteredCustomers = customers.filter((c) => {
+    const q = customerSearch.toLowerCase();
+    return (
+      c.name.toLowerCase().includes(q) ||
+      (c.company ?? "").toLowerCase().includes(q) ||
+      (c.email ?? "").toLowerCase().includes(q)
+    );
+  });
 
   const createInvoice = api.invoice.create.useMutation({
     onSuccess: (invoice) => {
@@ -66,6 +82,7 @@ export default function NewInvoicePage() {
       invoicedDate: new Date(invoicedDate),
       paymentTerms,
       currency: "SGD",
+      customerId: customerId || undefined,
       taxRate: taxNum,
       totalAmount: totalPreview,
       subtotal: subtotalNum,
@@ -103,6 +120,91 @@ export default function NewInvoicePage() {
                   onChange={(e) => setInvoiceNumber(e.target.value)}
                   required
                 />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Customer</Label>
+                <Popover open={customerOpen} onOpenChange={setCustomerOpen}>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between rounded-md border bg-white px-3 py-2 text-sm hover:bg-gray-50"
+                    >
+                      {selectedCustomer ? (
+                        <span className="truncate font-medium">
+                          {selectedCustomer.company || selectedCustomer.name}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">Select a customer (optional)…</span>
+                      )}
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                    <div className="border-b px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <Search className="h-3.5 w-3.5 text-muted-foreground" />
+                        <input
+                          className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                          placeholder="Search customers…"
+                          value={customerSearch}
+                          onChange={(e) => setCustomerSearch(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="max-h-56 overflow-y-auto py-1">
+                      {customers.length === 0 ? (
+                        <p className="px-3 py-2 text-center text-xs text-muted-foreground">
+                          No customers yet — add one from the Customers page first
+                        </p>
+                      ) : filteredCustomers.length === 0 ? (
+                        <p className="px-3 py-2 text-center text-xs text-muted-foreground">No matches</p>
+                      ) : (
+                        <>
+                          {selectedCustomer && (
+                            <button
+                              type="button"
+                              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-muted-foreground hover:bg-gray-100"
+                              onClick={() => {
+                                setCustomerId("");
+                                setCustomerOpen(false);
+                                setCustomerSearch("");
+                              }}
+                            >
+                              Clear selection
+                            </button>
+                          )}
+                          {filteredCustomers.map((c) => {
+                            const primary = c.company || c.name;
+                            const secondary = c.company ? c.name : c.email;
+                            return (
+                              <button
+                                key={c.id}
+                                type="button"
+                                className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-gray-100 ${c.id === customerId ? "bg-blue-50" : ""}`}
+                                onClick={() => {
+                                  setCustomerId(c.id);
+                                  setCustomerOpen(false);
+                                  setCustomerSearch("");
+                                }}
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate">{primary}</p>
+                                  {secondary && (
+                                    <p className="truncate text-xs text-muted-foreground">{secondary}</p>
+                                  )}
+                                </div>
+                                {c.id === customerId && (
+                                  <Check className="ml-auto h-4 w-4 shrink-0 text-blue-600" />
+                                )}
+                              </button>
+                            );
+                          })}
+                        </>
+                      )}
+                    </div>
+                  </PopoverContent>
+                </Popover>
               </div>
 
               <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
