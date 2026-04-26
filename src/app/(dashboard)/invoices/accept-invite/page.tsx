@@ -16,27 +16,40 @@ function AcceptInviteInner() {
   const acceptInvite = api.invoice.acceptInvite.useMutation();
 
   useEffect(() => {
-    if (acceptedRef.current) return;
+    console.log("[AcceptInvite] mounted");
+    if (acceptedRef.current) {
+      console.log("[AcceptInvite] already accepted in this mount, skipping");
+      return;
+    }
 
     const tokenFromUrl = searchParams.get("token");
     const tokenFromStorage =
-      typeof window !== "undefined" ? sessionStorage.getItem(STORAGE_KEY) : null;
+      typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEY) : null;
     const token = tokenFromUrl ?? tokenFromStorage;
+    console.log("[AcceptInvite] token sources", {
+      fromUrl: !!tokenFromUrl,
+      fromStorage: !!tokenFromStorage,
+      hasToken: !!token,
+    });
 
     if (!token) {
+      console.log("[AcceptInvite] no token → /dashboard");
       router.replace("/dashboard");
       return;
     }
     acceptedRef.current = true;
 
+    console.log("[AcceptInvite] calling invoice.acceptInvite mutation");
     acceptInvite.mutate(
       { token },
       {
         onSuccess: ({ invoiceId }) => {
+          console.log("[AcceptInvite] success → /invoices/" + invoiceId);
           if (typeof window !== "undefined") localStorage.removeItem(STORAGE_KEY);
           router.replace(`/invoices/${invoiceId}`);
         },
         onError: (err) => {
+          console.error("[AcceptInvite] mutation error:", err.message, err);
           if (typeof window !== "undefined") localStorage.removeItem(STORAGE_KEY);
           toast.error(err.message || "Couldn't open the invited invoice");
           router.replace("/dashboard");

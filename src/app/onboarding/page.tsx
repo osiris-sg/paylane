@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { PWAInstallGuide } from "~/components/pwa-install-guide";
@@ -223,6 +223,11 @@ export default function OnboardingPage() {
   >([]);
 
   const utils = api.useUtils();
+  // Tracks whether we've completed onboarding from this page mount. Once true,
+  // the auto-redirect-on-onboarded effect below stops firing — otherwise a
+  // post-mutation cache invalidation (status flips to onboarded:true) would
+  // race against the mutation's own router.push and React unmount errors.
+  const justCompletedRef = useRef(false);
 
   // Load current company info
   const { data: status, isLoading: statusLoading } = api.onboarding.getStatus.useQuery();
@@ -237,7 +242,15 @@ export default function OnboardingPage() {
 
   useEffect(() => {
     if (!status) return;
-    if (status.onboarded) {
+    console.log("[Onboarding] status effect", {
+      onboarded: status.onboarded,
+      justCompleted: justCompletedRef.current,
+      prefilled,
+    });
+    // If user just completed onboarding here, the mutation handler is
+    // navigating — don't compete with it.
+    if (status.onboarded && !justCompletedRef.current) {
+      console.log("[Onboarding] already onboarded → /dashboard");
       router.replace("/dashboard");
       return;
     }
@@ -287,21 +300,26 @@ export default function OnboardingPage() {
   });
 
   const completeOnboarding = api.onboarding.complete.useMutation({
-    onSuccess: async () => {
+    onSuccess: () => {
+      console.log("[Onboarding] complete mutation success");
+      justCompletedRef.current = true;
       toast.success("Welcome to PayLane!");
-      // Bust the getStatus cache so OnboardingGuard sees onboarded:true on
-      // the next route. Without this, the user gets bounced back here.
-      await utils.onboarding.getStatus.invalidate();
-      // Priority: signed invite token (from email) > linked-customer fallback > dashboard
+      // Update the cache synchronously so the destination page's
+      // OnboardingGuard sees onboarded:true without a refetch race.
+      if (status) {
+        console.log("[Onboarding] setting cached getStatus.onboarded=true");
+        utils.onboarding.getStatus.setData(undefined, { ...status, onboarded: true });
+      }
       const inviteToken =
         typeof window !== "undefined" ? localStorage.getItem("paylane:pending-invite-token") : null;
-      if (inviteToken) {
-        router.push("/invoices/accept-invite");
-      } else if (status?.firstInvoiceId) {
-        router.push(`/invoices/${status.firstInvoiceId}`);
-      } else {
-        router.push("/dashboard");
-      }
+      let target = "/dashboard";
+      if (inviteToken) target = "/invoices/accept-invite";
+      else if (status?.firstInvoiceId) target = `/invoices/${status.firstInvoiceId}`;
+      console.log("[Onboarding] post-success navigation →", target);
+      router.push(target);
+    },
+    onError: (err) => {
+      console.error("[Onboarding] complete mutation error:", err.message, err);
     },
   });
 
