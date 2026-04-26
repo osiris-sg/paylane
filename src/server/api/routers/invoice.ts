@@ -752,12 +752,26 @@ export const invoiceRouter = createTRPCRouter({
         return { invoiceId: invoice.id };
       }
 
-      // Already linked to a DIFFERENT company → don't silently override.
+      // If linked to another company, only allow takeover when the email
+      // proves the caller is the legitimate invitee:
+      //   1. The token's email matches the caller's signed-in email, AND
+      //   2. That email matches the customer's email on the invoice.
+      // Otherwise refuse — we don't want a stranger with a leaked token
+      // claiming an invoice that's already routed.
       if (invoice.receiverCompanyId && invoice.receiverCompanyId !== user.companyId) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "This invoice is already linked to a different account",
-        });
+        const tokenEmailMatches = payload.email.toLowerCase() === user.email.toLowerCase();
+        const customerEmailMatches =
+          !!invoice.customer?.email &&
+          invoice.customer.email.toLowerCase() === user.email.toLowerCase();
+        if (!tokenEmailMatches || !customerEmailMatches) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "This invoice is already linked to a different account",
+          });
+        }
+        console.log(
+          `[invoice.acceptInvite] re-linking invoice ${invoice.id} from company ${invoice.receiverCompanyId} → ${user.companyId} (legitimate bearer)`,
+        );
       }
 
       // Link the invoice to the new receiver company, and link the customer
