@@ -11,6 +11,7 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
+import { formatCurrency } from "~/lib/currency";
 
 export default function NewInvoicePage() {
   const router = useRouter();
@@ -34,20 +35,22 @@ export default function NewInvoicePage() {
     },
   });
 
+  // Live preview: invoice price is the net subtotal; we add tax on top.
+  const subtotalNum = Number(totalAmount);
+  const taxNum = Number(taxRate);
+  const hasValidNumbers =
+    Number.isFinite(subtotalNum) && subtotalNum > 0 && Number.isFinite(taxNum) && taxNum >= 0;
+  const taxAmountPreview = hasValidNumbers ? subtotalNum * (taxNum / 100) : 0;
+  const totalPreview = hasValidNumbers ? subtotalNum + taxAmountPreview : 0;
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!invoiceNumber.trim()) {
       toast.error("Invoice number is required");
       return;
     }
-    const total = Number(totalAmount);
-    if (!Number.isFinite(total) || total <= 0) {
-      toast.error("Invoice price must be greater than 0");
-      return;
-    }
-    const tax = Number(taxRate);
-    if (!Number.isFinite(tax) || tax < 0) {
-      toast.error("Tax rate must be 0 or greater");
+    if (!hasValidNumbers) {
+      toast.error("Invoice price must be greater than 0 and tax rate ≥ 0");
       return;
     }
     const start = dayjs(invoicedDate);
@@ -57,20 +60,16 @@ export default function NewInvoicePage() {
       return;
     }
     const paymentTerms = end.diff(start, "day");
-    // Treat the price as the gross total. Derive subtotal + taxAmount so the
-    // numbers shown on the detail page reconcile.
-    const subtotal = total / (1 + tax / 100);
-    const taxAmount = total - subtotal;
 
     createInvoice.mutate({
       invoiceNumber: invoiceNumber.trim(),
       invoicedDate: new Date(invoicedDate),
       paymentTerms,
       currency: "SGD",
-      taxRate: tax,
-      totalAmount: total,
-      subtotal,
-      taxAmount,
+      taxRate: taxNum,
+      totalAmount: totalPreview,
+      subtotal: subtotalNum,
+      taxAmount: taxAmountPreview,
       items: [],
     });
   };
@@ -136,7 +135,7 @@ export default function NewInvoicePage() {
               <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label htmlFor="totalAmount">
-                    Invoice price (SGD) <span className="text-destructive">*</span>
+                    Invoice price (SGD, before tax) <span className="text-destructive">*</span>
                   </Label>
                   <Input
                     id="totalAmount"
@@ -162,6 +161,21 @@ export default function NewInvoicePage() {
                     value={taxRate}
                     onChange={(e) => setTaxRate(e.target.value)}
                   />
+                </div>
+              </div>
+
+              <div className="rounded-lg border bg-gray-50 px-4 py-3 text-sm">
+                <div className="flex items-center justify-between text-muted-foreground">
+                  <span>Subtotal</span>
+                  <span className="tabular-nums">{formatCurrency(subtotalNum || 0, "SGD")}</span>
+                </div>
+                <div className="mt-1 flex items-center justify-between text-muted-foreground">
+                  <span>Tax ({Number.isFinite(taxNum) ? taxNum : 0}%)</span>
+                  <span className="tabular-nums">{formatCurrency(taxAmountPreview, "SGD")}</span>
+                </div>
+                <div className="mt-2 flex items-center justify-between border-t pt-2 font-semibold">
+                  <span>Total after tax</span>
+                  <span className="tabular-nums text-base">{formatCurrency(totalPreview, "SGD")}</span>
                 </div>
               </div>
             </CardContent>
