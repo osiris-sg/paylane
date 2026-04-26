@@ -278,11 +278,18 @@ export default function OnboardingPage() {
 
   const updateCompany = api.onboarding.updateCompany.useMutation({
     onSuccess: () => {
-      // RECEIVE/BOTH: go to suppliers step. SEND: go straight to done.
       if (showSupplierStep) {
+        // RECEIVE/BOTH still has a suppliers step before the All Set screen.
         setStep(1);
+        return;
+      }
+      // SEND-only: the only thing remaining was the "All Set + install PWA"
+      // screen. If the user is already running the app as a PWA, skip
+      // straight to the dashboard — no install prompt needed.
+      if (isStandalone) {
+        completeOnboarding.mutate();
       } else {
-        setStep(1); // For SEND, step 1 is the "All Set" step
+        setStep(1);
       }
     },
     onError: (err) => {
@@ -293,7 +300,13 @@ export default function OnboardingPage() {
   const addSuppliers = api.onboarding.addSuppliers.useMutation({
     onSuccess: (results) => {
       setInviteResults(results);
-      setStep(2);
+      // Same shortcut for RECEIVE/BOTH — All Set screen exists only to
+      // nudge a PWA install, which is moot once they're already in it.
+      if (isStandalone) {
+        completeOnboarding.mutate();
+      } else {
+        setStep(2);
+      }
     },
     onError: (err) => {
       toast.error(err.message || "Failed to add suppliers");
