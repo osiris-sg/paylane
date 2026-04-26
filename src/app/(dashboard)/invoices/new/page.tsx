@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import dayjs from "dayjs";
 import { toast } from "sonner";
@@ -12,6 +12,14 @@ import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "~/components/ui/dialog";
 import { formatCurrency } from "~/lib/currency";
 
 export default function NewInvoicePage() {
@@ -19,14 +27,37 @@ export default function NewInvoicePage() {
   const utils = api.useUtils();
 
   const today = dayjs().format("YYYY-MM-DD");
+  const defaultDueDate = dayjs().add(30, "day").format("YYYY-MM-DD");
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [invoicedDate, setInvoicedDate] = useState(today);
-  const [dueDate, setDueDate] = useState(dayjs().add(30, "day").format("YYYY-MM-DD"));
+  const [dueDate, setDueDate] = useState(defaultDueDate);
   const [totalAmount, setTotalAmount] = useState("");
   const [taxRate, setTaxRate] = useState("9");
   const [customerId, setCustomerId] = useState("");
   const [customerOpen, setCustomerOpen] = useState(false);
   const [customerSearch, setCustomerSearch] = useState("");
+  const [leaveOpen, setLeaveOpen] = useState(false);
+
+  // Form is "dirty" when any field has changed from its initial default.
+  const isDirty =
+    invoiceNumber.trim() !== "" ||
+    invoicedDate !== today ||
+    dueDate !== defaultDueDate ||
+    totalAmount.trim() !== "" ||
+    taxRate.trim() !== "9" ||
+    customerId !== "";
+
+  // Browser-level guard: warn before refresh / tab close while there are
+  // unsaved changes. Same UX as most editors.
+  useEffect(() => {
+    if (!isDirty) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [isDirty]);
 
   const { data: customersData } = api.customer.list.useQuery({ limit: 100 });
   const customers = customersData?.customers ?? [];
@@ -91,11 +122,28 @@ export default function NewInvoicePage() {
     });
   };
 
+  // Intercept back/cancel — if the form has unsaved input, ask first.
+  const handleLeave = () => {
+    if (isDirty) {
+      setLeaveOpen(true);
+    } else {
+      router.push("/invoices");
+    }
+  };
+  const confirmLeave = () => {
+    setLeaveOpen(false);
+    router.push("/invoices");
+  };
+  const saveAndLeave = () => {
+    setLeaveOpen(false);
+    handleSubmit({ preventDefault: () => {} } as React.FormEvent);
+  };
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b bg-white px-4 py-2">
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => router.push("/invoices")}>
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleLeave}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <span className="text-base font-semibold">New Invoice</span>
@@ -284,7 +332,7 @@ export default function NewInvoicePage() {
           </Card>
 
           <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-end">
-            <Button type="button" variant="ghost" onClick={() => router.push("/invoices")}>
+            <Button type="button" variant="ghost" onClick={handleLeave}>
               Cancel
             </Button>
             <Button type="submit" disabled={createInvoice.isPending}>
@@ -298,6 +346,30 @@ export default function NewInvoicePage() {
           </div>
         </form>
       </div>
+
+      <Dialog open={leaveOpen} onOpenChange={setLeaveOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Leave without saving?</DialogTitle>
+            <DialogDescription>
+              You have unsaved changes on this invoice. If you leave now, they&apos;ll be lost.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button variant="outline" onClick={confirmLeave}>
+              Leave without saving
+            </Button>
+            <Button onClick={saveAndLeave} disabled={createInvoice.isPending}>
+              {createInvoice.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="mr-2 h-4 w-4" />
+              )}
+              Save Draft
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
