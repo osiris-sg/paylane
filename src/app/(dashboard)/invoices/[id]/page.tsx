@@ -13,11 +13,9 @@ import {
   AlertTriangle,
   Clock,
   FileText,
-  Building2,
   Calendar,
   DollarSign,
   Hash,
-  MapPin,
   Trash2,
   CalendarClock,
   Pencil,
@@ -599,92 +597,53 @@ export default function InvoiceDetailPage() {
             <CardHeader>
               <CardTitle>Invoice Details</CardTitle>
               <CardDescription>
-                Full details for this invoice
+                Core invoice fields
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid gap-0 divide-y sm:grid-cols-2 sm:divide-y-0">
-                <div className="space-y-0 divide-y pr-0 sm:pr-6">
-                  <DetailRow
-                    icon={Hash}
-                    label="Invoice Number"
-                    value={invoice.invoiceNumber}
-                  />
-                  <DetailRow
-                    icon={FileText}
-                    label="Reference"
-                    value={invoice.reference}
-                  />
-                  <DetailRow
-                    icon={Calendar}
-                    label="Invoice Date"
-                    value={dayjs(invoice.invoicedDate).format("MMMM D, YYYY")}
-                  />
-                  <DetailRow
-                    icon={Calendar}
-                    label="Due Date"
-                    value={
-                      <span
-                        className={
-                          isOverdue
-                            ? "text-red-600 dark:text-red-400"
-                            : isDueSoon
-                              ? "text-amber-600 dark:text-amber-400"
-                              : ""
-                        }
-                      >
-                        {dayjs(invoice.dueDate).format("MMMM D, YYYY")}
-                      </span>
-                    }
-                  />
-                  {invoice.expectedPaymentDate && (
-                    <DetailRow
-                      icon={CalendarClock}
-                      label="Expected Payment"
-                      value={
-                        <span className="font-medium text-blue-600">
-                          {dayjs(invoice.expectedPaymentDate).format("MMMM D, YYYY")}
-                        </span>
+              <div className="space-y-0 divide-y">
+                <DetailRow icon={Hash} label="Invoice Number" value={invoice.invoiceNumber} />
+                <DetailRow
+                  icon={Calendar}
+                  label="Invoice Date"
+                  value={dayjs(invoice.invoicedDate).format("MMMM D, YYYY")}
+                />
+                <DetailRow
+                  icon={Calendar}
+                  label="Due Date"
+                  value={
+                    <span
+                      className={
+                        isOverdue
+                          ? "text-red-600 dark:text-red-400"
+                          : isDueSoon
+                            ? "text-amber-600 dark:text-amber-400"
+                            : ""
                       }
-                    />
-                  )}
-                  <DetailRow
-                    icon={Clock}
-                    label="Payment Terms"
-                    value={invoice.paymentTerms}
-                  />
-                </div>
-                <div className="space-y-0 divide-y pl-0 sm:border-l sm:pl-6">
-                  <DetailRow
-                    icon={DollarSign}
-                    label="Amount"
-                    value={
-                      <span className="text-lg">
-                        {formatCurrency(invoice.amount, invoice.currency)}
-                      </span>
-                    }
-                  />
-                  <DetailRow
-                    icon={Building2}
-                    label="From"
-                    value={invoice.senderCompany?.name ?? "-"}
-                  />
-                  <DetailRow
-                    icon={Building2}
-                    label="To"
-                    value={invoice.receiverCompany?.name ?? invoice.customer?.company ?? invoice.customer?.name ?? "-"}
-                  />
-                  <DetailRow
-                    icon={MapPin}
-                    label="From Address"
-                    value={invoice.fromAddress}
-                  />
-                  <DetailRow
-                    icon={MapPin}
-                    label="To Address"
-                    value={invoice.toAddress}
-                  />
-                </div>
+                    >
+                      {dayjs(invoice.dueDate).format("MMMM D, YYYY")}
+                    </span>
+                  }
+                />
+                <DetailRow
+                  icon={DollarSign}
+                  label="Invoice Price (before tax)"
+                  value={formatCurrency(invoice.subtotal, invoice.currency)}
+                />
+                <DetailRow
+                  icon={DollarSign}
+                  label="Tax Rate"
+                  value={`${Number(invoice.taxRate)}%`}
+                />
+                <DetailRow
+                  icon={DollarSign}
+                  label="Total after tax"
+                  value={
+                    <span className="text-lg font-semibold">
+                      {formatCurrency(invoice.amount, invoice.currency)}
+                    </span>
+                  }
+                />
               </div>
             </CardContent>
           </Card>
