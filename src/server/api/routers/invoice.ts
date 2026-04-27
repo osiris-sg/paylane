@@ -39,6 +39,19 @@ export const invoiceRouter = createTRPCRouter({
         search: z.string().optional(),
         status: z.enum(["DRAFT", "SENT", "PENDING_APPROVAL", "PAID", "OVERDUE", "CANCELLED"]).optional(),
         customerId: z.string().optional(),
+        sortBy: z
+          .enum([
+            "invoiceNumber",
+            "customer",
+            "reference",
+            "invoicedDate",
+            "sentAt",
+            "dueDate",
+            "amount",
+            "invoiceStatus",
+          ])
+          .optional(),
+        sortDir: z.enum(["asc", "desc"]).optional(),
       }),
     )
     .query(async ({ ctx, input }) => {
@@ -76,11 +89,21 @@ export const invoiceRouter = createTRPCRouter({
         ];
       }
 
+      const dir = input.sortDir ?? "desc";
+      const sortOrder: Record<string, unknown>[] = [{ pinned: "desc" }];
+      if (input.sortBy === "customer") {
+        sortOrder.push({ customer: { name: dir } });
+      } else if (input.sortBy) {
+        sortOrder.push({ [input.sortBy]: dir });
+      } else {
+        sortOrder.push({ createdAt: "desc" });
+      }
+
       const [invoices, totalCount, currencyGroups] = await Promise.all([
         ctx.db.invoice.findMany({
           where,
           include: { customer: true, senderCompany: true, receiverCompany: true },
-          orderBy: [{ pinned: "desc" }, { createdAt: "desc" }],
+          orderBy: sortOrder,
           skip: (input.page - 1) * input.limit,
           take: input.limit,
         }),

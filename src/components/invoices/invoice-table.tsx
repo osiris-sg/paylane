@@ -8,6 +8,8 @@ import {
   Search,
   ChevronLeft,
   ChevronRight,
+  ChevronsUpDown,
+  ChevronUp,
   Send,
   CreditCard,
   Trash2,
@@ -60,6 +62,17 @@ interface InvoiceTableProps {
 }
 
 type StatusOption = "all" | "DRAFT" | "SENT" | "PENDING_APPROVAL" | "PAID" | "OVERDUE" | "CANCELLED";
+
+type SortField =
+  | "invoiceNumber"
+  | "customer"
+  | "reference"
+  | "invoicedDate"
+  | "sentAt"
+  | "dueDate"
+  | "amount"
+  | "invoiceStatus";
+type SortDir = "asc" | "desc";
 
 const VALID_STATUSES: StatusOption[] = ["all", "DRAFT", "SENT", "PENDING_APPROVAL", "PAID", "OVERDUE", "CANCELLED"];
 
@@ -124,6 +137,39 @@ function DueDateCell({ dueDate }: { dueDate: string | Date; type: "sent" | "rece
   return <span className="text-green-600 dark:text-green-400">{formatted}</span>;
 }
 
+function SortableHead({
+  field,
+  sortBy,
+  sortDir,
+  onSort,
+  align,
+  children,
+}: {
+  field: SortField;
+  sortBy: SortField | undefined;
+  sortDir: SortDir;
+  onSort: (f: SortField) => void;
+  align?: "right";
+  children: React.ReactNode;
+}) {
+  const active = sortBy === field;
+  const Icon = !active ? ChevronsUpDown : sortDir === "asc" ? ChevronUp : ChevronDown;
+  return (
+    <TableHead className={align === "right" ? "text-right" : undefined}>
+      <button
+        type="button"
+        onClick={() => onSort(field)}
+        className={`inline-flex items-center gap-1 font-medium transition-colors hover:text-foreground ${
+          active ? "text-foreground" : "text-muted-foreground"
+        } ${align === "right" ? "ml-auto" : ""}`}
+      >
+        {children}
+        <Icon className={`h-3.5 w-3.5 ${active ? "opacity-100" : "opacity-50"}`} />
+      </button>
+    </TableHead>
+  );
+}
+
 function SkeletonRow({ columns }: { columns: number }) {
   return (
     <TableRow>
@@ -143,6 +189,21 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
   const [statusFilter, setStatusFilter] = useState<StatusOption>(normalizeStatus(initialStatus));
   const [customerId, setCustomerId] = useState<string | undefined>(initialCustomerId);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [sortBy, setSortBy] = useState<SortField | undefined>(undefined);
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+  const toggleSort = (field: SortField) => {
+    if (sortBy !== field) {
+      setSortBy(field);
+      setSortDir("asc");
+    } else if (sortDir === "asc") {
+      setSortDir("desc");
+    } else {
+      setSortBy(undefined);
+      setSortDir("desc");
+    }
+    setPage(1);
+  };
 
   // Keep state in sync if the URL params change (e.g. user navigates via dashboard links)
   useEffect(() => {
@@ -173,6 +234,8 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
     search: debouncedSearch || undefined,
     status: statusFilter !== "all" ? statusFilter : undefined,
     customerId: customerId || undefined,
+    sortBy,
+    sortDir,
   });
 
   // When filtering by a customer, fetch their display name for the filter pill
@@ -746,14 +809,14 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
                     aria-label="Select all"
                   />
                 </TableHead>
-                <TableHead>Invoice #</TableHead>
-                <TableHead>{type === "sent" ? "Customer" : "Supplier"}</TableHead>
-                <TableHead>Reference</TableHead>
-                <TableHead>Invoice Date</TableHead>
-                <TableHead>{type === "sent" ? "Date Sent" : "Date Received"}</TableHead>
-                <TableHead>Due Date</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
-                <TableHead>Status</TableHead>
+                <SortableHead field="invoiceNumber" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>Invoice #</SortableHead>
+                <SortableHead field="customer" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>{type === "sent" ? "Customer" : "Supplier"}</SortableHead>
+                <SortableHead field="reference" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>Reference</SortableHead>
+                <SortableHead field="invoicedDate" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>Invoice Date</SortableHead>
+                <SortableHead field="sentAt" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>{type === "sent" ? "Date Sent" : "Date Received"}</SortableHead>
+                <SortableHead field="dueDate" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>Due Date</SortableHead>
+                <SortableHead field="amount" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} align="right">Amount</SortableHead>
+                <SortableHead field="invoiceStatus" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>Status</SortableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
