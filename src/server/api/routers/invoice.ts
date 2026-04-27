@@ -835,6 +835,14 @@ export const invoiceRouter = createTRPCRouter({
         });
       }
 
+      // Receiving an invoice should not lock the company into RECEIVE-only.
+      if (user.company.module !== "BOTH") {
+        await ctx.db.company.update({
+          where: { id: user.companyId },
+          data: { module: "BOTH" },
+        });
+      }
+
       return { invoiceId: invoice.id };
     }),
 

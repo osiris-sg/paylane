@@ -49,6 +49,7 @@ async function createUserAndCompany(clerkUserId: string) {
     data: {
       name: name ? `${name}'s Company` : "My Company",
       email: email.toLowerCase(),
+      module: "BOTH",
     },
   });
 
@@ -96,10 +97,10 @@ async function createUserAndCompany(clerkUserId: string) {
       },
     });
 
-    // Auto-assign RECEIVE module — this user was invited as a customer
+    // Auto-assign BOTH module — invitee may also want to send invoices
     await db.company.update({
       where: { id: company.id },
-      data: { module: "RECEIVE" },
+      data: { module: "BOTH" },
     });
 
     // Mark invitations as accepted
