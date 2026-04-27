@@ -282,6 +282,7 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
   const invoices = data?.invoices ?? [];
   const totalCount = data?.totalCount ?? 0;
   const totalPages = data?.totalPages ?? 1;
+  const totalsByCurrency = data?.totalsByCurrency ?? [];
 
   const columnCount = 9;
 
@@ -623,6 +624,20 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
             </div>
           )}
         </div>
+
+        {totalsByCurrency.length > 0 && (
+          <div className="mb-3 flex flex-wrap items-center justify-end gap-x-4 gap-y-1 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+            <span className="text-muted-foreground">
+              Total {type === "sent" ? "billed" : "received"}
+              {totalCount > 0 ? ` (${totalCount})` : ""}:
+            </span>
+            {totalsByCurrency.map((t) => (
+              <span key={t.currency} className="font-semibold tabular-nums">
+                {formatCurrency(t.amount, t.currency)}
+              </span>
+            ))}
+          </div>
+        )}
 
         {/* Mobile Card View */}
         <div className="space-y-3 md:hidden">

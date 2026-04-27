@@ -76,7 +76,7 @@ export const invoiceRouter = createTRPCRouter({
         ];
       }
 
-      const [invoices, totalCount] = await Promise.all([
+      const [invoices, totalCount, currencyGroups] = await Promise.all([
         ctx.db.invoice.findMany({
           where,
           include: { customer: true, senderCompany: true, receiverCompany: true },
@@ -85,13 +85,27 @@ export const invoiceRouter = createTRPCRouter({
           take: input.limit,
         }),
         ctx.db.invoice.count({ where }),
+        ctx.db.invoice.groupBy({
+          by: ["currency"],
+          where,
+          _sum: { amount: true },
+        }),
       ]);
+
+      const totalsByCurrency = currencyGroups
+        .map((g) => ({
+          currency: g.currency,
+          amount: Number(g._sum.amount ?? 0),
+        }))
+        .filter((t) => t.amount > 0)
+        .sort((a, b) => b.amount - a.amount);
 
       return {
         invoices,
         totalCount,
         totalPages: Math.ceil(totalCount / input.limit),
         page: input.page,
+        totalsByCurrency,
       };
     }),
 
