@@ -289,7 +289,7 @@ export default function InvoiceDetailPage() {
     (invoice.invoiceStatus === "SENT" || invoice.invoiceStatus === "OVERDUE");
   const canApprovePayment = paymentApprovalEnabled && isSender && invoice.invoiceStatus === "PENDING_APPROVAL";
   const canRejectPayment = paymentApprovalEnabled && isSender && invoice.invoiceStatus === "PENDING_APPROVAL";
-  const canDelete = isSender && invoice.invoiceStatus === "DRAFT";
+  const canDelete = isSender;
   const canEdit = isSender && invoice.invoiceStatus === "DRAFT";
   const canSchedulePayment =
     paymentApprovalEnabled &&

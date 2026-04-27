@@ -313,12 +313,12 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
   const canBulkApprove = paymentApprovalEnabled && type === "sent" && selectedInvoices.length > 0 && selectedInvoices.every((i) => i.invoiceStatus === "PENDING_APPROVAL");
   const canBulkReject = canBulkApprove;
   const canBulkMarkPaid = paymentApprovalEnabled && type === "received" && selectedInvoices.length > 0 && selectedInvoices.every((i) => i.invoiceStatus === "SENT" || i.invoiceStatus === "OVERDUE");
-  const canBulkDeleteDrafts = type === "sent" && selectedInvoices.length > 0 && selectedInvoices.every((i) => i.invoiceStatus === "DRAFT");
+  const canBulkDelete = type === "sent" && selectedInvoices.length > 0;
 
   const handleBulkDelete = () => {
     askConfirm(
       "Delete selected invoices?",
-      `${selectedIds.size} draft invoice(s) will be permanently deleted.`,
+      `${selectedIds.size} invoice(s) will be permanently deleted. This cannot be undone.`,
       "Delete",
       () => bulkDelete.mutate({ ids: Array.from(selectedIds) }),
       true,
@@ -417,7 +417,7 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
                   {bulkMarkPaid.isPending ? "Processing..." : "Mark Paid"}
                 </Button>
               )}
-              {canBulkDeleteDrafts && (
+              {canBulkDelete && (
                 <Button
                   size="sm"
                   variant="outline"
