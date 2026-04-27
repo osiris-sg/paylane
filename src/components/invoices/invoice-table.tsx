@@ -54,6 +54,14 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "~/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "~/components/ui/select";
+import { ArrowDownUp, ArrowDown, ArrowUp } from "lucide-react";
 interface InvoiceTableProps {
   type: "sent" | "received";
   initialStatus?: string;
@@ -701,6 +709,53 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
             ))}
           </div>
         )}
+
+        {/* Mobile Sort Bar */}
+        <div className="mb-3 flex items-center gap-2 md:hidden">
+          <ArrowDownUp className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <Select
+            value={sortBy ?? "default"}
+            onValueChange={(v) => {
+              if (v === "default") {
+                setSortBy(undefined);
+                setSortDir("desc");
+              } else {
+                setSortBy(v as SortField);
+                if (!sortBy) setSortDir("asc");
+              }
+              setPage(1);
+            }}
+          >
+            <SelectTrigger className="h-9 flex-1">
+              <SelectValue placeholder="Sort by" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="default">Default (newest)</SelectItem>
+              <SelectItem value="invoiceNumber">Invoice #</SelectItem>
+              <SelectItem value="customer">{type === "sent" ? "Customer" : "Supplier"}</SelectItem>
+              <SelectItem value="reference">Reference</SelectItem>
+              <SelectItem value="invoicedDate">Invoice Date</SelectItem>
+              <SelectItem value="sentAt">{type === "sent" ? "Date Sent" : "Date Received"}</SelectItem>
+              <SelectItem value="dueDate">Due Date</SelectItem>
+              <SelectItem value="amount">Amount</SelectItem>
+              <SelectItem value="invoiceStatus">Status</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-9 shrink-0 px-2.5"
+            disabled={!sortBy}
+            onClick={() => {
+              setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+              setPage(1);
+            }}
+            aria-label={sortDir === "asc" ? "Ascending" : "Descending"}
+          >
+            {sortDir === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />}
+          </Button>
+        </div>
 
         {/* Mobile Card View */}
         <div className="space-y-3 md:hidden">
