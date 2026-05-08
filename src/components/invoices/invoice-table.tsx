@@ -697,16 +697,32 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
         </div>
 
         {totalsByCurrency.length > 0 && (
-          <div className="mb-3 flex flex-wrap items-center justify-end gap-x-4 gap-y-1 rounded-md border bg-muted/40 px-3 py-2 text-sm">
-            <span className="text-muted-foreground">
-              Total {type === "sent" ? "billed" : "received"}
-              {totalCount > 0 ? ` (${totalCount})` : ""}:
-            </span>
-            {totalsByCurrency.map((t) => (
-              <span key={t.currency} className="font-semibold tabular-nums">
-                {formatCurrency(t.amount, t.currency)}
-              </span>
-            ))}
+          <div className="mb-4 rounded-xl border border-blue-200 bg-gradient-to-br from-blue-50 to-blue-100/60 p-4 shadow-sm dark:border-blue-900 dark:from-blue-950/40 dark:to-blue-900/20 sm:p-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-blue-700/80 dark:text-blue-300/80">
+                  Total {type === "sent" ? "billed" : "received"}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {totalCount} invoice{totalCount === 1 ? "" : "s"}
+                  {(statusFilter !== "all" || customerId || debouncedSearch)
+                    ? " (filtered)"
+                    : ""}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1 sm:justify-end">
+                {totalsByCurrency.map((t, i) => (
+                  <span
+                    key={t.currency}
+                    className={`tabular-nums font-bold tracking-tight text-blue-900 dark:text-blue-100 ${
+                      i === 0 ? "text-2xl sm:text-3xl" : "text-lg sm:text-xl"
+                    }`}
+                  >
+                    {formatCurrency(t.amount, t.currency)}
+                  </span>
+                ))}
+              </div>
+            </div>
           </div>
         )}
 
