@@ -711,12 +711,10 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
                 </p>
               </div>
               <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1 sm:justify-end">
-                {totalsByCurrency.map((t, i) => (
+                {totalsByCurrency.map((t) => (
                   <span
                     key={t.currency}
-                    className={`tabular-nums font-bold tracking-tight text-blue-900 dark:text-blue-100 ${
-                      i === 0 ? "text-2xl sm:text-3xl" : "text-lg sm:text-xl"
-                    }`}
+                    className="text-2xl font-bold tabular-nums tracking-tight text-blue-900 dark:text-blue-100 sm:text-3xl"
                   >
                     {formatCurrency(t.amount, t.currency)}
                   </span>
