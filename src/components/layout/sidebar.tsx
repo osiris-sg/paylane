@@ -13,6 +13,7 @@ import {
   ChevronRight,
   Shield,
   Menu,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "~/lib/utils";
 import { useState, useEffect } from "react";
@@ -34,6 +35,7 @@ const navItems: NavItem[] = [
   { href: "/invoices", label: "Invoices", icon: FileText },
   { href: "/customers", label: "Customers", icon: Users, modules: ["SEND", "BOTH"] },
   { href: "/suppliers", label: "Suppliers", icon: Truck, modules: ["RECEIVE", "BOTH"] },
+  { href: "/agent", label: "AI Assistant", icon: Sparkles, modules: ["SEND", "BOTH"] },
   { href: "/notifications", label: "Notifications", icon: Bell },
   { href: "/admin", label: "Admin", icon: Shield, adminOnly: true },
 ];
