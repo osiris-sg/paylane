@@ -37,6 +37,7 @@ import {
   ChevronRight,
   Truck,
   Upload,
+  MessageCircle,
 } from "lucide-react";
 
 interface SupplierFormData {
@@ -298,11 +299,23 @@ export default function SuppliersPage() {
                   <Separator className="my-3" />
 
                   <div className="flex items-center justify-between">
-                    <Badge variant="secondary" className="gap-1">
-                      <FileText className="h-3 w-3" />
-                      {supplier.invoiceCount}{" "}
-                      {supplier.invoiceCount === 1 ? "invoice" : "invoices"}
-                    </Badge>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <Badge variant="secondary" className="gap-1">
+                        <FileText className="h-3 w-3" />
+                        {supplier.invoiceCount}{" "}
+                        {supplier.invoiceCount === 1 ? "invoice" : "invoices"}
+                      </Badge>
+                      {supplier.whatsappEnabled && (
+                        <Badge
+                          variant="outline"
+                          className="gap-1 border-green-300 bg-green-50 text-green-700"
+                          title="WhatsApp notifications enabled"
+                        >
+                          <MessageCircle className="h-3 w-3" />
+                          WhatsApp
+                        </Badge>
+                      )}
+                    </div>
                     <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
                       <Button
                         variant="ghost"

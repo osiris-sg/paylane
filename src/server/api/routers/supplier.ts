@@ -97,10 +97,30 @@ export const supplierRouter = createTRPCRouter({
         : [];
       const countById = new Map(counts.map((c) => [c.senderCompanyId, c._count._all]));
 
+      // Suppliers linked to a PayLane company can receive WhatsApp alerts
+      // if at least one user there has opted in with a number on file.
+      const whatsappEnabledIds = linkedIds.length
+        ? new Set(
+            (
+              await ctx.db.user.findMany({
+                where: {
+                  companyId: { in: linkedIds },
+                  whatsappOptIn: true,
+                  whatsappNumber: { not: null },
+                },
+                select: { companyId: true },
+              })
+            ).map((u) => u.companyId),
+          )
+        : new Set<string>();
+
       return {
         suppliers: suppliers.map((s) => ({
           ...s,
           invoiceCount: s.linkedCompanyId ? countById.get(s.linkedCompanyId) ?? 0 : 0,
+          whatsappEnabled: s.linkedCompanyId
+            ? whatsappEnabledIds.has(s.linkedCompanyId)
+            : false,
         })),
         totalCount,
         totalPages: Math.ceil(totalCount / input.limit),

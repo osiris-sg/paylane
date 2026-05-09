@@ -43,8 +43,33 @@ export const customerRouter = createTRPCRouter({
         ctx.db.customer.count({ where }),
       ]);
 
+      // Customers linked to a PayLane company can receive WhatsApp alerts
+      // if at least one user there has opted in with a number on file.
+      const linkedIds = customers
+        .map((c) => c.linkedCompanyId)
+        .filter((id): id is string => !!id);
+      const whatsappEnabledIds = linkedIds.length
+        ? new Set(
+            (
+              await ctx.db.user.findMany({
+                where: {
+                  companyId: { in: linkedIds },
+                  whatsappOptIn: true,
+                  whatsappNumber: { not: null },
+                },
+                select: { companyId: true },
+              })
+            ).map((u) => u.companyId),
+          )
+        : new Set<string>();
+
       return {
-        customers,
+        customers: customers.map((c) => ({
+          ...c,
+          whatsappEnabled: c.linkedCompanyId
+            ? whatsappEnabledIds.has(c.linkedCompanyId)
+            : false,
+        })),
         totalCount,
         totalPages: Math.ceil(totalCount / input.limit),
         page: input.page,

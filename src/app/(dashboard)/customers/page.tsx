@@ -36,6 +36,7 @@ import {
   ChevronRight,
   Users,
   Upload,
+  MessageCircle,
 } from "lucide-react";
 import Link from "next/link";
 import { useSendAccess } from "~/lib/use-send-access";
@@ -336,11 +337,23 @@ export default function CustomersPage() {
                   <Separator className="my-3" />
 
                   <div className="flex items-center justify-between">
-                    <Badge variant="secondary" className="gap-1">
-                      <FileText className="h-3 w-3" />
-                      {customer._count.invoices}{" "}
-                      {customer._count.invoices === 1 ? "invoice" : "invoices"}
-                    </Badge>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <Badge variant="secondary" className="gap-1">
+                        <FileText className="h-3 w-3" />
+                        {customer._count.invoices}{" "}
+                        {customer._count.invoices === 1 ? "invoice" : "invoices"}
+                      </Badge>
+                      {customer.whatsappEnabled && (
+                        <Badge
+                          variant="outline"
+                          className="gap-1 border-green-300 bg-green-50 text-green-700"
+                          title="WhatsApp notifications enabled"
+                        >
+                          <MessageCircle className="h-3 w-3" />
+                          WhatsApp
+                        </Badge>
+                      )}
+                    </div>
                     <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
                       <Button
                         variant="ghost"
