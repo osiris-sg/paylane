@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   FileText,
   Users,
+  Truck,
   Bell,
   ChevronLeft,
   ChevronRight,
@@ -18,6 +19,7 @@ import { useState, useEffect } from "react";
 import { Button } from "~/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "~/components/ui/sheet";
 import { api } from "~/trpc/react";
+import { TrialStatusPill } from "~/components/subscription/trial-status-pill";
 
 interface NavItem {
   href: string;
@@ -31,6 +33,7 @@ const navItems: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/invoices", label: "Invoices", icon: FileText },
   { href: "/customers", label: "Customers", icon: Users, modules: ["SEND", "BOTH"] },
+  { href: "/suppliers", label: "Suppliers", icon: Truck, modules: ["RECEIVE", "BOTH"] },
   { href: "/notifications", label: "Notifications", icon: Bell },
   { href: "/admin", label: "Admin", icon: Shield, adminOnly: true },
 ];
@@ -111,6 +114,10 @@ export function Sidebar() {
 
       <NavLinks items={visibleItems} pathname={pathname} collapsed={collapsed} />
 
+      <div className={cn("border-t p-3", collapsed && "px-2")}>
+        <TrialStatusPill collapsed={collapsed} />
+      </div>
+
       <div className="border-t p-4">
         <div className={cn("flex items-center gap-3", collapsed && "justify-center")}>
           <UserButton />
@@ -147,6 +154,10 @@ export function MobileSidebar() {
         </div>
 
         <NavLinks items={visibleItems} pathname={pathname} onClick={() => setOpen(false)} />
+
+        <div className="border-t p-3">
+          <TrialStatusPill />
+        </div>
 
         <div className="border-t p-4">
           <div className="flex items-center gap-3">

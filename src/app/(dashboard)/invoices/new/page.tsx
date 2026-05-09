@@ -21,8 +21,17 @@ import {
   DialogTitle,
 } from "~/components/ui/dialog";
 import { formatCurrency } from "~/lib/currency";
+import { SendAccessGuard } from "~/components/subscription/send-access-guard";
 
 export default function NewInvoicePage() {
+  return (
+    <SendAccessGuard title="New Invoice">
+      <NewInvoicePageInner />
+    </SendAccessGuard>
+  );
+}
+
+function NewInvoicePageInner() {
   const router = useRouter();
   const utils = api.useUtils();
 

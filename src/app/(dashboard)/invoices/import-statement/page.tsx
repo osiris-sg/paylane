@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { ArrowLeft, FileSpreadsheet, Loader2, Upload } from "lucide-react";
 
 import { Button } from "~/components/ui/button";
+import { SendAccessGuard } from "~/components/subscription/send-access-guard";
 
 interface StatementInvoice {
   invoiceNumber: string;
@@ -36,6 +37,14 @@ export interface PendingStatementPayload {
 const STORAGE_KEY = "paylane:pending-statement";
 
 export default function ImportStatementPage() {
+  return (
+    <SendAccessGuard title="Import Statement">
+      <ImportStatementPageInner />
+    </SendAccessGuard>
+  );
+}
+
+function ImportStatementPageInner() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);

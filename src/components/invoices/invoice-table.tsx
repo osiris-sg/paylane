@@ -25,6 +25,7 @@ import {
 
 import { api } from "~/trpc/react";
 import { formatCurrency } from "~/lib/currency";
+import { useSendAccess } from "~/lib/use-send-access";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Badge } from "~/components/ui/badge";
@@ -67,6 +68,7 @@ interface InvoiceTableProps {
   initialStatus?: string;
   initialSearch?: string;
   initialCustomerId?: string;
+  initialSenderCompanyId?: string;
 }
 
 type StatusOption = "all" | "DRAFT" | "SENT" | "PENDING_APPROVAL" | "PAID" | "OVERDUE" | "CANCELLED";
@@ -190,12 +192,13 @@ function SkeletonRow({ columns }: { columns: number }) {
   );
 }
 
-export function InvoiceTable({ type, initialStatus, initialSearch, initialCustomerId }: InvoiceTableProps) {
+export function InvoiceTable({ type, initialStatus, initialSearch, initialCustomerId, initialSenderCompanyId }: InvoiceTableProps) {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState(initialSearch ?? "");
   const [debouncedSearch, setDebouncedSearch] = useState(initialSearch ?? "");
   const [statusFilter, setStatusFilter] = useState<StatusOption>(normalizeStatus(initialStatus));
   const [customerId, setCustomerId] = useState<string | undefined>(initialCustomerId);
+  const [senderCompanyId, setSenderCompanyId] = useState<string | undefined>(initialSenderCompanyId);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [sortBy, setSortBy] = useState<SortField | undefined>(undefined);
   const [sortDir, setSortDir] = useState<SortDir>("desc");
@@ -230,6 +233,11 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
     setPage(1);
   }, [initialCustomerId]);
 
+  useEffect(() => {
+    setSenderCompanyId(initialSenderCompanyId);
+    setPage(1);
+  }, [initialSenderCompanyId]);
+
   const utils = api.useUtils();
 
   const { data: featureFlags } = api.featureFlag.getAll.useQuery();
@@ -242,6 +250,7 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
     search: debouncedSearch || undefined,
     status: statusFilter !== "all" ? statusFilter : undefined,
     customerId: customerId || undefined,
+    senderCompanyId: senderCompanyId || undefined,
     sortBy,
     sortDir,
   });
@@ -250,6 +259,12 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
   const { data: filteredCustomer } = api.customer.getById.useQuery(
     { id: customerId ?? "" },
     { enabled: !!customerId },
+  );
+
+  // When filtering by a supplier (sender company), fetch their name
+  const { data: filteredSupplier } = api.supplier.getByLinkedCompanyId.useQuery(
+    { linkedCompanyId: senderCompanyId ?? "" },
+    { enabled: !!senderCompanyId && type === "received" },
   );
 
   // Customer list for the filter dropdown (only for the Sent tab)
@@ -380,12 +395,16 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
 
   const selectedInvoices = invoices.filter((inv) => selectedIds.has(inv.id));
 
-  // Determine which bulk actions apply based on the current selection
-  const canBulkSend = type === "sent" && selectedInvoices.length > 0 && selectedInvoices.every((i) => i.invoiceStatus === "DRAFT");
+  const sendAccess = useSendAccess();
+  const sendingAllowed = sendAccess.canSend;
+
+  // Determine which bulk actions apply based on the current selection.
+  // For sender-side actions (send/delete), also require active send access.
+  const canBulkSend = sendingAllowed && type === "sent" && selectedInvoices.length > 0 && selectedInvoices.every((i) => i.invoiceStatus === "DRAFT");
   const canBulkApprove = paymentApprovalEnabled && type === "sent" && selectedInvoices.length > 0 && selectedInvoices.every((i) => i.invoiceStatus === "PENDING_APPROVAL");
   const canBulkReject = canBulkApprove;
   const canBulkMarkPaid = paymentApprovalEnabled && type === "received" && selectedInvoices.length > 0 && selectedInvoices.every((i) => i.invoiceStatus === "SENT" || i.invoiceStatus === "OVERDUE");
-  const canBulkDelete = type === "sent" && selectedInvoices.length > 0;
+  const canBulkDelete = sendingAllowed && type === "sent" && selectedInvoices.length > 0;
 
   const handleBulkDelete = () => {
     askConfirm(
@@ -454,7 +473,7 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
 
   return (
     <Card>
-      <CardContent className="p-4">
+      <CardContent className="p-3">
         {/* Top control bar — fixed height regardless of contents */}
         <div className="mb-3 h-10">
           {isSomeSelected ? (
@@ -531,6 +550,18 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
                 >
                   <span className="max-w-[140px] truncate">
                     {filteredCustomer?.company || filteredCustomer?.name || "Customer"}
+                  </span>
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+              {senderCompanyId && (
+                <button
+                  type="button"
+                  onClick={() => { setSenderCompanyId(undefined); setPage(1); }}
+                  className="hidden shrink-0 items-center gap-1 rounded-full border border-blue-300 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 md:inline-flex"
+                >
+                  <span className="max-w-[140px] truncate">
+                    {filteredSupplier?.company || filteredSupplier?.name || "Supplier"}
                   </span>
                   <X className="h-3 w-3" />
                 </button>
@@ -696,33 +727,78 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
           )}
         </div>
 
-        {totalsByCurrency.length > 0 && (
-          <div className="mb-4 rounded-xl border border-blue-200 bg-gradient-to-br from-blue-50 to-blue-100/60 p-4 shadow-sm dark:border-blue-900 dark:from-blue-950/40 dark:to-blue-900/20 sm:p-5">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-blue-700/80 dark:text-blue-300/80">
-                  Total {type === "sent" ? "billed" : "received"}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {totalCount} invoice{totalCount === 1 ? "" : "s"}
-                  {(statusFilter !== "all" || customerId || debouncedSearch)
-                    ? " (filtered)"
-                    : ""}
-                </p>
-              </div>
-              <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1 sm:justify-end">
-                {totalsByCurrency.map((t) => (
-                  <span
-                    key={t.currency}
-                    className="text-2xl font-bold tabular-nums tracking-tight text-blue-900 dark:text-blue-100 sm:text-3xl"
+        {(() => {
+          const showingSelected = selectedInvoices.length > 0;
+          const selectedTotals = showingSelected
+            ? Object.entries(
+                selectedInvoices.reduce<Record<string, number>>((acc, inv) => {
+                  const code = inv.currency || "SGD";
+                  acc[code] = (acc[code] ?? 0) + Number(inv.amount);
+                  return acc;
+                }, {}),
+              )
+                .map(([currency, amount]) => ({ currency, amount }))
+                .sort((a, b) => b.amount - a.amount)
+            : [];
+          const displayTotals = showingSelected ? selectedTotals : totalsByCurrency;
+          const displayCount = showingSelected ? selectedInvoices.length : totalCount;
+          const filtersActive = statusFilter !== "all" || customerId || debouncedSearch;
+          if (displayTotals.length === 0) return null;
+          return (
+            <div
+              className={`mb-3 overflow-hidden rounded-xl border-2 px-4 py-3 shadow-sm transition-colors ${
+                showingSelected
+                  ? "border-amber-300 bg-gradient-to-br from-amber-50 via-amber-100/70 to-amber-50 dark:border-amber-700 dark:from-amber-950/50 dark:via-amber-900/30 dark:to-amber-950/40"
+                  : "border-blue-300 bg-gradient-to-br from-blue-50 via-blue-100/70 to-blue-50 dark:border-blue-700 dark:from-blue-950/50 dark:via-blue-900/30 dark:to-blue-950/40"
+              }`}
+            >
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div
+                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg shadow-sm ${
+                      showingSelected
+                        ? "bg-amber-500 text-white"
+                        : "bg-blue-600 text-white"
+                    }`}
                   >
-                    {formatCurrency(t.amount, t.currency)}
-                  </span>
-                ))}
+                    <span className="text-sm font-bold">$</span>
+                  </div>
+                  <div>
+                    <p
+                      className={`text-xs font-semibold uppercase tracking-wider ${
+                        showingSelected
+                          ? "text-amber-800 dark:text-amber-200"
+                          : "text-blue-800 dark:text-blue-200"
+                      }`}
+                    >
+                      {showingSelected
+                        ? "Selected total"
+                        : `Total ${type === "sent" ? "billed" : "received"}`}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {displayCount} invoice{displayCount === 1 ? "" : "s"}
+                      {!showingSelected && filtersActive ? " (filtered)" : ""}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1 sm:justify-end">
+                  {displayTotals.map((t) => (
+                    <span
+                      key={t.currency}
+                      className={`text-xl font-bold tabular-nums tracking-tight sm:text-2xl ${
+                        showingSelected
+                          ? "text-amber-900 dark:text-amber-100"
+                          : "text-blue-900 dark:text-blue-100"
+                      }`}
+                    >
+                      {formatCurrency(t.amount, t.currency)}
+                    </span>
+                  ))}
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Mobile Sort Bar */}
         <div className="mb-3 flex items-center gap-2 md:hidden">
@@ -867,7 +943,7 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
         </div>
 
         {/* Desktop Table */}
-        <div className="hidden overflow-x-auto rounded-md border md:block">
+        <div className="hidden overflow-x-auto rounded-md border md:block [&_td]:py-2 [&_th]:h-9 [&_th]:py-0">
           <Table>
             <TableHeader>
               <TableRow>
@@ -1052,7 +1128,7 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
 
         {/* Pagination */}
         {!isLoading && invoices.length > 0 && (
-          <div className="mt-4 flex flex-col items-center gap-3 sm:flex-row sm:justify-between">
+          <div className="mt-3 flex flex-col items-center gap-2 sm:flex-row sm:justify-between">
             <p className="text-xs text-muted-foreground sm:text-sm">
               {(page - 1) * ITEMS_PER_PAGE + 1}–{Math.min(page * ITEMS_PER_PAGE, totalCount)} of {totalCount}
             </p>

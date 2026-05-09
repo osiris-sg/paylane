@@ -68,4 +68,35 @@ export const adminRouter = createTRPCRouter({
         data: { module: input.module },
       });
     }),
+
+  /** Override sending plan (LOCKED / TRIAL / PAID / EXPIRED) for a company */
+  setSendingPlan: protectedProcedure
+    .input(
+      z.object({
+        companyId: z.string(),
+        plan: z.enum(["LOCKED", "TRIAL", "PAID", "EXPIRED"]),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (!(await isAdmin(ctx.auth.userId))) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Admin access required" });
+      }
+
+      // When manually starting a TRIAL, set the 14-day window. Other plans clear it.
+      const now = new Date();
+      const trialDates =
+        input.plan === "TRIAL"
+          ? {
+              trialStartedAt: now,
+              trialEndsAt: new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000),
+            }
+          : input.plan === "PAID" || input.plan === "LOCKED"
+            ? { trialStartedAt: null, trialEndsAt: null }
+            : {}; // EXPIRED: keep dates as-is
+
+      return ctx.db.company.update({
+        where: { id: input.companyId },
+        data: { sendingPlan: input.plan, ...trialDates },
+      });
+    }),
 });

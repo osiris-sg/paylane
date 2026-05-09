@@ -8,6 +8,9 @@ import { Button } from "~/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { InvoiceTable } from "~/components/invoices/invoice-table";
 import { api } from "~/trpc/react";
+import { useSendAccess } from "~/lib/use-send-access";
+import { ExpiredBanner } from "~/components/subscription/expired-banner";
+import { LockedSendingCTA } from "~/components/subscription/locked-sending-cta";
 
 function InvoicesContent() {
   const router = useRouter();
@@ -15,6 +18,8 @@ function InvoicesContent() {
 
   const { data: status } = api.onboarding.getStatus.useQuery();
   const companyModule = status?.module;
+  const access = useSendAccess();
+  const sendDisabled = !access.canSend;
 
   // Default tab based on module
   const canSend = companyModule === "SEND" || companyModule === "BOTH";
@@ -30,6 +35,7 @@ function InvoicesContent() {
   const urlStatus = searchParams.get("status") ?? undefined;
   const urlSearch = searchParams.get("search") ?? undefined;
   const urlCustomerId = searchParams.get("customerId") ?? undefined;
+  const urlSenderCompanyId = searchParams.get("senderCompanyId") ?? undefined;
 
   const handleTabChange = (value: string) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -41,7 +47,7 @@ function InvoicesContent() {
   };
 
   return (
-    <div className="flex flex-col gap-4 p-3 md:gap-6 md:p-6">
+    <div className="flex flex-col gap-3 md:gap-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Invoices</h1>
@@ -55,27 +61,51 @@ function InvoicesContent() {
         </div>
         {canSend && (
           <div className="flex items-center gap-2">
-            <Button variant="outline" asChild>
-              <Link href="/invoices/upload">
-                <Upload className="mr-2 h-4 w-4" />
-                Upload Invoice
-              </Link>
+            <Button variant="outline" asChild={!sendDisabled} disabled={sendDisabled}>
+              {sendDisabled ? (
+                <span className="cursor-not-allowed">
+                  <Upload className="mr-2 h-4 w-4" />
+                  Upload Invoice
+                </span>
+              ) : (
+                <Link href="/invoices/upload">
+                  <Upload className="mr-2 h-4 w-4" />
+                  Upload Invoice
+                </Link>
+              )}
             </Button>
-            <Button variant="outline" asChild>
-              <Link href="/invoices/import-statement">
-                <FileSpreadsheet className="mr-2 h-4 w-4" />
-                Import Statement
-              </Link>
+            <Button variant="outline" asChild={!sendDisabled} disabled={sendDisabled}>
+              {sendDisabled ? (
+                <span className="cursor-not-allowed">
+                  <FileSpreadsheet className="mr-2 h-4 w-4" />
+                  Import Statement
+                </span>
+              ) : (
+                <Link href="/invoices/import-statement">
+                  <FileSpreadsheet className="mr-2 h-4 w-4" />
+                  Import Statement
+                </Link>
+              )}
             </Button>
-            <Button asChild>
-              <Link href="/invoices/new">
-                <Plus className="mr-2 h-4 w-4" />
-                Create Invoice
-              </Link>
+            <Button asChild={!sendDisabled} disabled={sendDisabled}>
+              {sendDisabled ? (
+                <span className="cursor-not-allowed">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Create Invoice
+                </span>
+              ) : (
+                <Link href="/invoices/new">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Create Invoice
+                </Link>
+              )}
             </Button>
           </div>
         )}
       </div>
+
+      {canSend && access.state === "locked" && <LockedSendingCTA />}
+      {canSend && access.state === "expired" && <ExpiredBanner />}
 
       <Tabs value={activeTab} onValueChange={handleTabChange}>
         <TabsList>
@@ -89,7 +119,7 @@ function InvoicesContent() {
         )}
         {canReceive && (
           <TabsContent value="received" className="mt-4">
-            <InvoiceTable type="received" initialStatus={urlStatus} initialSearch={urlSearch} initialCustomerId={urlCustomerId} />
+            <InvoiceTable type="received" initialStatus={urlStatus} initialSearch={urlSearch} initialCustomerId={urlCustomerId} initialSenderCompanyId={urlSenderCompanyId} />
           </TabsContent>
         )}
       </Tabs>

@@ -4,8 +4,10 @@ import { Prisma, PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { Resend } from "resend";
 import { sendPushToCompany } from "~/lib/push-notifications";
+import { sendWhatsAppToCompany } from "~/server/notifications/dispatch";
 import { FEATURE_FLAGS, type FeatureFlagKey } from "~/lib/feature-flags";
 import { signInviteToken, verifyInviteToken } from "~/lib/invoice-invite";
+import { requireSendAccess } from "~/server/api/lib/sending-access";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const FROM_EMAIL = process.env.EMAIL_FROM ?? "PayLane <onboarding@resend.dev>";
@@ -39,6 +41,7 @@ export const invoiceRouter = createTRPCRouter({
         search: z.string().optional(),
         status: z.enum(["DRAFT", "SENT", "PENDING_APPROVAL", "PAID", "OVERDUE", "CANCELLED"]).optional(),
         customerId: z.string().optional(),
+        senderCompanyId: z.string().optional(),
         sortBy: z
           .enum([
             "invoiceNumber",
@@ -78,6 +81,10 @@ export const invoiceRouter = createTRPCRouter({
 
       if (input.customerId) {
         where.customerId = input.customerId;
+      }
+
+      if (input.senderCompanyId && input.type === "received") {
+        where.senderCompanyId = input.senderCompanyId;
       }
 
       if (input.search) {
@@ -193,6 +200,7 @@ export const invoiceRouter = createTRPCRouter({
       const user = await ctx.db.user.findUniqueOrThrow({
         where: { clerkId: ctx.auth.userId },
       });
+      await requireSendAccess(ctx.db, user.companyId);
 
       const dueDate = new Date(input.invoicedDate);
       dueDate.setDate(dueDate.getDate() + input.paymentTerms);
@@ -284,6 +292,7 @@ export const invoiceRouter = createTRPCRouter({
       const user = await ctx.db.user.findUniqueOrThrow({
         where: { clerkId: ctx.auth.userId },
       });
+      await requireSendAccess(ctx.db, user.companyId);
 
       const dueDate = new Date(input.invoicedDate);
       dueDate.setDate(dueDate.getDate() + input.paymentTerms);
@@ -518,6 +527,13 @@ export const invoiceRouter = createTRPCRouter({
       const { id, items: newItems, ...data } = input;
       const existing = await ctx.db.invoice.findUniqueOrThrow({ where: { id } });
 
+      const user = await ctx.db.user.findUniqueOrThrow({
+        where: { clerkId: ctx.auth.userId },
+      });
+      if (existing.senderCompanyId === user.companyId) {
+        await requireSendAccess(ctx.db, user.companyId);
+      }
+
       const updateData: Record<string, unknown> = { ...data };
 
       // Recalculate dueDate if invoicedDate or paymentTerms changed
@@ -574,6 +590,16 @@ export const invoiceRouter = createTRPCRouter({
   delete: protectedProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
+      const user = await ctx.db.user.findUniqueOrThrow({
+        where: { clerkId: ctx.auth.userId },
+      });
+      const existing = await ctx.db.invoice.findUniqueOrThrow({
+        where: { id: input.id },
+        select: { senderCompanyId: true },
+      });
+      if (existing.senderCompanyId === user.companyId) {
+        await requireSendAccess(ctx.db, user.companyId);
+      }
       await ctx.db.invoice.delete({ where: { id: input.id } });
       return { success: true };
     }),
@@ -581,6 +607,15 @@ export const invoiceRouter = createTRPCRouter({
   bulkDelete: protectedProcedure
     .input(z.object({ ids: z.array(z.string()).min(1) }))
     .mutation(async ({ ctx, input }) => {
+      const user = await ctx.db.user.findUniqueOrThrow({
+        where: { clerkId: ctx.auth.userId },
+      });
+      const ownsSent = await ctx.db.invoice.count({
+        where: { id: { in: input.ids }, senderCompanyId: user.companyId },
+      });
+      if (ownsSent > 0) {
+        await requireSendAccess(ctx.db, user.companyId);
+      }
       await ctx.db.invoice.deleteMany({ where: { id: { in: input.ids } } });
       return { success: true, count: input.ids.length };
     }),
@@ -628,6 +663,11 @@ export const invoiceRouter = createTRPCRouter({
   send: protectedProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
+      const user = await ctx.db.user.findUniqueOrThrow({
+        where: { clerkId: ctx.auth.userId },
+      });
+      await requireSendAccess(ctx.db, user.companyId);
+
       // Fetch invoice with customer to check for email-based linking
       const existing = await ctx.db.invoice.findUniqueOrThrow({
         where: { id: input.id },
@@ -705,6 +745,20 @@ export const invoiceRouter = createTRPCRouter({
           body: `Invoice ${invoice.invoiceNumber} — ${invoice.currency} ${Number(invoice.amount).toFixed(2)}`,
           url: `/invoices/${invoice.id}`,
           tag: `invoice-${invoice.id}`,
+        });
+
+        // WhatsApp (opt-in)
+        const senderCompany = await ctx.db.company.findUnique({
+          where: { id: invoice.senderCompanyId },
+          select: { name: true },
+        });
+        void sendWhatsAppToCompany(receiverCompanyId, {
+          template: "invoice_received",
+          contentVariables: {
+            senderName: senderCompany?.name ?? "A supplier",
+            invoiceNumber: invoice.invoiceNumber,
+            amount: `${invoice.currency} ${Number(invoice.amount).toFixed(2)}`,
+          },
         });
       }
 
@@ -936,6 +990,21 @@ export const invoiceRouter = createTRPCRouter({
           url: `/invoices/${invoice.id}`,
           tag: `payment-${invoice.id}`,
         });
+
+        const receiverCompany = invoice.receiverCompanyId
+          ? await ctx.db.company.findUnique({
+              where: { id: invoice.receiverCompanyId },
+              select: { name: true },
+            })
+          : null;
+        void sendWhatsAppToCompany(invoice.senderCompanyId, {
+          template: "payment_submitted",
+          contentVariables: {
+            receiverName: receiverCompany?.name ?? "A customer",
+            invoiceNumber: invoice.invoiceNumber,
+            amount: `${invoice.currency} ${Number(invoice.amount).toFixed(2)}`,
+          },
+        });
       }
 
       return invoice;
@@ -976,6 +1045,14 @@ export const invoiceRouter = createTRPCRouter({
           body: `Invoice ${invoice.invoiceNumber} — payment confirmed`,
           url: `/invoices/${invoice.id}`,
           tag: `payment-${invoice.id}`,
+        });
+
+        void sendWhatsAppToCompany(invoice.receiverCompanyId, {
+          template: "payment_approved",
+          contentVariables: {
+            invoiceNumber: invoice.invoiceNumber,
+            amount: `${invoice.currency} ${Number(invoice.amount).toFixed(2)}`,
+          },
         });
       }
 

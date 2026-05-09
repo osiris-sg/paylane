@@ -23,6 +23,9 @@ import {
 
 import { api } from "~/trpc/react";
 import { Button } from "~/components/ui/button";
+import { useSendAccess } from "~/lib/use-send-access";
+import { ExpiredBanner } from "~/components/subscription/expired-banner";
+import { LockedSendingCTA } from "~/components/subscription/locked-sending-cta";
 import { Input } from "~/components/ui/input";
 import { Badge } from "~/components/ui/badge";
 import {
@@ -212,6 +215,8 @@ export default function InvoiceDetailPage() {
   const { data: customersData } = api.customer.list.useQuery({ limit: 100 });
   const customerList = customersData?.customers ?? [];
 
+  const sendAccess = useSendAccess();
+
   const [scheduleDate, setScheduleDate] = useState("");
   const [showDocument, setShowDocument] = useState(false);
   const [confirmAction, setConfirmAction] = useState<
@@ -281,16 +286,17 @@ export default function InvoiceDetailPage() {
   const isReceiver = isReceived; // This user's company received the invoice
 
   const paymentApprovalEnabled = featureFlags?.paymentApprovalFlow ?? false;
+  const sendingLocked = isSender && !sendAccess.canSend;
 
-  const canSend = isSender && invoice.invoiceStatus === "DRAFT";
+  const canSend = isSender && invoice.invoiceStatus === "DRAFT" && !sendingLocked;
   const canMarkPaid =
     paymentApprovalEnabled &&
     isReceiver &&
     (invoice.invoiceStatus === "SENT" || invoice.invoiceStatus === "OVERDUE");
   const canApprovePayment = paymentApprovalEnabled && isSender && invoice.invoiceStatus === "PENDING_APPROVAL";
   const canRejectPayment = paymentApprovalEnabled && isSender && invoice.invoiceStatus === "PENDING_APPROVAL";
-  const canDelete = isSender;
-  const canEdit = isSender && invoice.invoiceStatus === "DRAFT";
+  const canDelete = isSender && !sendingLocked;
+  const canEdit = isSender && invoice.invoiceStatus === "DRAFT" && !sendingLocked;
   const canSchedulePayment =
     paymentApprovalEnabled &&
     isReceiver &&
@@ -368,6 +374,14 @@ export default function InvoiceDetailPage() {
           </Link>
         </Button>
       </div>
+
+      {isSender && sendAccess.state === "expired" && <ExpiredBanner />}
+      {isSender && sendAccess.state === "locked" && (
+        <LockedSendingCTA
+          title="This invoice is locked"
+          body="Start your free 14-day trial to send, edit, or delete this invoice."
+        />
+      )}
 
       {/* Mobile Summary Card */}
       <div className="sm:hidden">

@@ -30,6 +30,13 @@ const moduleConfig: Record<string, { label: string; className: string }> = {
   BOTH: { label: "Both", className: "bg-green-100 text-green-700 border-green-300" },
 };
 
+const planConfig: Record<string, { label: string; className: string }> = {
+  LOCKED: { label: "Locked", className: "bg-gray-100 text-gray-700 border-gray-300" },
+  TRIAL: { label: "Trial", className: "bg-blue-100 text-blue-700 border-blue-300" },
+  PAID: { label: "Paid", className: "bg-emerald-100 text-emerald-700 border-emerald-300" },
+  EXPIRED: { label: "Expired", className: "bg-rose-100 text-rose-700 border-rose-300" },
+};
+
 export default function AdminPage() {
   const { data: companies, isLoading, refetch } = api.admin.listCompanies.useQuery();
   const { data: flags, refetch: refetchFlags } = api.featureFlag.getAll.useQuery();
@@ -42,6 +49,16 @@ export default function AdminPage() {
     },
     onError: (err) => {
       toast.error(err.message || "Failed to update module");
+    },
+  });
+
+  const setSendingPlan = api.admin.setSendingPlan.useMutation({
+    onSuccess: () => {
+      toast.success("Plan updated");
+      void refetch();
+    },
+    onError: (err) => {
+      toast.error(err.message || "Failed to update plan");
     },
   });
 
@@ -59,6 +76,13 @@ export default function AdminPage() {
   const handleModuleChange = (companyId: string, value: string) => {
     const selectedModule = value === "none" ? null : (value as "RECEIVE" | "SEND" | "BOTH");
     setModule.mutate({ companyId, module: selectedModule });
+  };
+
+  const handlePlanChange = (companyId: string, value: string) => {
+    setSendingPlan.mutate({
+      companyId,
+      plan: value as "LOCKED" | "TRIAL" | "PAID" | "EXPIRED",
+    });
   };
 
   if (isLoading) {
@@ -168,6 +192,7 @@ export default function AdminPage() {
                   <TableHead>Company</TableHead>
                   <TableHead>Users</TableHead>
                   <TableHead>Module</TableHead>
+                  <TableHead>Send Plan</TableHead>
                   <TableHead className="text-center">Customers</TableHead>
                   <TableHead className="text-center">Sent</TableHead>
                   <TableHead className="text-center">Received</TableHead>
@@ -178,7 +203,7 @@ export default function AdminPage() {
               <TableBody>
                 {(!companies || companies.length === 0) ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
+                    <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
                       No companies yet
                     </TableCell>
                   </TableRow>
@@ -231,6 +256,32 @@ export default function AdminPage() {
                             </SelectItem>
                           </SelectContent>
                         </Select>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-col gap-0.5">
+                          <Select
+                            value={company.sendingPlan}
+                            onValueChange={(val) => handlePlanChange(company.id, val)}
+                          >
+                            <SelectTrigger className="h-8 w-[120px]">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {(["LOCKED", "TRIAL", "PAID", "EXPIRED"] as const).map((p) => (
+                                <SelectItem key={p} value={p}>
+                                  <Badge variant="outline" className={planConfig[p].className}>
+                                    {planConfig[p].label}
+                                  </Badge>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {company.trialEndsAt && company.sendingPlan === "TRIAL" && (
+                            <p className="text-[11px] text-muted-foreground">
+                              Ends {dayjs(company.trialEndsAt).format("MMM D")}
+                            </p>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell className="text-center">{company._count.customers}</TableCell>
                       <TableCell className="text-center">{company._count.sentInvoices}</TableCell>

@@ -50,6 +50,7 @@ import {
 } from "~/components/ui/dialog";
 import { Label } from "~/components/ui/label";
 import { UserPlus } from "lucide-react";
+import { SendAccessGuard } from "~/components/subscription/send-access-guard";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -292,6 +293,14 @@ function StatusBadge({
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function UploadInvoicePage() {
+  return (
+    <SendAccessGuard title="Upload Invoice">
+      <UploadInvoicePageInner />
+    </SendAccessGuard>
+  );
+}
+
+function UploadInvoicePageInner() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
 

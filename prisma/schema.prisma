@@ -16,12 +16,17 @@ model Company {
   address   String?
   module    CompanyModule?
   onboarded Boolean  @default(false)
+  sendingPlan    SendingPlan @default(LOCKED)
+  trialStartedAt DateTime?
+  trialEndsAt    DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   users         User[]
   customers     Customer[]
+  suppliers     Supplier[]
   linkedFrom    Customer[]   @relation("LinkedCompany") // other companies that added us as their customer
+  linkedAsSupplierFor Supplier[] @relation("SupplierLinkedCompany")
   sentInvoices  Invoice[] @relation("SentInvoices")
   receivedInvoices Invoice[] @relation("ReceivedInvoices")
   sentInvitations Invitation[]
@@ -35,6 +40,8 @@ model User {
   role      UserRole @default(USER)
   companyId String
   company   Company  @relation(fields: [companyId], references: [id])
+  whatsappNumber String?  // E.164 format, e.g. +6591234567
+  whatsappOptIn  Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -57,6 +64,23 @@ model Customer {
   updatedAt       DateTime @updatedAt
 
   invoices Invoice[]
+}
+
+model Supplier {
+  id              String   @id @default(cuid())
+  name            String              // Contact name (legacy / required)
+  email           String?
+  phone           String?
+  address         String?
+  company         String?             // Display name of the supplier's company
+  companyId       String              // The company that "owns" this supplier record (the receiver)
+  owner           Company  @relation(fields: [companyId], references: [id])
+  linkedCompanyId String?             // The supplier's actual Company on PayLane (set when they're a real PayLane company that has invoiced us)
+  linkedCompany   Company? @relation("SupplierLinkedCompany", fields: [linkedCompanyId], references: [id])
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([companyId, linkedCompanyId])
 }
 
 model Invoice {
@@ -155,6 +179,13 @@ enum CompanyModule {
   RECEIVE  // Company A — receives invoices from suppliers, adds suppliers
   SEND     // Suppliers — sends invoices to their customers
   BOTH     // Can both send and receive
+}
+
+enum SendingPlan {
+  LOCKED   // Never trialed; SEND features hidden behind trial CTA
+  TRIAL    // Inside 14-day window; full SEND access
+  EXPIRED  // Trial ended; SEND read-only, awaiting upgrade
+  PAID     // Direct sale or post-Airwallex; full SEND access, no expiry
 }
 
 enum UserRole {

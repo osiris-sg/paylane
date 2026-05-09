@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api } from "~/trpc/react";
 import { toast } from "sonner";
@@ -34,15 +35,11 @@ import {
   FileText,
   ChevronLeft,
   ChevronRight,
-  Users,
+  Truck,
   Upload,
 } from "lucide-react";
-import Link from "next/link";
-import { useSendAccess } from "~/lib/use-send-access";
-import { LockedSendingCTA } from "~/components/subscription/locked-sending-cta";
-import { ExpiredBanner } from "~/components/subscription/expired-banner";
 
-interface CustomerFormData {
+interface SupplierFormData {
   name: string;
   email: string;
   phone: string;
@@ -50,7 +47,7 @@ interface CustomerFormData {
   company: string;
 }
 
-const emptyForm: CustomerFormData = {
+const emptyForm: SupplierFormData = {
   name: "",
   email: "",
   phone: "",
@@ -58,7 +55,7 @@ const emptyForm: CustomerFormData = {
   company: "",
 };
 
-export default function CustomersPage() {
+export default function SuppliersPage() {
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -67,60 +64,50 @@ export default function CustomersPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [formData, setFormData] = useState<CustomerFormData>(emptyForm);
-
-  const access = useSendAccess();
-  const sendDisabled = !access.canSend;
+  const [formData, setFormData] = useState<SupplierFormData>(emptyForm);
 
   const limit = 12;
 
-  const { data, isLoading, refetch } = api.customer.list.useQuery({
+  const { data, isLoading, refetch } = api.supplier.list.useQuery({
     search: debouncedSearch || undefined,
     page,
     limit,
   });
 
-  const createMutation = api.customer.create.useMutation({
+  const createMutation = api.supplier.create.useMutation({
     onSuccess: () => {
-      toast.success("Customer created successfully");
+      toast.success("Supplier created");
       setDialogOpen(false);
       setFormData(emptyForm);
       void refetch();
     },
-    onError: (error) => {
-      toast.error(error.message || "Failed to create customer");
-    },
+    onError: (e) => toast.error(e.message || "Failed to create supplier"),
   });
 
-  const updateMutation = api.customer.update.useMutation({
+  const updateMutation = api.supplier.update.useMutation({
     onSuccess: () => {
-      toast.success("Customer updated successfully");
+      toast.success("Supplier updated");
       setDialogOpen(false);
       setFormData(emptyForm);
       setEditingId(null);
       void refetch();
     },
-    onError: (error) => {
-      toast.error(error.message || "Failed to update customer");
-    },
+    onError: (e) => toast.error(e.message || "Failed to update supplier"),
   });
 
-  const deleteMutation = api.customer.delete.useMutation({
+  const deleteMutation = api.supplier.delete.useMutation({
     onSuccess: () => {
-      toast.success("Customer deleted successfully");
+      toast.success("Supplier deleted");
       setDeleteDialogOpen(false);
       setDeletingId(null);
       void refetch();
     },
-    onError: (error) => {
-      toast.error(error.message || "Failed to delete customer");
-    },
+    onError: (e) => toast.error(e.message || "Failed to delete supplier"),
   });
 
   const handleSearchChange = (value: string) => {
     setSearch(value);
     setPage(1);
-    // Simple debounce using setTimeout
     const timeout = setTimeout(() => {
       setDebouncedSearch(value);
     }, 300);
@@ -133,7 +120,7 @@ export default function CustomersPage() {
     setDialogOpen(true);
   };
 
-  const openEditDialog = (customer: {
+  const openEditDialog = (supplier: {
     id: string;
     name: string;
     email: string | null;
@@ -141,13 +128,13 @@ export default function CustomersPage() {
     address: string | null;
     company: string | null;
   }) => {
-    setEditingId(customer.id);
+    setEditingId(supplier.id);
     setFormData({
-      name: customer.name,
-      email: customer.email ?? "",
-      phone: customer.phone ?? "",
-      address: customer.address ?? "",
-      company: customer.company ?? "",
+      name: supplier.name,
+      email: supplier.email ?? "",
+      phone: supplier.phone ?? "",
+      address: supplier.address ?? "",
+      company: supplier.company ?? "",
     });
     setDialogOpen(true);
   };
@@ -187,125 +174,100 @@ export default function CustomersPage() {
 
   const isMutating = createMutation.isPending || updateMutation.isPending;
 
-  if (access.state === "locked") {
-    return (
-      <div className="flex flex-col gap-6">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Customers</h1>
-          <p className="text-muted-foreground">
-            Manage your customers and their information.
-          </p>
-        </div>
-        <LockedSendingCTA />
-      </div>
-    );
-  }
-
   return (
     <div className="flex flex-col gap-6">
-      {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Customers</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Suppliers</h1>
         <p className="text-muted-foreground">
-          Manage your customers and their information.
+          Manage your suppliers and their information.
         </p>
       </div>
 
-      {access.state === "expired" && <ExpiredBanner />}
-
-      {/* Search + Add Customer */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="relative w-full max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Search customers..."
+            placeholder="Search suppliers..."
             value={search}
             onChange={(e) => handleSearchChange(e.target.value)}
             className="pl-9"
           />
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" asChild={!sendDisabled} disabled={sendDisabled}>
-            {sendDisabled ? (
-              <span className="cursor-not-allowed">
-                <Upload className="mr-2 h-4 w-4" />
-                Import Customers
-              </span>
-            ) : (
-              <Link href="/customers/import">
-                <Upload className="mr-2 h-4 w-4" />
-                Import Customers
-              </Link>
-            )}
+          <Button variant="outline" asChild>
+            <Link href="/suppliers/import">
+              <Upload className="mr-2 h-4 w-4" />
+              Import Suppliers
+            </Link>
           </Button>
-          <Button onClick={openCreateDialog} disabled={sendDisabled}>
+          <Button onClick={openCreateDialog}>
             <Plus className="mr-2 h-4 w-4" />
-            Add Customer
+            Add Supplier
           </Button>
         </div>
       </div>
 
-      {/* Loading Skeleton */}
       {isLoading && (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 6 }).map((_, i) => (
             <Card key={i} className="animate-pulse">
               <CardHeader className="pb-3">
                 <div className="h-5 w-36 rounded bg-muted" />
-                <div className="h-4 w-24 rounded bg-muted" />
               </CardHeader>
               <CardContent className="space-y-2">
                 <div className="h-4 w-48 rounded bg-muted" />
-                <div className="h-4 w-32 rounded bg-muted" />
-                <div className="h-4 w-40 rounded bg-muted" />
                 <Separator className="my-3" />
-                <div className="flex items-center justify-between">
-                  <div className="h-5 w-20 rounded bg-muted" />
-                  <div className="flex gap-2">
-                    <div className="h-8 w-8 rounded bg-muted" />
-                    <div className="h-8 w-8 rounded bg-muted" />
-                  </div>
-                </div>
+                <div className="h-5 w-20 rounded bg-muted" />
               </CardContent>
             </Card>
           ))}
         </div>
       )}
 
-      {/* Empty State */}
-      {!isLoading && data?.customers.length === 0 && (
+      {!isLoading && data?.suppliers.length === 0 && (
         <Card className="flex flex-col items-center justify-center py-16">
-          <Users className="mb-4 h-12 w-12 text-muted-foreground" />
-          <h3 className="text-lg font-semibold">No customers yet</h3>
+          <Truck className="mb-4 h-12 w-12 text-muted-foreground" />
+          <h3 className="text-lg font-semibold">No suppliers yet</h3>
           <p className="mb-4 text-sm text-muted-foreground">
-            Add your first customer to get started.
+            Add your first supplier or import from a list.
           </p>
-          <Button onClick={openCreateDialog} disabled={sendDisabled}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Customer
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" asChild>
+              <Link href="/suppliers/import">
+                <Upload className="mr-2 h-4 w-4" />
+                Import
+              </Link>
+            </Button>
+            <Button onClick={openCreateDialog}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add Supplier
+            </Button>
+          </div>
         </Card>
       )}
 
-      {/* Customer Grid */}
-      {!isLoading && data && data.customers.length > 0 && (
+      {!isLoading && data && data.suppliers.length > 0 && (
         <>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {data.customers.map((customer) => (
+            {data.suppliers.map((supplier) => (
               <Card
-                key={customer.id}
-                onClick={() => router.push(`/invoices?tab=sent&customerId=${customer.id}`)}
-                className="cursor-pointer transition-shadow hover:shadow-md"
+                key={supplier.id}
+                onClick={() => {
+                  if (supplier.linkedCompanyId) {
+                    router.push(`/invoices?tab=received&senderCompanyId=${supplier.linkedCompanyId}`);
+                  }
+                }}
+                className={`transition-shadow ${supplier.linkedCompanyId ? "cursor-pointer hover:shadow-md" : ""}`}
               >
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
                     <div className="min-w-0 flex-1">
                       <CardTitle className="truncate text-lg">
-                        {customer.company || customer.name}
+                        {supplier.company || supplier.name}
                       </CardTitle>
-                      {customer.company && (
-                        <p className="flex items-center gap-1 truncate text-sm text-muted-foreground">
-                          {customer.name}
+                      {supplier.company && supplier.name && supplier.company !== supplier.name && (
+                        <p className="truncate text-sm text-muted-foreground">
+                          {supplier.name}
                         </p>
                       )}
                     </div>
@@ -313,22 +275,22 @@ export default function CustomersPage() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-1.5 text-sm text-muted-foreground">
-                    {customer.email && (
+                    {supplier.email && (
                       <p className="flex items-center gap-2 truncate">
                         <Mail className="h-3.5 w-3.5 shrink-0" />
-                        {customer.email}
+                        {supplier.email}
                       </p>
                     )}
-                    {customer.phone && (
+                    {supplier.phone && (
                       <p className="flex items-center gap-2">
                         <Phone className="h-3.5 w-3.5 shrink-0" />
-                        {customer.phone}
+                        {supplier.phone}
                       </p>
                     )}
-                    {customer.address && (
+                    {supplier.address && (
                       <p className="flex items-center gap-2 truncate">
                         <MapPin className="h-3.5 w-3.5 shrink-0" />
-                        {customer.address}
+                        {supplier.address}
                       </p>
                     )}
                   </div>
@@ -338,16 +300,15 @@ export default function CustomersPage() {
                   <div className="flex items-center justify-between">
                     <Badge variant="secondary" className="gap-1">
                       <FileText className="h-3 w-3" />
-                      {customer._count.invoices}{" "}
-                      {customer._count.invoices === 1 ? "invoice" : "invoices"}
+                      {supplier.invoiceCount}{" "}
+                      {supplier.invoiceCount === 1 ? "invoice" : "invoices"}
                     </Badge>
                     <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
                       <Button
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8"
-                        onClick={() => openEditDialog(customer)}
-                        disabled={sendDisabled}
+                        onClick={() => openEditDialog(supplier)}
                       >
                         <Pencil className="h-3.5 w-3.5" />
                         <span className="sr-only">Edit</span>
@@ -356,8 +317,7 @@ export default function CustomersPage() {
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8 text-destructive hover:text-destructive"
-                        onClick={() => openDeleteDialog(customer.id)}
-                        disabled={sendDisabled}
+                        onClick={() => openDeleteDialog(supplier.id)}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                         <span className="sr-only">Delete</span>
@@ -369,13 +329,12 @@ export default function CustomersPage() {
             ))}
           </div>
 
-          {/* Pagination */}
           {data.totalPages > 1 && (
             <div className="flex items-center justify-between">
               <p className="text-sm text-muted-foreground">
                 Showing {(page - 1) * limit + 1} to{" "}
                 {Math.min(page * limit, data.totalCount)} of {data.totalCount}{" "}
-                customers
+                suppliers
               </p>
               <div className="flex items-center gap-2">
                 <Button
@@ -405,17 +364,16 @@ export default function CustomersPage() {
         </>
       )}
 
-      {/* Create / Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
-              {editingId ? "Edit Customer" : "Add Customer"}
+              {editingId ? "Edit Supplier" : "Add Supplier"}
             </DialogTitle>
             <DialogDescription>
               {editingId
-                ? "Update the customer's information below."
-                : "Fill in the details to create a new customer."}
+                ? "Update the supplier's information below."
+                : "Fill in the details to create a new supplier."}
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit}>
@@ -482,40 +440,31 @@ export default function CustomersPage() {
               </div>
             </div>
             <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setDialogOpen(false)}
-              >
+              <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
                 Cancel
               </Button>
               <Button type="submit" disabled={isMutating}>
                 {isMutating
                   ? "Saving..."
                   : editingId
-                    ? "Update Customer"
-                    : "Create Customer"}
+                    ? "Update Supplier"
+                    : "Create Supplier"}
               </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>Delete Customer</DialogTitle>
+            <DialogTitle>Delete Supplier</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete this customer? This action cannot
-              be undone.
+              Are you sure you want to delete this supplier? Their invoices will not be removed.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setDeleteDialogOpen(false)}
-            >
+            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
               Cancel
             </Button>
             <Button

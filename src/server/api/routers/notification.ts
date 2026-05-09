@@ -1,5 +1,9 @@
 import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
+import { sendWhatsAppTemplate } from "~/server/notifications/whatsapp";
+
+const E164 = /^\+[1-9]\d{6,14}$/;
 
 export const notificationRouter = createTRPCRouter({
   list: protectedProcedure
@@ -71,5 +75,68 @@ export const notificationRouter = createTRPCRouter({
     });
 
     return { success: true };
+  }),
+
+  getWhatsAppPreferences: protectedProcedure.query(async ({ ctx }) => {
+    const user = await ctx.db.user.findUniqueOrThrow({
+      where: { clerkId: ctx.auth.userId },
+      select: { whatsappNumber: true, whatsappOptIn: true },
+    });
+    return user;
+  }),
+
+  updateWhatsAppPreferences: protectedProcedure
+    .input(
+      z.object({
+        whatsappNumber: z
+          .string()
+          .trim()
+          .regex(E164, "Use international format, e.g. +6591234567")
+          .optional()
+          .or(z.literal("")),
+        whatsappOptIn: z.boolean(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const number = input.whatsappNumber?.trim() || null;
+      if (input.whatsappOptIn && !number) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Add a WhatsApp number before opting in",
+        });
+      }
+      const user = await ctx.db.user.update({
+        where: { clerkId: ctx.auth.userId },
+        data: {
+          whatsappNumber: number,
+          whatsappOptIn: input.whatsappOptIn && !!number,
+        },
+        select: { whatsappNumber: true, whatsappOptIn: true },
+      });
+      return user;
+    }),
+
+  sendTestWhatsApp: protectedProcedure.mutation(async ({ ctx }) => {
+    const user = await ctx.db.user.findUniqueOrThrow({
+      where: { clerkId: ctx.auth.userId },
+      select: { whatsappNumber: true, whatsappOptIn: true },
+    });
+    if (!user.whatsappOptIn || !user.whatsappNumber) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "Save and opt in to a WhatsApp number first",
+      });
+    }
+    const result = await sendWhatsAppTemplate({
+      to: user.whatsappNumber,
+      message: {
+        template: "verification",
+        contentVariables: { code: "PAYLANE-TEST" },
+      },
+    });
+    if (!result.ok) {
+      throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: result.error ?? "Send failed" });
+    }
+    return { ok: true };
   }),
 });
