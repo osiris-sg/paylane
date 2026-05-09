@@ -369,7 +369,7 @@ export default function DashboardPage() {
                 Invoice Aging
               </CardTitle>
               <p className="text-xs text-muted-foreground">
-                Unpaid supplier invoices grouped by days outstanding
+                Unpaid supplier invoices grouped by months outstanding
               </p>
             </CardHeader>
             <CardContent>
@@ -384,7 +384,7 @@ export default function DashboardPage() {
                     tickLine={false}
                     axisLine={false}
                     fontSize={12}
-                    tickFormatter={(v: string) => `${v} days`}
+                    tickFormatter={(v: string) => `${v} mo`}
                   />
                   <YAxis
                     tickLine={false}
@@ -394,7 +394,7 @@ export default function DashboardPage() {
                   />
                   <Tooltip
                     formatter={(value) => [formatCurrency(value), "Amount"]}
-                    labelFormatter={(label) => `${label} days`}
+                    labelFormatter={(label) => `${label} months`}
                     contentStyle={{
                       borderRadius: "8px",
                       border: "1px solid #e5e7eb",

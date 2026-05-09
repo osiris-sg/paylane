@@ -96,20 +96,24 @@ export const dashboardRouter = createTRPCRouter({
 
     const now = new Date();
     const buckets = [
-      { label: "0-30", minDays: 0, maxDays: 30, count: 0, amount: 0 },
-      { label: "31-60", minDays: 31, maxDays: 60, count: 0, amount: 0 },
-      { label: "61-90", minDays: 61, maxDays: 90, count: 0, amount: 0 },
-      { label: "90+", minDays: 91, maxDays: Infinity, count: 0, amount: 0 },
+      { label: "0-1", minMonths: 0, maxMonths: 0, count: 0, amount: 0 },
+      { label: "1-2", minMonths: 1, maxMonths: 1, count: 0, amount: 0 },
+      { label: "2-3", minMonths: 2, maxMonths: 2, count: 0, amount: 0 },
+      { label: "3+", minMonths: 3, maxMonths: Infinity, count: 0, amount: 0 },
     ];
 
     for (const invoice of unpaidInvoices) {
-      const daysSinceInvoiced = Math.floor(
-        (now.getTime() - new Date(invoice.invoicedDate).getTime()) /
-          (1000 * 60 * 60 * 24),
-      );
+      const inv = new Date(invoice.invoicedDate);
+      // Full calendar months elapsed between invoicedDate and now.
+      const monthsSinceInvoiced =
+        (now.getFullYear() - inv.getFullYear()) * 12 +
+        (now.getMonth() - inv.getMonth()) -
+        (now.getDate() < inv.getDate() ? 1 : 0);
 
       const bucket = buckets.find(
-        (b) => daysSinceInvoiced >= b.minDays && daysSinceInvoiced <= b.maxDays,
+        (b) =>
+          monthsSinceInvoiced >= b.minMonths &&
+          monthsSinceInvoiced <= b.maxMonths,
       );
 
       if (bucket) {

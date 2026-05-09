@@ -15,6 +15,7 @@ import {
   Check,
   Users,
   Sparkles,
+  MessageCircle,
 } from "lucide-react";
 
 import { api } from "~/trpc/react";
@@ -222,6 +223,11 @@ export default function OnboardingPage() {
   const [companyPhone, setCompanyPhone] = useState("");
   const [companyAddress, setCompanyAddress] = useState("");
 
+  // WhatsApp opt-in (optional, can also be set later from Notifications)
+  const [wantsWhatsapp, setWantsWhatsapp] = useState(false);
+  const [whatsappCode, setWhatsappCode] = useState("+65");
+  const [whatsappNumber, setWhatsappNumber] = useState("");
+
   // Suppliers form
   const [suppliers, setSuppliers] = useState<SupplierRow[]>([
     { id: Date.now(), companyName: "", email: "", contactName: "" },
@@ -275,6 +281,16 @@ export default function OnboardingPage() {
       setPrefilled(true);
     }
   }, [status, router, prefilled]);
+
+  const updateWhatsapp = api.notification.updateWhatsAppPreferences.useMutation({
+    // Don't block onboarding if WhatsApp save fails — they can retry from
+    // the Notifications page later.
+    onError: (err) =>
+      toast.error(
+        err.message ||
+          "Couldn't save WhatsApp preferences. You can set them up later from Notifications.",
+      ),
+  });
 
   const updateCompany = api.onboarding.updateCompany.useMutation({
     onSuccess: () => {
@@ -369,6 +385,21 @@ export default function OnboardingPage() {
       toast.error("Company name is required");
       return;
     }
+
+    // Save WhatsApp opt-in alongside company info. Both run in parallel —
+    // company-update drives the step transition, WhatsApp failure only toasts.
+    if (wantsWhatsapp) {
+      const digits = whatsappNumber.replace(/\D/g, "");
+      if (!digits) {
+        toast.error("Add your WhatsApp number or uncheck the opt-in.");
+        return;
+      }
+      updateWhatsapp.mutate({
+        whatsappNumber: `${whatsappCode}${digits}`,
+        whatsappOptIn: true,
+      });
+    }
+
     updateCompany.mutate({
       name: companyName.trim(),
       email: companyEmail.trim() || undefined,
@@ -505,6 +536,43 @@ export default function OnboardingPage() {
               </div>
 
               <Separator />
+
+              <div className="space-y-3 rounded-lg border bg-green-50/30 p-3">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="mt-1 h-4 w-4 shrink-0"
+                    checked={wantsWhatsapp}
+                    onChange={(e) => setWantsWhatsapp(e.target.checked)}
+                  />
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <MessageCircle className="h-4 w-4 text-green-600" />
+                      <span className="text-sm font-medium">
+                        Get WhatsApp notifications
+                      </span>
+                    </div>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Instant alerts when invoices arrive, payments are made, or due dates approach.
+                      You can change this later from Notifications.
+                    </p>
+                  </div>
+                </label>
+
+                {wantsWhatsapp && (
+                  <div className="grid gap-1.5 pl-7">
+                    <Label className="text-xs">WhatsApp Number</Label>
+                    <div className="flex gap-1.5">
+                      <PhoneCodeSelect value={whatsappCode} onChange={setWhatsappCode} />
+                      <Input
+                        placeholder="91234567"
+                        value={whatsappNumber}
+                        onChange={(e) => setWhatsappNumber(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
 
               <div className="flex justify-end">
                 <Button onClick={handleStep1Submit} disabled={updateCompany.isPending}>
