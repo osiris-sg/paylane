@@ -85,10 +85,17 @@ export default function EmailForwardingPage() {
               </div>
             )}
             {!pending.confirmationLink && !pending.confirmationCode && (
-              <p className="text-xs text-emerald-800">
-                Couldn&apos;t auto-extract the link or code from the verification email.
-                Check the most recent email in the list below.
-              </p>
+              <div className="space-y-2">
+                <p className="text-xs text-emerald-800">
+                  Couldn&apos;t auto-extract the link or code. Copy them from the email body
+                  below:
+                </p>
+                {pending.plainBody && (
+                  <pre className="max-h-80 overflow-auto rounded border border-emerald-200 bg-white p-2 font-mono text-[11px] whitespace-pre-wrap text-gray-800">
+                    {pending.plainBody}
+                  </pre>
+                )}
+              </div>
             )}
           </CardContent>
         </Card>

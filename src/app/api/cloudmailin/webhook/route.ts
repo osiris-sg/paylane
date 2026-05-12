@@ -179,6 +179,11 @@ export async function POST(req: NextRequest) {
   // Forwarding-confirmation emails from Gmail/Outlook — extract code + link and surface in UI.
   const confirmation = detectForwardingConfirmation({ fromAddress, subject, plainBody, htmlBody });
   if (confirmation) {
+    console.log("[cloudmailin] confirmation parsed", {
+      link: confirmation.link,
+      code: confirmation.code,
+      plainSample: plainBody?.slice(0, 800) ?? null,
+    });
     const ingested = await db.ingestedEmail.create({
       data: {
         emailIntegrationId: integration.id,

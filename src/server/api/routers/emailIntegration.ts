@@ -73,6 +73,8 @@ export const emailIntegrationRouter = createTRPCRouter({
 
   // Latest unresolved Gmail/Outlook forwarding-confirmation email, if any —
   // used to render a prominent "Click to verify" banner at the top of the page.
+  // Prefer the most recent row that has either a link or code already extracted;
+  // fall back to the most recent CONFIRMATION row so we can at least show the body.
   pendingConfirmation: protectedProcedure.query(async ({ ctx }) => {
     const companyId = ctx.user.companyId;
     const integration = await ctx.db.emailIntegration.findUnique({
@@ -80,11 +82,18 @@ export const emailIntegrationRouter = createTRPCRouter({
     });
     if (!integration) return null;
 
-    return ctx.db.ingestedEmail.findFirst({
+    const extracted = await ctx.db.ingestedEmail.findFirst({
       where: {
         emailIntegrationId: integration.id,
         status: "CONFIRMATION",
+        OR: [{ confirmationLink: { not: null } }, { confirmationCode: { not: null } }],
       },
+      orderBy: { receivedAt: "desc" },
+    });
+    if (extracted) return extracted;
+
+    return ctx.db.ingestedEmail.findFirst({
+      where: { emailIntegrationId: integration.id, status: "CONFIRMATION" },
       orderBy: { receivedAt: "desc" },
     });
   }),
