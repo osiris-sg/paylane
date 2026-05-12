@@ -173,6 +173,12 @@ model IngestedEmail {
   status              IngestedEmailStatus  @default(RECEIVED)
   failureReason       String?
 
+  // Stored for CONFIRMATION emails so we can render the link/code in-app.
+  plainBody           String?  @db.Text
+  htmlBody            String?  @db.Text
+  confirmationLink    String?
+  confirmationCode    String?
+
   invoiceId           String?  @unique
   invoice             Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
 
@@ -200,6 +206,7 @@ enum IngestedEmailStatus {
   PARSED         // AI extracted invoice + Invoice row created
   IGNORED        // AI said this isn't an invoice / no PDF attached
   FAILED         // parser error
+  CONFIRMATION   // Gmail/Outlook forwarding-verification email; link/code shown in UI
 }
 
 model InvoiceItem {

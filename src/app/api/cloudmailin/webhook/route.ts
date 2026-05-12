@@ -97,6 +97,8 @@ export async function POST(req: NextRequest) {
     asString(headers["Message-ID"] as string | string[] | undefined) ??
     asString(headers["Message-Id"] as string | string[] | undefined) ??
     null;
+  const plainBody = (formData.get("plain") as string | null) ?? null;
+  const htmlBody = (formData.get("html") as string | null) ?? null;
 
   const inboundToken = extractInboundToken(toAddress);
   if (!inboundToken) {
@@ -123,9 +125,28 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Forwarding-confirmation emails from Gmail/Outlook — extract code + link and surface in UI.
+  const confirmation = detectForwardingConfirmation({ fromAddress, subject, plainBody, htmlBody });
+  if (confirmation) {
+    const ingested = await db.ingestedEmail.create({
+      data: {
+        emailIntegrationId: integration.id,
+        fromAddress,
+        subject,
+        messageId,
+        plainBody,
+        htmlBody,
+        confirmationLink: confirmation.link,
+        confirmationCode: confirmation.code,
+        status: "CONFIRMATION",
+      },
+    });
+    return NextResponse.json({ ok: true, ingestedEmailId: ingested.id, kind: "confirmation" });
+  }
+
   // Collect parseable attachments (PDFs + images)
   const attachments: Array<{ name: string; mediaType: SupportedMediaType; buffer: Buffer }> = [];
-  for (const [, value] of formData.entries()) {
+  for (const [, value] of Array.from(formData.entries())) {
     if (typeof value === "string") continue;
     const file = value as File;
     const mt =
@@ -326,4 +347,39 @@ function parseDate(s: string | null | undefined): Date | null {
   if (!s) return null;
   const d = new Date(s);
   return isNaN(d.getTime()) ? null : d;
+}
+
+// Recognises Gmail (and Outlook) "verify your forwarding address" emails and pulls
+// out the click-to-confirm URL + numeric code so we can surface them in the UI.
+function detectForwardingConfirmation(args: {
+  fromAddress: string;
+  subject: string | null;
+  plainBody: string | null;
+  htmlBody: string | null;
+}): { link: string | null; code: string | null } | null {
+  const { fromAddress, subject, plainBody, htmlBody } = args;
+  const from = fromAddress.toLowerCase();
+  const subj = (subject ?? "").toLowerCase();
+
+  const isGmail =
+    from.includes("forwarding-noreply@google.com") ||
+    subj.includes("gmail forwarding confirmation");
+  const isOutlook =
+    from.includes("microsoft-noreply@microsoft.com") ||
+    subj.includes("verify your forwarding email");
+
+  if (!isGmail && !isOutlook) return null;
+
+  const body = `${plainBody ?? ""}\n${htmlBody ?? ""}`;
+
+  // Gmail confirmation URL pattern; falls back to any URL on google's mail-settings host.
+  const linkMatch =
+    body.match(/https:\/\/mail-settings\.google\.com\/mail\/vf-[A-Za-z0-9_-]+/) ??
+    body.match(/https:\/\/mail\.google\.com\/[^\s"'<>]*vf-[A-Za-z0-9_-]+/);
+  const codeMatch = body.match(/\b(\d{9})\b/);
+
+  return {
+    link: linkMatch ? linkMatch[0] : null,
+    code: codeMatch ? codeMatch[1] : null,
+  };
 }

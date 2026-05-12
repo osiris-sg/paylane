@@ -12,12 +12,16 @@ import {
 } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { Badge } from "~/components/ui/badge";
-import { Copy, Check, Mail, ExternalLink } from "lucide-react";
+import { Copy, Check, Mail, ExternalLink, ShieldCheck } from "lucide-react";
 
 export default function EmailForwardingPage() {
   const integrationQ = api.emailIntegration.get.useQuery();
   const recentQ = api.emailIntegration.recentIngested.useQuery();
+  const pendingQ = api.emailIntegration.pendingConfirmation.useQuery(undefined, {
+    refetchInterval: 10_000,
+  });
   const [copied, setCopied] = useState(false);
+  const [codeCopied, setCodeCopied] = useState(false);
 
   const address = integrationQ.data?.forwardingAddress;
 
@@ -29,6 +33,15 @@ export default function EmailForwardingPage() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const pending = pendingQ.data;
+  const copyCode = async () => {
+    if (!pending?.confirmationCode) return;
+    await navigator.clipboard.writeText(pending.confirmationCode);
+    setCodeCopied(true);
+    toast.success("Code copied");
+    setTimeout(() => setCodeCopied(false), 2000);
+  };
+
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div>
@@ -37,6 +50,49 @@ export default function EmailForwardingPage() {
           Auto-import invoices by forwarding them to your unique paylane address.
         </p>
       </div>
+
+      {pending && (
+        <Card className="border-emerald-300 bg-emerald-50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-emerald-900">
+              <ShieldCheck className="h-4 w-4" /> Verify Gmail forwarding
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm text-emerald-900">
+            <p>
+              Gmail sent a verification email to confirm you want to forward invoices here.
+              Click the link below — or copy the code into Gmail.
+            </p>
+            {pending.confirmationLink && (
+              <a
+                href={pending.confirmationLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+              >
+                Confirm with Google <ExternalLink className="h-3 w-3" />
+              </a>
+            )}
+            {pending.confirmationCode && (
+              <div className="flex items-center gap-2 rounded-md border border-emerald-200 bg-white p-2">
+                <span className="text-xs text-gray-500">Code:</span>
+                <code className="flex-1 font-mono text-base tracking-wider">
+                  {pending.confirmationCode}
+                </code>
+                <Button size="sm" variant="outline" onClick={copyCode}>
+                  {codeCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                </Button>
+              </div>
+            )}
+            {!pending.confirmationLink && !pending.confirmationCode && (
+              <p className="text-xs text-emerald-800">
+                Couldn&apos;t auto-extract the link or code from the verification email.
+                Check the most recent email in the list below.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
@@ -158,6 +214,7 @@ function StatusBadge({ status }: { status: string }) {
     RECEIVED: "outline",
     IGNORED: "secondary",
     FAILED: "destructive",
+    CONFIRMATION: "outline",
   };
   return <Badge variant={tone[status] ?? "outline"}>{status.toLowerCase()}</Badge>;
 }
