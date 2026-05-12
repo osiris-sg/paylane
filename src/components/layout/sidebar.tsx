@@ -6,6 +6,7 @@ import { UserButton } from "@clerk/nextjs";
 import {
   LayoutDashboard,
   FileText,
+  FileSpreadsheet,
   Users,
   Truck,
   Bell,
@@ -14,6 +15,7 @@ import {
   Shield,
   Menu,
   Sparkles,
+  Inbox,
 } from "lucide-react";
 import { cn } from "~/lib/utils";
 import { useState, useEffect } from "react";
@@ -33,8 +35,10 @@ interface NavItem {
 const navItems: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/invoices", label: "Invoices", icon: FileText },
+  { href: "/statements", label: "Statements", icon: FileSpreadsheet },
   { href: "/customers", label: "Customers", icon: Users, modules: ["SEND", "BOTH"] },
   { href: "/suppliers", label: "Suppliers", icon: Truck, modules: ["RECEIVE", "BOTH"] },
+  { href: "/email-forwarding", label: "Email Forwarding", icon: Inbox, modules: ["RECEIVE", "BOTH"] },
   { href: "/agent", label: "AI Assistant", icon: Sparkles, modules: ["SEND", "BOTH"] },
   { href: "/notifications", label: "Notifications", icon: Bell },
   { href: "/admin", label: "Admin", icon: Shield, adminOnly: true },

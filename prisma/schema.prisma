@@ -16,6 +16,7 @@ model Company {
   address   String?
   module    CompanyModule?
   onboarded Boolean  @default(false)
+  isStub    Boolean  @default(false)  // Auto-created placeholder for vendors discovered via email ingestion; not user-facing
   sendingPlan    SendingPlan @default(LOCKED)
   trialStartedAt DateTime?
   trialEndsAt    DateTime?
@@ -32,6 +33,7 @@ model Company {
   sentInvitations Invitation[]
   sentStatements     Statement[] @relation("SentStatements")
   receivedStatements Statement[] @relation("ReceivedStatements")
+  emailIntegration   EmailIntegration?
 }
 
 model User {
@@ -97,6 +99,7 @@ model Invoice {
   currency       String        @default("SGD")
   routingStatus  RoutingStatus @default(PENDING)
   invoiceStatus  InvoiceStatus @default(DRAFT)
+  source         InvoiceSource @default(MANUAL)
   expectedPaymentDate DateTime?  // Receiver's promised payment date
   fromAddress    String?
   toAddress      String?
@@ -124,6 +127,7 @@ model Invoice {
   items          InvoiceItem[]
   notifications  Notification[]
   timelineItems  TimelineItem[]
+  ingestedEmail  IngestedEmail?
 
   subtotal       Decimal       @default(0) @db.Decimal(12, 2)
   taxRate        Decimal       @default(9) @db.Decimal(5, 2)
@@ -131,6 +135,71 @@ model Invoice {
   notes          String?
 
   @@unique([invoiceNumber, senderCompanyId])
+}
+
+model EmailIntegration {
+  id             String   @id @default(cuid())
+  companyId      String   @unique
+  company        Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  // Per-company plus-address token. The user forwards invoices to
+  // `<CLOUDMAILIN_INBOUND_ADDRESS_LOCAL>+<inboundToken>@cloudmailin.net`
+  // and the webhook resolves the token back to this company.
+  inboundToken   String   @unique
+
+  // Phase 2 — Gmail OAuth fields (kept null in Phase 1, forwarding-only setup).
+  provider       EmailProvider?
+  providerEmail  String?
+  refreshToken   String?  // encrypted at rest before storing
+  gmailFilterId  String?
+
+  status         EmailIntegrationStatus @default(ACTIVE)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  ingestedEmails IngestedEmail[]
+}
+
+model IngestedEmail {
+  id                  String   @id @default(cuid())
+  emailIntegrationId  String
+  emailIntegration    EmailIntegration @relation(fields: [emailIntegrationId], references: [id], onDelete: Cascade)
+
+  fromAddress         String
+  subject             String?
+  messageId           String?  @unique  // RFC 5322 Message-ID for dedup
+  receivedAt          DateTime @default(now())
+
+  status              IngestedEmailStatus  @default(RECEIVED)
+  failureReason       String?
+
+  invoiceId           String?  @unique
+  invoice             Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+
+  @@index([emailIntegrationId])
+}
+
+enum InvoiceSource {
+  MANUAL
+  EMAIL_FORWARD
+}
+
+enum EmailProvider {
+  GMAIL
+  OUTLOOK
+}
+
+enum EmailIntegrationStatus {
+  ACTIVE
+  PAUSED
+  BROKEN
+}
+
+enum IngestedEmailStatus {
+  RECEIVED       // just arrived, queued for parsing
+  PARSED         // AI extracted invoice + Invoice row created
+  IGNORED        // AI said this isn't an invoice / no PDF attached
+  FAILED         // parser error
 }
 
 model InvoiceItem {
