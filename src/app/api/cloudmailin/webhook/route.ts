@@ -16,19 +16,54 @@ export const maxDuration = 60;
 function verifyBasicAuth(req: NextRequest): boolean {
   const expectedUser = env.CLOUDMAILIN_BASIC_AUTH_USER;
   const expectedPass = env.CLOUDMAILIN_BASIC_AUTH_PASSWORD;
+  const header = req.headers.get("authorization");
+
+  // Debug logging — booleans + lengths only, never the actual secret.
+  // Remove once auth issues are resolved.
+  const debug = {
+    hasExpectedUser: !!expectedUser,
+    hasExpectedPass: !!expectedPass,
+    expectedUserLen: expectedUser?.length ?? 0,
+    expectedPassLen: expectedPass?.length ?? 0,
+    hasAuthHeader: !!header,
+    authPrefix: header?.slice(0, 6) ?? null,
+    receivedUser: "",
+    receivedUserLen: 0,
+    receivedPassLen: 0,
+    userMatches: false,
+    passMatches: false,
+  };
+
   if (!expectedUser || !expectedPass) {
-    // Not configured — refuse to accept anything to avoid silent acceptance of forged traffic.
+    console.warn("[cloudmailin] auth fail — env not configured", debug);
+    return false;
+  }
+  if (!header?.startsWith("Basic ")) {
+    console.warn("[cloudmailin] auth fail — missing Basic header", debug);
     return false;
   }
 
-  const header = req.headers.get("authorization");
-  if (!header?.startsWith("Basic ")) return false;
   const decoded = Buffer.from(header.slice("Basic ".length), "base64").toString("utf-8");
   const idx = decoded.indexOf(":");
-  if (idx < 0) return false;
+  if (idx < 0) {
+    console.warn("[cloudmailin] auth fail — malformed Basic payload", debug);
+    return false;
+  }
   const user = decoded.slice(0, idx);
   const pass = decoded.slice(idx + 1);
-  return user === expectedUser && pass === expectedPass;
+  debug.receivedUser = user; // username is non-secret
+  debug.receivedUserLen = user.length;
+  debug.receivedPassLen = pass.length;
+  debug.userMatches = user === expectedUser;
+  debug.passMatches = pass === expectedPass;
+
+  const ok = debug.userMatches && debug.passMatches;
+  if (!ok) {
+    console.warn("[cloudmailin] auth fail — mismatch", debug);
+  } else {
+    console.log("[cloudmailin] auth ok", { receivedUser: user });
+  }
+  return ok;
 }
 
 // Pull the company-routing token out of a "to" address.
