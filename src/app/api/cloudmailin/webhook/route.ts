@@ -136,6 +136,8 @@ export async function POST(req: NextRequest) {
   const htmlBody = (formData.get("html") as string | null) ?? null;
 
   const inboundToken = extractInboundToken(toAddress);
+  console.log("[cloudmailin] routing", { toAddress, inboundToken, fromAddress, subject });
+
   if (!inboundToken) {
     console.warn("[cloudmailin] no inbound token in to-address:", toAddress);
     // Still return 200 so CloudMailin doesn't retry — we just can't route this.
@@ -148,9 +150,14 @@ export async function POST(req: NextRequest) {
   });
 
   if (!integration) {
-    console.warn("[cloudmailin] unknown inbound token:", inboundToken);
-    return NextResponse.json({ ok: true, ignored: "unknown_token" });
+    const allTokens = await db.emailIntegration.findMany({
+      select: { inboundToken: true, companyId: true },
+    });
+    console.warn("[cloudmailin] unknown inbound token:", inboundToken, "known:", allTokens);
+    return NextResponse.json({ ok: true, ignored: "unknown_token", got: inboundToken });
   }
+
+  console.log("[cloudmailin] matched integration", { companyId: integration.companyId });
 
   // Dedup by Message-ID if we have one
   if (messageId) {
