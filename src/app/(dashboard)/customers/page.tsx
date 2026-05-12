@@ -37,7 +37,6 @@ import {
   Users,
   Upload,
   MessageCircle,
-  Send,
 } from "lucide-react";
 import Link from "next/link";
 import { useSendAccess } from "~/lib/use-send-access";
@@ -232,19 +231,6 @@ export default function CustomersPage() {
           />
         </div>
         <div className="flex flex-wrap gap-2">
-          {sendDisabled ? (
-            <Button variant="outline" disabled>
-              <Send className="mr-2 h-4 w-4" />
-              Send Statements
-            </Button>
-          ) : (
-            <Button variant="outline" asChild>
-              <Link href="/customers/send-statements">
-                <Send className="mr-2 h-4 w-4" />
-                Send Statements
-              </Link>
-            </Button>
-          )}
           {sendDisabled ? (
             <Button variant="outline" disabled>
               <Upload className="mr-2 h-4 w-4" />
