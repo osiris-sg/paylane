@@ -15,10 +15,18 @@ import { Badge } from "~/components/ui/badge";
 import { Copy, Check, Mail, ExternalLink, ShieldCheck } from "lucide-react";
 
 export default function EmailForwardingPage() {
+  const utils = api.useUtils();
   const integrationQ = api.emailIntegration.get.useQuery();
   const recentQ = api.emailIntegration.recentIngested.useQuery();
   const pendingQ = api.emailIntegration.pendingConfirmation.useQuery(undefined, {
     refetchInterval: 10_000,
+  });
+  const dismissM = api.emailIntegration.dismissConfirmations.useMutation({
+    onSuccess: () => {
+      void utils.emailIntegration.pendingConfirmation.invalidate();
+      void utils.emailIntegration.recentIngested.invalidate();
+      toast.success("Marked as verified");
+    },
   });
   const [copied, setCopied] = useState(false);
   const [codeCopied, setCodeCopied] = useState(false);
@@ -64,14 +72,35 @@ export default function EmailForwardingPage() {
               Click the link below — or copy the code into Gmail.
             </p>
             {pending.confirmationLink && (
-              <a
-                href={pending.confirmationLink}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+              <div className="flex flex-wrap items-center gap-2">
+                <a
+                  href={pending.confirmationLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => dismissM.mutate()}
+                  className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+                >
+                  Confirm with Google <ExternalLink className="h-3 w-3" />
+                </a>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => dismissM.mutate()}
+                  disabled={dismissM.isPending}
+                >
+                  I&apos;ve already verified
+                </Button>
+              </div>
+            )}
+            {!pending.confirmationLink && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => dismissM.mutate()}
+                disabled={dismissM.isPending}
               >
-                Confirm with Google <ExternalLink className="h-3 w-3" />
-              </a>
+                I&apos;ve already verified
+              </Button>
             )}
             {pending.confirmationCode && (
               <div className="flex items-center gap-2 rounded-md border border-emerald-200 bg-white p-2">

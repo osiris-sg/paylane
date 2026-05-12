@@ -1,5 +1,6 @@
 import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
 import { env } from "~/env";
+import { TRPCError } from "@trpc/server";
 
 function generateInboundToken(): string {
   // Short, URL-safe, hard to guess. ~62^10 keyspace is plenty for our user base.
@@ -98,4 +99,21 @@ export const emailIntegrationRouter = createTRPCRouter({
     });
   }),
 
+  // Dismiss every outstanding CONFIRMATION email for the company. Called after
+  // the user has clicked through the Gmail verify link — Google doesn't call
+  // us back when forwarding is approved, so we rely on a manual "done" click.
+  dismissConfirmations: protectedProcedure.mutation(async ({ ctx }) => {
+    const companyId = ctx.user.companyId;
+    const integration = await ctx.db.emailIntegration.findUnique({
+      where: { companyId },
+    });
+    if (!integration) {
+      throw new TRPCError({ code: "NOT_FOUND" });
+    }
+    const res = await ctx.db.ingestedEmail.updateMany({
+      where: { emailIntegrationId: integration.id, status: "CONFIRMATION" },
+      data: { status: "IGNORED", failureReason: "Dismissed after manual verification" },
+    });
+    return { dismissed: res.count };
+  }),
 });
