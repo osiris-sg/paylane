@@ -46,6 +46,14 @@ async function persistAndDispatch({
     select: { id: true, name: true },
   });
 
+  // Detect upsert vs. create so the notification can say "updated" instead
+  // of "sent" when a previous statement was on file.
+  const previous = await ctx.db.statement.findUnique({
+    where: { customerId },
+    select: { id: true },
+  });
+  const isUpdate = !!previous;
+
   const statement = await ctx.db.statement.upsert({
     where: { customerId },
     create: {
@@ -75,10 +83,13 @@ async function persistAndDispatch({
       select: { id: true, email: true },
     });
 
+    const verb = isUpdate ? "updated their statement" : "sent you a statement";
+    const pushTitle = isUpdate ? "Statement Updated" : "New Statement";
+
     if (receiverUsers.length > 0) {
       await ctx.db.notification.createMany({
         data: receiverUsers.map((u) => ({
-          message: `${senderCompany.name} sent you a statement`,
+          message: `${senderCompany.name} ${verb}`,
           type: "STATEMENT_RECEIVED" as const,
           userId: u.id,
           statementId: statement.id,
@@ -86,9 +97,9 @@ async function persistAndDispatch({
       });
 
       void sendPushToCompany(customer.linkedCompanyId, {
-        title: "New Statement",
-        body: `${senderCompany.name} sent you a statement of account`,
-        url: `/suppliers?statementId=${statement.id}`,
+        title: pushTitle,
+        body: `${senderCompany.name} ${verb} of account`,
+        url: `/statements?tab=received&id=${statement.id}`,
         tag: `statement-${statement.id}`,
       });
 
@@ -222,6 +233,23 @@ export const statementRouter = createTRPCRouter({
         include: { senderCompany: { select: { name: true } } },
       });
     }),
+
+  /** Sender: list every statement they've sent (one per customer). */
+  listSent: protectedProcedure.query(async ({ ctx }) => {
+    const user = await ctx.db.user.findUniqueOrThrow({
+      where: { clerkId: ctx.auth.userId },
+    });
+    return ctx.db.statement.findMany({
+      where: { senderCompanyId: user.companyId },
+      orderBy: { sentAt: "desc" },
+      include: {
+        customer: {
+          select: { id: true, company: true, name: true, email: true },
+        },
+        receiverCompany: { select: { id: true, name: true } },
+      },
+    });
+  }),
 
   /** Receiver: list every incoming statement (one per supplier). */
   listIncoming: protectedProcedure.query(async ({ ctx }) => {
