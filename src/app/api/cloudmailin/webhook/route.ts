@@ -129,9 +129,12 @@ export async function POST(req: NextRequest) {
     readField(formData, "envelope[recipients][]") ??
     readField(formData, "envelope[recipients][0]") ??
     readBracketField(formData, "headers", "to", "To");
+  // Prefer the From header (original sender) over the envelope From, which on
+  // auto-forwarded mail is Gmail's SRS-rewritten bounce path like
+  // `user+caf_=token=cloudmailin.net` and useless for display.
   const fromAddress =
-    readBracketField(formData, "envelope", "from") ??
     readBracketField(formData, "headers", "from", "From") ??
+    readBracketField(formData, "envelope", "from") ??
     "unknown@unknown";
   const subject = readBracketField(formData, "headers", "subject", "Subject");
   const messageId = readBracketField(
@@ -386,7 +389,11 @@ async function createInvoiceFromExtraction(args: {
         })),
       },
       timelineItems: {
-        create: { message: `Invoice ingested via email from ${fromAddress}` },
+        create: {
+          message: `Invoice ingested via email from ${vendorName}${
+            vendorEmail ? ` (${vendorEmail})` : ""
+          }`,
+        },
       },
     },
   });
