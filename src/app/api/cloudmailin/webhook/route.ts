@@ -138,6 +138,18 @@ export async function POST(req: NextRequest) {
   const htmlBody = readField(formData, "html");
 
   const inboundToken = extractInboundToken(toAddress);
+  // One-time diagnostic — dump all FormData keys + body field previews so we can
+  // confirm the actual CloudMailin field naming.
+  const allKeys: string[] = [];
+  const stringPreviews: Record<string, string> = {};
+  for (const [k, v] of Array.from(formData.entries())) {
+    allKeys.push(k);
+    if (typeof v === "string" && stringPreviews[k] === undefined) {
+      stringPreviews[k] = v.length > 80 ? `${v.slice(0, 80)}…(${v.length} chars)` : v;
+    }
+  }
+  console.log("[cloudmailin] formdata keys:", allKeys);
+  console.log("[cloudmailin] formdata previews:", stringPreviews);
   console.log("[cloudmailin] routing", { toAddress, inboundToken, fromAddress, subject });
 
   if (!inboundToken) {
