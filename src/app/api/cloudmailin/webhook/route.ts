@@ -81,27 +81,31 @@ function extractInboundToken(toAddress: string | null | undefined): string | nul
   return local.slice(plus + 1);
 }
 
-function parseEnvelope(raw: FormDataEntryValue | null): { to?: string; from?: string; recipients?: string[] } {
-  if (typeof raw !== "string") return {};
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return {};
-  }
+// CloudMailin "Multipart Normalized" sends bracket-notation fields:
+//   envelope[to], envelope[from], envelope[recipients][0],
+//   headers[Subject], headers[From], headers[Message-ID], ...
+// We also accept a JSON-stringified `envelope` / `headers` field as a fallback
+// in case the format is switched to "JSON Normalized" later.
+function readField(form: FormData, key: string): string | null {
+  const v = form.get(key);
+  return typeof v === "string" ? v : null;
 }
 
-function parseHeaders(raw: FormDataEntryValue | null): Record<string, string | string[]> {
-  if (typeof raw !== "string") return {};
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return {};
+function readJsonOrString(form: FormData, root: string, key: string): string | null {
+  const direct = readField(form, `${root}[${key}]`);
+  if (direct) return direct;
+  const raw = form.get(root);
+  if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      const v = parsed?.[key];
+      if (typeof v === "string") return v;
+      if (Array.isArray(v) && typeof v[0] === "string") return v[0];
+    } catch {
+      /* ignore */
+    }
   }
-}
-
-function asString(headerVal: string | string[] | undefined): string | undefined {
-  if (Array.isArray(headerVal)) return headerVal[0];
-  return headerVal;
+  return null;
 }
 
 export async function POST(req: NextRequest) {
@@ -117,23 +121,21 @@ export async function POST(req: NextRequest) {
     return new NextResponse("Bad request", { status: 400 });
   }
 
-  const envelope = parseEnvelope(formData.get("envelope"));
-  const headers = parseHeaders(formData.get("headers"));
   const toAddress =
-    envelope.to ??
-    asString(headers["To"] as string | string[] | undefined) ??
-    envelope.recipients?.[0];
+    readJsonOrString(formData, "envelope", "to") ??
+    readField(formData, "envelope[recipients][]") ??
+    readField(formData, "envelope[recipients][0]") ??
+    readJsonOrString(formData, "headers", "To");
   const fromAddress =
-    envelope.from ??
-    asString(headers["From"] as string | string[] | undefined) ??
+    readJsonOrString(formData, "envelope", "from") ??
+    readJsonOrString(formData, "headers", "From") ??
     "unknown@unknown";
-  const subject = asString(headers["Subject"] as string | string[] | undefined) ?? null;
+  const subject = readJsonOrString(formData, "headers", "Subject");
   const messageId =
-    asString(headers["Message-ID"] as string | string[] | undefined) ??
-    asString(headers["Message-Id"] as string | string[] | undefined) ??
-    null;
-  const plainBody = (formData.get("plain") as string | null) ?? null;
-  const htmlBody = (formData.get("html") as string | null) ?? null;
+    readJsonOrString(formData, "headers", "Message-ID") ??
+    readJsonOrString(formData, "headers", "Message-Id");
+  const plainBody = readField(formData, "plain");
+  const htmlBody = readField(formData, "html");
 
   const inboundToken = extractInboundToken(toAddress);
   console.log("[cloudmailin] routing", { toAddress, inboundToken, fromAddress, subject });
