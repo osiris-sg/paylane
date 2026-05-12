@@ -26,6 +26,7 @@ import { Button } from "~/components/ui/button";
 import { useSendAccess } from "~/lib/use-send-access";
 import { ExpiredBanner } from "~/components/subscription/expired-banner";
 import { LockedSendingCTA } from "~/components/subscription/locked-sending-cta";
+import { OpenInAppBanner } from "~/components/open-in-app-banner";
 import { Input } from "~/components/ui/input";
 import { Badge } from "~/components/ui/badge";
 import {
@@ -381,6 +382,8 @@ export default function InvoiceDetailPage() {
 
   return (
     <div className="flex flex-col gap-4 p-3 pb-24 sm:gap-6 sm:p-6 sm:pb-6">
+      <OpenInAppBanner />
+
       {/* Back Button */}
       <div>
         <Button variant="ghost" size="sm" asChild>

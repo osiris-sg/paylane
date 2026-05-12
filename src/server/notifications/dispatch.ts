@@ -9,6 +9,7 @@ import { sendWhatsAppTemplate, type WhatsAppTemplate } from "./whatsapp";
 export async function sendWhatsAppToCompany(
   companyId: string,
   message: WhatsAppTemplate,
+  options?: { buttonUrlSlug?: string },
 ) {
   const recipients = await db.user.findMany({
     where: {
@@ -23,7 +24,11 @@ export async function sendWhatsAppToCompany(
 
   await Promise.allSettled(
     recipients.map((u) =>
-      sendWhatsAppTemplate({ to: u.whatsappNumber!, message }),
+      sendWhatsAppTemplate({
+        to: u.whatsappNumber!,
+        message,
+        buttonUrlSlug: options?.buttonUrlSlug,
+      }),
     ),
   );
 }

@@ -802,14 +802,18 @@ export const invoiceRouter = createTRPCRouter({
           where: { id: invoice.senderCompanyId },
           select: { name: true },
         });
-        void sendWhatsAppToCompany(receiverCompanyId, {
-          template: "invoice_received",
-          contentVariables: {
-            senderName: senderCompany?.name ?? "A supplier",
-            invoiceNumber: invoice.invoiceNumber,
-            amount: `${invoice.currency} ${Number(invoice.amount).toFixed(2)}`,
+        void sendWhatsAppToCompany(
+          receiverCompanyId,
+          {
+            template: "invoice_received",
+            contentVariables: {
+              senderName: senderCompany?.name ?? "A supplier",
+              invoiceNumber: invoice.invoiceNumber,
+              amount: `${invoice.currency} ${Number(invoice.amount).toFixed(2)}`,
+            },
           },
-        });
+          { buttonUrlSlug: invoice.id },
+        );
       }
 
       // If customer is NOT on PayLane, send them an invite email

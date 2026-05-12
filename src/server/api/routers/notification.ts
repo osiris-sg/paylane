@@ -130,8 +130,12 @@ export const notificationRouter = createTRPCRouter({
     const result = await sendWhatsAppTemplate({
       to: user.whatsappNumber,
       message: {
-        template: "verification",
-        contentVariables: { code: "PAYLANE-TEST" },
+        template: "invoice_received",
+        contentVariables: {
+          senderName: "PayLane",
+          invoiceNumber: "TEST-0001",
+          amount: "SGD 1.00",
+        },
       },
     });
     if (!result.ok) {

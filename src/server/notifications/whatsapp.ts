@@ -93,6 +93,13 @@ async function call(path: string, body: unknown) {
 export async function sendWhatsAppTemplate(input: {
   to: string;
   message: WhatsAppTemplate;
+  /**
+   * Optional dynamic URL button slug. When the Meta template has a URL button
+   * configured as a dynamic URL (https://paylane.ai/invoices/{{1}}), pass the
+   * tail slug here (e.g. the invoice id) and it gets substituted server-side
+   * by Meta. If the template has no URL button, this is silently ignored.
+   */
+  buttonUrlSlug?: string;
 }): Promise<{ ok: boolean; sid?: string; error?: string }> {
   if (!isConfigured()) {
     return { ok: false, error: "Meta WhatsApp not configured" };
@@ -104,6 +111,19 @@ export async function sendWhatsAppTemplate(input: {
     text: (input.message.contentVariables as Record<string, string>)[name] ?? "",
   }));
 
+  const components: Array<Record<string, unknown>> = [];
+  if (parameters.length > 0) {
+    components.push({ type: "body", parameters });
+  }
+  if (input.buttonUrlSlug) {
+    components.push({
+      type: "button",
+      sub_type: "url",
+      index: "0",
+      parameters: [{ type: "text", text: input.buttonUrlSlug }],
+    });
+  }
+
   return call("/messages", {
     messaging_product: "whatsapp",
     to: normalisePhone(input.to),
@@ -111,7 +131,7 @@ export async function sendWhatsAppTemplate(input: {
     template: {
       name: def.name,
       language: { code: "en" },
-      components: parameters.length > 0 ? [{ type: "body", parameters }] : [],
+      components,
     },
   });
 }
