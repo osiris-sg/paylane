@@ -48,6 +48,7 @@ function StatementsContent() {
   const canSend = companyModule === "SEND" || companyModule === "BOTH";
   const canReceive = companyModule === "RECEIVE" || companyModule === "BOTH";
   const access = useSendAccess();
+  const counts = api.statement.getTabCounts.useQuery();
 
   const defaultTab = canReceive && !canSend ? "received" : "sent";
   const requested = searchParams.get("tab") ?? defaultTab;
@@ -77,36 +78,44 @@ function StatementsContent() {
                 : "Manage statements you've received from suppliers"}
           </p>
         </div>
-        {canSend && (
-          <Button asChild={access.canSend} disabled={!access.canSend}>
-            {access.canSend ? (
+        {canSend &&
+          (access.canSend ? (
+            <Button asChild>
               <Link href="/customers/send-statements">
                 <Upload className="mr-2 h-4 w-4" />
                 Bulk send
               </Link>
-            ) : (
-              <span className="cursor-not-allowed">
-                <Upload className="mr-2 h-4 w-4" />
-                Bulk send
-              </span>
-            )}
-          </Button>
-        )}
+            </Button>
+          ) : (
+            <Button disabled>
+              <Upload className="mr-2 h-4 w-4" />
+              Bulk send
+            </Button>
+          ))}
       </div>
 
-      {canSend && access.state === "expired" && <ExpiredBanner />}
-      {canSend && access.state === "locked" && <LockedSendingCTA />}
+      {canSend && access.state === "expired" && (
+        <ExpiredBanner message="Your free trial has ended. Upgrade to send statements again." />
+      )}
+      {canSend && access.state === "locked" && (
+        <LockedSendingCTA
+          title="Statements are locked"
+          body="Start your free 14-day trial to send and manage statements of account."
+        />
+      )}
 
       <Tabs value={activeTab} onValueChange={handleTabChange}>
         <TabsList>
           {canSend && (
             <TabsTrigger value="sent" className="font-bold">
               CUSTOMER
+              <TabBadge count={counts.data?.unviewedByRecipient ?? 0} />
             </TabsTrigger>
           )}
           {canReceive && (
             <TabsTrigger value="received" className="font-bold">
               SUPPLIER
+              <TabBadge count={counts.data?.unviewedByMe ?? 0} />
             </TabsTrigger>
           )}
         </TabsList>
@@ -407,5 +416,14 @@ function EmptyState({
         <p className="max-w-md text-sm text-muted-foreground">{body}</p>
       </CardContent>
     </Card>
+  );
+}
+
+function TabBadge({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <span className="ml-1.5 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-blue-600 px-1.5 text-[11px] font-semibold leading-none text-white">
+      {count > 99 ? "99+" : count}
+    </span>
   );
 }

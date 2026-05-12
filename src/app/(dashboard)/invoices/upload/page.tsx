@@ -294,7 +294,12 @@ function StatusBadge({
 
 export default function UploadInvoicePage() {
   return (
-    <SendAccessGuard title="Upload Invoice">
+    <SendAccessGuard
+      title="Upload Invoice"
+      lockedTitle="Uploading invoices is locked"
+      lockedBody="Start your free 14-day trial to upload invoice files and have AI fill in the details."
+      expiredMessage="Your free trial has ended. Upgrade to upload invoices again."
+    >
       <UploadInvoicePageInner />
     </SendAccessGuard>
   );

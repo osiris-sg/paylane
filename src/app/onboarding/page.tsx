@@ -225,6 +225,7 @@ export default function OnboardingPage() {
 
   // WhatsApp opt-in (optional, can also be set later from Notifications)
   const [wantsWhatsapp, setWantsWhatsapp] = useState(false);
+  const [whatsappUseCompanyPhone, setWhatsappUseCompanyPhone] = useState(true);
   const [whatsappCode, setWhatsappCode] = useState("+65");
   const [whatsappNumber, setWhatsappNumber] = useState("");
 
@@ -389,13 +390,19 @@ export default function OnboardingPage() {
     // Save WhatsApp opt-in alongside company info. Both run in parallel —
     // company-update drives the step transition, WhatsApp failure only toasts.
     if (wantsWhatsapp) {
-      const digits = whatsappNumber.replace(/\D/g, "");
+      const sourceCode = whatsappUseCompanyPhone ? phoneCode : whatsappCode;
+      const sourceNumber = whatsappUseCompanyPhone ? companyPhone : whatsappNumber;
+      const digits = sourceNumber.replace(/\D/g, "");
       if (!digits) {
-        toast.error("Add your WhatsApp number or uncheck the opt-in.");
+        toast.error(
+          whatsappUseCompanyPhone
+            ? "Add a company phone above or pick a different WhatsApp number."
+            : "Add your WhatsApp number or uncheck the opt-in.",
+        );
         return;
       }
       updateWhatsapp.mutate({
-        whatsappNumber: `${whatsappCode}${digits}`,
+        whatsappNumber: `${sourceCode}${digits}`,
         whatsappOptIn: true,
       });
     }
@@ -560,16 +567,48 @@ export default function OnboardingPage() {
                 </label>
 
                 {wantsWhatsapp && (
-                  <div className="grid gap-1.5 pl-7">
-                    <Label className="text-xs">WhatsApp Number</Label>
-                    <div className="flex gap-1.5">
-                      <PhoneCodeSelect value={whatsappCode} onChange={setWhatsappCode} />
-                      <Input
-                        placeholder="91234567"
-                        value={whatsappNumber}
-                        onChange={(e) => setWhatsappNumber(e.target.value)}
+                  <div className="grid gap-2 pl-7">
+                    {companyPhone.trim() && (
+                      <label className="flex items-start gap-2 cursor-pointer rounded-md border bg-white px-3 py-2">
+                        <input
+                          type="radio"
+                          name="whatsapp-source"
+                          className="mt-0.5 h-4 w-4 shrink-0"
+                          checked={whatsappUseCompanyPhone}
+                          onChange={() => setWhatsappUseCompanyPhone(true)}
+                        />
+                        <div className="flex-1">
+                          <p className="text-sm font-medium">Same as company phone</p>
+                          <p className="text-xs text-muted-foreground">
+                            {phoneCode} {companyPhone}
+                          </p>
+                        </div>
+                      </label>
+                    )}
+
+                    <label className="flex items-start gap-2 cursor-pointer rounded-md border bg-white px-3 py-2">
+                      <input
+                        type="radio"
+                        name="whatsapp-source"
+                        className="mt-0.5 h-4 w-4 shrink-0"
+                        checked={!whatsappUseCompanyPhone || !companyPhone.trim()}
+                        onChange={() => setWhatsappUseCompanyPhone(false)}
                       />
-                    </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium">Use a different number</p>
+                        {(!whatsappUseCompanyPhone || !companyPhone.trim()) && (
+                          <div className="mt-2 flex gap-1.5">
+                            <PhoneCodeSelect value={whatsappCode} onChange={setWhatsappCode} />
+                            <Input
+                              placeholder="91234567"
+                              value={whatsappNumber}
+                              onChange={(e) => setWhatsappNumber(e.target.value)}
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </label>
                   </div>
                 )}
               </div>

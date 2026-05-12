@@ -198,7 +198,10 @@ export default function CustomersPage() {
             Manage your customers and their information.
           </p>
         </div>
-        <LockedSendingCTA />
+        <LockedSendingCTA
+          title="Customers are locked"
+          body="Start your free 14-day trial to add and manage your customers. No credit card required."
+        />
       </div>
     );
   }
@@ -213,7 +216,9 @@ export default function CustomersPage() {
         </p>
       </div>
 
-      {access.state === "expired" && <ExpiredBanner />}
+      {access.state === "expired" && (
+        <ExpiredBanner message="Your free trial has ended. Upgrade to add or edit customers." />
+      )}
 
       {/* Search + Add Customer */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -226,33 +231,33 @@ export default function CustomersPage() {
             className="pl-9"
           />
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" asChild={!sendDisabled} disabled={sendDisabled}>
-            {sendDisabled ? (
-              <span className="cursor-not-allowed">
-                <Send className="mr-2 h-4 w-4" />
-                Send Statements
-              </span>
-            ) : (
+        <div className="flex flex-wrap gap-2">
+          {sendDisabled ? (
+            <Button variant="outline" disabled>
+              <Send className="mr-2 h-4 w-4" />
+              Send Statements
+            </Button>
+          ) : (
+            <Button variant="outline" asChild>
               <Link href="/customers/send-statements">
                 <Send className="mr-2 h-4 w-4" />
                 Send Statements
               </Link>
-            )}
-          </Button>
-          <Button variant="outline" asChild={!sendDisabled} disabled={sendDisabled}>
-            {sendDisabled ? (
-              <span className="cursor-not-allowed">
-                <Upload className="mr-2 h-4 w-4" />
-                Import Customers
-              </span>
-            ) : (
+            </Button>
+          )}
+          {sendDisabled ? (
+            <Button variant="outline" disabled>
+              <Upload className="mr-2 h-4 w-4" />
+              Import Customers
+            </Button>
+          ) : (
+            <Button variant="outline" asChild>
               <Link href="/customers/import">
                 <Upload className="mr-2 h-4 w-4" />
                 Import Customers
               </Link>
-            )}
-          </Button>
+            </Button>
+          )}
           <Button onClick={openCreateDialog} disabled={sendDisabled}>
             <Plus className="mr-2 h-4 w-4" />
             Add Customer

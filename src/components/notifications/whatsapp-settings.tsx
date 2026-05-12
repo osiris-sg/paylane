@@ -7,20 +7,37 @@ import { api } from "~/trpc/react";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
-import { Label } from "~/components/ui/label";
+
+function normalisePhone(s: string) {
+  return s.replace(/\s+/g, "");
+}
 
 export function WhatsAppSettings() {
   const utils = api.useUtils();
   const { data, isLoading } = api.notification.getWhatsAppPreferences.useQuery();
-  const [number, setNumber] = useState("");
+  const { data: status } = api.onboarding.getStatus.useQuery();
+  const companyPhone = status?.companyPhone?.trim() ?? "";
+
+  const [useCompanyPhone, setUseCompanyPhone] = useState(false);
+  const [customNumber, setCustomNumber] = useState("");
   const [optIn, setOptIn] = useState(false);
 
+  // Hydrate from server. If the saved number matches the company phone,
+  // pre-select the "Same as company phone" radio.
   useEffect(() => {
-    if (data) {
-      setNumber(data.whatsappNumber ?? "");
-      setOptIn(data.whatsappOptIn);
+    if (!data) return;
+    const saved = data.whatsappNumber ?? "";
+    if (companyPhone && normalisePhone(saved) === normalisePhone(companyPhone)) {
+      setUseCompanyPhone(true);
+      setCustomNumber("");
+    } else {
+      setUseCompanyPhone(false);
+      setCustomNumber(saved);
     }
-  }, [data]);
+    setOptIn(data.whatsappOptIn);
+  }, [data, companyPhone]);
+
+  const effectiveNumber = useCompanyPhone ? companyPhone : customNumber.trim();
 
   const update = api.notification.updateWhatsAppPreferences.useMutation({
     onSuccess: () => {
@@ -36,12 +53,21 @@ export function WhatsAppSettings() {
   });
 
   const handleSave = () => {
-    update.mutate({ whatsappNumber: number.trim() || "", whatsappOptIn: optIn });
+    if (optIn && !effectiveNumber) {
+      toast.error(
+        useCompanyPhone
+          ? "Set a company phone first, or pick a different number."
+          : "Enter a WhatsApp number.",
+      );
+      return;
+    }
+    update.mutate({ whatsappNumber: effectiveNumber, whatsappOptIn: optIn });
   };
 
-  const numberChanged = data && number.trim() !== (data.whatsappNumber ?? "");
-  const optInChanged = data && optIn !== data.whatsappOptIn;
-  const dirty = numberChanged || optInChanged;
+  const dirty =
+    !!data &&
+    (effectiveNumber !== (data.whatsappNumber ?? "") ||
+      optIn !== data.whatsappOptIn);
 
   return (
     <Card>
@@ -55,20 +81,47 @@ export function WhatsAppSettings() {
         </p>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="grid gap-1.5">
-          <Label htmlFor="whatsapp-number" className="text-xs">
-            WhatsApp Number
-          </Label>
-          <Input
-            id="whatsapp-number"
-            placeholder="+6591234567"
-            value={number}
-            onChange={(e) => setNumber(e.target.value)}
-            disabled={isLoading}
-          />
-          <p className="text-xs text-muted-foreground">
-            Use international format with country code (e.g. +65 for Singapore).
-          </p>
+        <div className="grid gap-2">
+          {companyPhone && (
+            <label className="flex items-start gap-2 cursor-pointer rounded-md border bg-white px-3 py-2">
+              <input
+                type="radio"
+                name="wa-source"
+                className="mt-0.5 h-4 w-4 shrink-0"
+                checked={useCompanyPhone}
+                onChange={() => setUseCompanyPhone(true)}
+                disabled={isLoading}
+              />
+              <div className="flex-1">
+                <p className="text-sm font-medium">Same as company phone</p>
+                <p className="text-xs text-muted-foreground">{companyPhone}</p>
+              </div>
+            </label>
+          )}
+
+          <label className="flex items-start gap-2 cursor-pointer rounded-md border bg-white px-3 py-2">
+            <input
+              type="radio"
+              name="wa-source"
+              className="mt-0.5 h-4 w-4 shrink-0"
+              checked={!useCompanyPhone || !companyPhone}
+              onChange={() => setUseCompanyPhone(false)}
+              disabled={isLoading}
+            />
+            <div className="flex-1">
+              <p className="text-sm font-medium">Use a different number</p>
+              {(!useCompanyPhone || !companyPhone) && (
+                <Input
+                  className="mt-2"
+                  placeholder="+6591234567"
+                  value={customNumber}
+                  onChange={(e) => setCustomNumber(e.target.value)}
+                  onClick={(e) => e.stopPropagation()}
+                  disabled={isLoading}
+                />
+              )}
+            </div>
+          </label>
         </div>
 
         <label className="flex items-center gap-3 rounded-md border p-3">
@@ -76,17 +129,15 @@ export function WhatsAppSettings() {
             type="checkbox"
             className="h-4 w-4"
             checked={optIn}
-            disabled={isLoading || !number.trim()}
+            disabled={isLoading || !effectiveNumber}
             onChange={(e) => setOptIn(e.target.checked)}
           />
           <div className="flex-1">
-            <p className="text-sm font-medium">
-              Send me WhatsApp notifications
-            </p>
+            <p className="text-sm font-medium">Send me WhatsApp notifications</p>
             <p className="text-xs text-muted-foreground">
-              {number.trim()
+              {effectiveNumber
                 ? "You can turn this off any time."
-                : "Enter a number first."}
+                : "Pick a number first."}
             </p>
           </div>
         </label>

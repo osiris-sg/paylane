@@ -20,6 +20,7 @@ function InvoicesContent() {
   const companyModule = status?.module;
   const access = useSendAccess();
   const sendDisabled = !access.canSend;
+  const counts = api.invoice.getTabCounts.useQuery();
 
   // Default tab based on module
   const canSend = companyModule === "SEND" || companyModule === "BOTH";
@@ -60,44 +61,61 @@ function InvoicesContent() {
           </p>
         </div>
         {canSend && (
-          <div className="flex items-center gap-2">
-            <Button variant="outline" asChild={!sendDisabled} disabled={sendDisabled}>
-              {sendDisabled ? (
-                <span className="cursor-not-allowed">
-                  <Upload className="mr-2 h-4 w-4" />
-                  Upload Invoice
-                </span>
-              ) : (
+          <div className="flex flex-wrap items-center gap-2">
+            {sendDisabled ? (
+              <Button variant="outline" disabled>
+                <Upload className="mr-2 h-4 w-4" />
+                Upload Invoice
+              </Button>
+            ) : (
+              <Button variant="outline" asChild>
                 <Link href="/invoices/upload">
                   <Upload className="mr-2 h-4 w-4" />
                   Upload Invoice
                 </Link>
-              )}
-            </Button>
-            <Button asChild={!sendDisabled} disabled={sendDisabled}>
-              {sendDisabled ? (
-                <span className="cursor-not-allowed">
-                  <Plus className="mr-2 h-4 w-4" />
-                  Create Invoice
-                </span>
-              ) : (
+              </Button>
+            )}
+            {sendDisabled ? (
+              <Button disabled>
+                <Plus className="mr-2 h-4 w-4" />
+                Create Invoice
+              </Button>
+            ) : (
+              <Button asChild>
                 <Link href="/invoices/new">
                   <Plus className="mr-2 h-4 w-4" />
                   Create Invoice
                 </Link>
-              )}
-            </Button>
+              </Button>
+            )}
           </div>
         )}
       </div>
 
-      {canSend && access.state === "locked" && <LockedSendingCTA />}
-      {canSend && access.state === "expired" && <ExpiredBanner />}
+      {canSend && access.state === "locked" && (
+        <LockedSendingCTA
+          title="Sending invoices is locked"
+          body="Start your free 14-day trial to create and send invoices to your customers."
+        />
+      )}
+      {canSend && access.state === "expired" && (
+        <ExpiredBanner message="Your free trial has ended. Upgrade to create or send new invoices." />
+      )}
 
       <Tabs value={activeTab} onValueChange={handleTabChange}>
         <TabsList>
-          {canSend && <TabsTrigger value="sent" className="font-bold">CUSTOMER</TabsTrigger>}
-          {canReceive && <TabsTrigger value="received" className="font-bold">SUPPLIER</TabsTrigger>}
+          {canSend && (
+            <TabsTrigger value="sent" className="font-bold">
+              CUSTOMER
+              <TabBadge count={counts.data?.unviewedByRecipient ?? 0} />
+            </TabsTrigger>
+          )}
+          {canReceive && (
+            <TabsTrigger value="received" className="font-bold">
+              SUPPLIER
+              <TabBadge count={counts.data?.newReceived ?? 0} />
+            </TabsTrigger>
+          )}
         </TabsList>
         {canSend && (
           <TabsContent value="sent" className="mt-4">
@@ -119,5 +137,14 @@ export default function InvoicesPage() {
     <Suspense fallback={<div className="flex items-center justify-center p-12"><div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent" /></div>}>
       <InvoicesContent />
     </Suspense>
+  );
+}
+
+function TabBadge({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <span className="ml-1.5 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-blue-600 px-1.5 text-[11px] font-semibold leading-none text-white">
+      {count > 99 ? "99+" : count}
+    </span>
   );
 }

@@ -157,6 +157,50 @@ export const invoiceRouter = createTRPCRouter({
       return invoice;
     }),
 
+  /** Badge counts for the CUSTOMER + SUPPLIER tabs on /invoices. */
+  getTabCounts: protectedProcedure.query(async ({ ctx }) => {
+    const user = await ctx.db.user.findUniqueOrThrow({
+      where: { clerkId: ctx.auth.userId },
+    });
+    const [unviewedByRecipient, newReceived] = await Promise.all([
+      ctx.db.invoice.count({
+        where: {
+          senderCompanyId: user.companyId,
+          viewedAt: null,
+          invoiceStatus: { notIn: ["DRAFT", "CANCELLED"] },
+        },
+      }),
+      ctx.db.invoice.count({
+        where: {
+          receiverCompanyId: user.companyId,
+          viewedAt: null,
+        },
+      }),
+    ]);
+    return { unviewedByRecipient, newReceived };
+  }),
+
+  /** Receiver: mark an invoice as viewed (first-time only — no-op after). */
+  markViewed: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const user = await ctx.db.user.findUniqueOrThrow({
+        where: { clerkId: ctx.auth.userId },
+      });
+      const inv = await ctx.db.invoice.findUnique({
+        where: { id: input.id },
+        select: { id: true, receiverCompanyId: true, viewedAt: true },
+      });
+      if (!inv || inv.receiverCompanyId !== user.companyId) {
+        throw new TRPCError({ code: "NOT_FOUND" });
+      }
+      if (inv.viewedAt) return inv;
+      return ctx.db.invoice.update({
+        where: { id: input.id },
+        data: { viewedAt: new Date() },
+      });
+    }),
+
   checkNumber: protectedProcedure
     .input(z.object({ invoiceNumber: z.string() }))
     .query(async ({ ctx, input }) => {

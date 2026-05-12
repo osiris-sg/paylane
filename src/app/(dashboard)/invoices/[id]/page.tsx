@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import dayjs from "dayjs";
@@ -212,6 +212,22 @@ export default function InvoiceDetailPage() {
     },
   });
 
+  const markViewed = api.invoice.markViewed.useMutation({
+    onSuccess: () => {
+      void utils.invoice.getTabCounts.invalidate();
+      void utils.invoice.list.invalidate();
+    },
+  });
+
+  // First-time receiver visit → mark as viewed so the SUPPLIER tab badge
+  // ticks down. No-op for sender or for invoices already viewed.
+  useEffect(() => {
+    if (invoice && !!invoice.receiverCompany && !invoice.viewedAt) {
+      markViewed.mutate({ id: invoice.id });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invoice?.id, invoice?.viewedAt, invoice?.receiverCompany]);
+
   const { data: customersData } = api.customer.list.useQuery({ limit: 100 });
   const customerList = customersData?.customers ?? [];
 
@@ -375,7 +391,9 @@ export default function InvoiceDetailPage() {
         </Button>
       </div>
 
-      {isSender && sendAccess.state === "expired" && <ExpiredBanner />}
+      {isSender && sendAccess.state === "expired" && (
+        <ExpiredBanner message="Your free trial has ended. Upgrade to edit, send, or delete this invoice." />
+      )}
       {isSender && sendAccess.state === "locked" && (
         <LockedSendingCTA
           title="This invoice is locked"

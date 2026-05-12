@@ -12,9 +12,15 @@ import { ExpiredBanner } from "~/components/subscription/expired-banner";
 export function SendAccessGuard({
   children,
   title,
+  lockedTitle,
+  lockedBody,
+  expiredMessage,
 }: {
   children: React.ReactNode;
   title: string;
+  lockedTitle?: string;
+  lockedBody?: string;
+  expiredMessage?: string;
 }) {
   const access = useSendAccess();
 
@@ -24,7 +30,7 @@ export function SendAccessGuard({
     return (
       <div className="flex flex-col gap-6">
         <h1 className="text-3xl font-bold tracking-tight">{title}</h1>
-        <LockedSendingCTA />
+        <LockedSendingCTA title={lockedTitle} body={lockedBody} />
       </div>
     );
   }
@@ -33,7 +39,7 @@ export function SendAccessGuard({
     return (
       <div className="flex flex-col gap-6">
         <h1 className="text-3xl font-bold tracking-tight">{title}</h1>
-        <ExpiredBanner />
+        <ExpiredBanner message={expiredMessage} />
       </div>
     );
   }

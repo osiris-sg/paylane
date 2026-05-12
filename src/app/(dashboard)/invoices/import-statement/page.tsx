@@ -38,7 +38,12 @@ const STORAGE_KEY = "paylane:pending-statement";
 
 export default function ImportStatementPage() {
   return (
-    <SendAccessGuard title="Import Statement">
+    <SendAccessGuard
+      title="Import Statement"
+      lockedTitle="Importing statements is locked"
+      lockedBody="Start your free 14-day trial to extract invoices from a bank statement."
+      expiredMessage="Your free trial has ended. Upgrade to import statements again."
+    >
       <ImportStatementPageInner />
     </SendAccessGuard>
   );

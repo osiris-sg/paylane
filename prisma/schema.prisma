@@ -123,6 +123,7 @@ model Invoice {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   sentAt         DateTime?
+  viewedAt       DateTime?     // first time the receiver opened it
 
   items          InvoiceItem[]
   notifications  Notification[]

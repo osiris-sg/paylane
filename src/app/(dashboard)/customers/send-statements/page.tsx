@@ -98,7 +98,12 @@ function matchCustomer(
 
 export default function SendStatementsBulkPage() {
   return (
-    <SendAccessGuard title="Send Statements">
+    <SendAccessGuard
+      title="Send Statements"
+      lockedTitle="Bulk sending statements is locked"
+      lockedBody="Start your free 14-day trial to send statements of account to your customers."
+      expiredMessage="Your free trial has ended. Upgrade to send statements again."
+    >
       <BulkInner />
     </SendAccessGuard>
   );

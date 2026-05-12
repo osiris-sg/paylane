@@ -14,7 +14,10 @@ export default function ImportCustomersPage() {
     return (
       <div className="flex flex-col gap-6">
         <h1 className="text-3xl font-bold tracking-tight">Import Customers</h1>
-        <LockedSendingCTA />
+        <LockedSendingCTA
+          title="Importing customers is locked"
+          body="Start your free 14-day trial to bulk-import customers from a spreadsheet."
+        />
       </div>
     );
   }

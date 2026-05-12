@@ -94,11 +94,58 @@ function normalizeStatus(raw: string | undefined): StatusOption {
 
 const ITEMS_PER_PAGE = 10;
 
-function labelForStatus(status: string, perspective: "sent" | "received"): string | undefined {
-  // "SENT" means different things depending on who's looking: the sender sees it
-  // as "Sent", the receiver sees it as an invoice they have received ("Received").
-  if (status === "SENT" && perspective === "received") return "Received";
-  return invoiceStatusConfig[status]?.label;
+/**
+ * Status pill text + classes for a row.
+ *
+ * SUPPLIER (received): unviewed invoices get a bold blue "New" pill so the
+ * user can scan for fresh items.
+ *
+ * CUSTOMER (sent): statuses collapse to Draft / Received / Viewed /
+ * Cancelled — payment workflow ("pending approval", "paid") isn't surfaced
+ * anymore.
+ */
+function statusPill(
+  invoice: { invoiceStatus: string; viewedAt?: Date | string | null },
+  perspective: "sent" | "received",
+): { label: string; className: string } {
+  // Draft / Cancelled are independent of view state.
+  if (invoice.invoiceStatus === "DRAFT") {
+    return { label: "Draft", className: invoiceStatusConfig.DRAFT!.className };
+  }
+  if (invoice.invoiceStatus === "CANCELLED") {
+    return {
+      label: "Cancelled",
+      className: invoiceStatusConfig.CANCELLED!.className,
+    };
+  }
+
+  // SUPPLIER side: unviewed = bold "New", viewed = emerald "Viewed".
+  if (perspective === "received") {
+    if (!invoice.viewedAt) {
+      return {
+        label: "New",
+        className: "bg-blue-600 text-white border-blue-600 font-semibold",
+      };
+    }
+    return {
+      label: "Viewed",
+      className:
+        "bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-400",
+    };
+  }
+
+  // CUSTOMER side: collapse workflow → Received until receiver opens, then Viewed.
+  if (invoice.viewedAt) {
+    return {
+      label: "Viewed",
+      className:
+        "bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-400",
+    };
+  }
+  return {
+    label: "Received",
+    className: invoiceStatusConfig.SENT!.className,
+  };
 }
 
 const invoiceStatusConfig: Record<string, { label: string; className: string }> = {
@@ -630,9 +677,7 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
                         {[
                           { value: "all" as StatusOption, label: "All Statuses" },
                           { value: "DRAFT" as StatusOption, label: "Draft" },
-                          { value: "SENT" as StatusOption, label: type === "received" ? "Received" : "Sent" },
-                          { value: "PENDING_APPROVAL" as StatusOption, label: "Pending Approval" },
-                          { value: "PAID" as StatusOption, label: "Paid" },
+                          { value: "SENT" as StatusOption, label: "Received" },
                           { value: "OVERDUE" as StatusOption, label: "Overdue" },
                           { value: "CANCELLED" as StatusOption, label: "Cancelled" },
                         ].map((opt) => (
@@ -860,9 +905,17 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
           ) : invoices.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-12 text-muted-foreground">
               <FileX className="h-10 w-10" />
-              <p className="text-base font-medium">No invoices found</p>
+              <p className="text-base font-medium">
+                {type === "sent" && !sendingAllowed
+                  ? "Feature locked"
+                  : "No invoices found"}
+              </p>
               <p className="text-sm">
-                {search || statusFilter !== "all" ? "Try adjusting your search or filters" : `No ${type} invoices yet`}
+                {type === "sent" && !sendingAllowed
+                  ? "Start your free trial to send invoices"
+                  : search || statusFilter !== "all"
+                    ? "Try adjusting your search or filters"
+                    : `No ${type} invoices yet`}
               </p>
             </div>
           ) : (
@@ -870,7 +923,6 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
               const isSelected = selectedIds.has(invoice.id);
               const isUnpaid = !["PAID", "CANCELLED", "DRAFT"].includes(invoice.invoiceStatus);
               const rowUrgency = isUnpaid ? getRowUrgency(invoice.dueDate) : "normal";
-              const iConfig = invoiceStatusConfig[invoice.invoiceStatus];
               const daysOverdue = rowUrgency === "overdue" ? Math.abs(dayjs(invoice.dueDate).diff(dayjs(), "day")) : 0;
 
               return (
@@ -917,9 +969,14 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
                         {invoice.reference ? ` · ${invoice.reference}` : ""}
                       </p>
                       <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                        <Badge variant="outline" className={`text-xs ${iConfig?.className ?? ""}`}>
-                          {labelForStatus(invoice.invoiceStatus, type) ?? invoice.invoiceStatus}
-                        </Badge>
+                        {(() => {
+                          const pill = statusPill(invoice, type);
+                          return (
+                            <Badge variant="outline" className={`text-xs ${pill.className}`}>
+                              {pill.label}
+                            </Badge>
+                          );
+                        })()}
                         <span className="text-xs text-muted-foreground">
                           {dayjs(invoice.invoicedDate).format("MMM D, YYYY")}
                         </span>
@@ -974,11 +1031,17 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
                   <TableCell colSpan={columnCount} className="h-48 text-center">
                     <div className="flex flex-col items-center gap-2 text-muted-foreground">
                       <FileX className="h-10 w-10" />
-                      <p className="text-lg font-medium">No invoices found</p>
+                      <p className="text-lg font-medium">
+                        {type === "sent" && !sendingAllowed
+                          ? "Feature locked"
+                          : "No invoices found"}
+                      </p>
                       <p className="text-sm">
-                        {search || statusFilter !== "all"
-                          ? "Try adjusting your search or filters"
-                          : `No ${type} invoices yet`}
+                        {type === "sent" && !sendingAllowed
+                          ? "Start your free trial to send invoices"
+                          : search || statusFilter !== "all"
+                            ? "Try adjusting your search or filters"
+                            : `No ${type} invoices yet`}
                       </p>
                     </div>
                   </TableCell>
@@ -1079,10 +1142,10 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
                       {/* Invoice Status */}
                       <TableCell>
                         {(() => {
-                          const config = invoiceStatusConfig[invoice.invoiceStatus];
+                          const pill = statusPill(invoice, type);
                           return (
-                            <Badge variant="outline" className={config?.className}>
-                              {labelForStatus(invoice.invoiceStatus, type) ?? invoice.invoiceStatus}
+                            <Badge variant="outline" className={pill.className}>
+                              {pill.label}
                             </Badge>
                           );
                         })()}

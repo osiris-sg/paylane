@@ -234,6 +234,22 @@ export const statementRouter = createTRPCRouter({
       });
     }),
 
+  /** Badge counts for the CUSTOMER + SUPPLIER tabs on /statements. */
+  getTabCounts: protectedProcedure.query(async ({ ctx }) => {
+    const user = await ctx.db.user.findUniqueOrThrow({
+      where: { clerkId: ctx.auth.userId },
+    });
+    const [unviewedByRecipient, unviewedByMe] = await Promise.all([
+      ctx.db.statement.count({
+        where: { senderCompanyId: user.companyId, viewedAt: null },
+      }),
+      ctx.db.statement.count({
+        where: { receiverCompanyId: user.companyId, viewedAt: null },
+      }),
+    ]);
+    return { unviewedByRecipient, unviewedByMe };
+  }),
+
   /** Sender: list every statement they've sent (one per customer). */
   listSent: protectedProcedure.query(async ({ ctx }) => {
     const user = await ctx.db.user.findUniqueOrThrow({

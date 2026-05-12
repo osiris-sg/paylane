@@ -25,7 +25,12 @@ import { SendAccessGuard } from "~/components/subscription/send-access-guard";
 
 export default function NewInvoicePage() {
   return (
-    <SendAccessGuard title="New Invoice">
+    <SendAccessGuard
+      title="New Invoice"
+      lockedTitle="Creating invoices is locked"
+      lockedBody="Start your free 14-day trial to draft and send invoices to your customers."
+      expiredMessage="Your free trial has ended. Upgrade to create new invoices."
+    >
       <NewInvoicePageInner />
     </SendAccessGuard>
   );
