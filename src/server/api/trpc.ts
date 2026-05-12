@@ -4,6 +4,7 @@ import superjson from "superjson";
 import { ZodError } from "zod";
 
 import { db } from "~/lib/db";
+import { syncCustomerReceivers } from "~/server/api/lib/customer-routing";
 
 /**
  * Auto-provision a User + Company on first authenticated request.
@@ -87,15 +88,13 @@ async function createUserAndCompany(clerkUserId: string) {
   });
 
   if (linkedCustomers.length > 0) {
-    await db.invoice.updateMany({
-      where: {
-        customerId: { in: linkedCustomers.map((c) => c.id) },
-        receiverCompanyId: null,
-      },
-      data: {
-        receiverCompanyId: company.id,
-      },
-    });
+    // Re-route invoices AND statements for each linked customer to the
+    // new company. This handles both the "never delivered" case
+    // (receiverCompanyId null) and the drift case where an earlier wrong
+    // link parked the rows on a different company.
+    for (const c of linkedCustomers) {
+      await syncCustomerReceivers(db, c.id);
+    }
 
     // Auto-assign BOTH module — invitee may also want to send invoices
     await db.company.update({

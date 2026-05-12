@@ -3,7 +3,7 @@
 import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Plus, Upload, FileSpreadsheet } from "lucide-react";
+import { Plus, Upload } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { InvoiceTable } from "~/components/invoices/invoice-table";
@@ -71,19 +71,6 @@ function InvoicesContent() {
                 <Link href="/invoices/upload">
                   <Upload className="mr-2 h-4 w-4" />
                   Upload Invoice
-                </Link>
-              )}
-            </Button>
-            <Button variant="outline" asChild={!sendDisabled} disabled={sendDisabled}>
-              {sendDisabled ? (
-                <span className="cursor-not-allowed">
-                  <FileSpreadsheet className="mr-2 h-4 w-4" />
-                  Import Statement
-                </span>
-              ) : (
-                <Link href="/invoices/import-statement">
-                  <FileSpreadsheet className="mr-2 h-4 w-4" />
-                  Import Statement
                 </Link>
               )}
             </Button>

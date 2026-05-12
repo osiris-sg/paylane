@@ -8,6 +8,7 @@ import { sendWhatsAppToCompany } from "~/server/notifications/dispatch";
 import { FEATURE_FLAGS, type FeatureFlagKey } from "~/lib/feature-flags";
 import { signInviteToken, verifyInviteToken } from "~/lib/invoice-invite";
 import { requireSendAccess } from "~/server/api/lib/sending-access";
+import { syncCustomerReceivers } from "~/server/api/lib/customer-routing";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const FROM_EMAIL = process.env.EMAIL_FROM ?? "PayLane <onboarding@resend.dev>";
@@ -698,11 +699,16 @@ export const invoiceRouter = createTRPCRouter({
 
           if (matchedCompany) {
             receiverCompanyId = matchedCompany.id;
-            // Link the customer for future sends
+            // Link the customer for future sends, and re-route any other
+            // pending invoices/statements for this customer to match.
             await ctx.db.customer.update({
               where: { id: existing.customer.id },
               data: { linkedCompanyId: matchedCompany.id },
             });
+            await syncCustomerReceivers(
+              ctx.db as unknown as import("@prisma/client").PrismaClient,
+              existing.customer.id,
+            );
           }
         }
       }

@@ -30,6 +30,8 @@ model Company {
   sentInvoices  Invoice[] @relation("SentInvoices")
   receivedInvoices Invoice[] @relation("ReceivedInvoices")
   sentInvitations Invitation[]
+  sentStatements     Statement[] @relation("SentStatements")
+  receivedStatements Statement[] @relation("ReceivedStatements")
 }
 
 model User {
@@ -63,7 +65,8 @@ model Customer {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  invoices Invoice[]
+  invoices  Invoice[]
+  statement Statement?
 }
 
 model Supplier {
@@ -152,6 +155,8 @@ model Notification {
   user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   invoiceId String?
   invoice   Invoice?         @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  statementId String?
+  statement   Statement?     @relation(fields: [statementId], references: [id], onDelete: SetNull)
   createdAt DateTime         @default(now())
 }
 
@@ -161,6 +166,28 @@ model TimelineItem {
   invoiceId String
   invoice   Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
+}
+
+model Statement {
+  id                String    @id @default(cuid())
+  senderCompanyId   String
+  senderCompany     Company   @relation("SentStatements", fields: [senderCompanyId], references: [id])
+  customerId        String
+  customer          Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  receiverCompanyId String?
+  receiverCompany   Company?  @relation("ReceivedStatements", fields: [receiverCompanyId], references: [id])
+  fileUrl           String    @db.Text   // data URL or external URL — same convention as Invoice.fileUrl
+  fileName          String
+  fileType          String
+  notes             String?
+  sentAt            DateTime  @default(now())
+  viewedAt          DateTime?
+
+  notifications     Notification[]
+
+  @@unique([customerId])               // latest-only — a new SOA replaces the previous one
+  @@index([senderCompanyId])
+  @@index([receiverCompanyId])
 }
 
 model PushSubscription {
@@ -234,6 +261,7 @@ enum NotificationType {
   PAYMENT_OVERDUE
   INVOICE_PAID
   INVOICE_ACKNOWLEDGED
+  STATEMENT_RECEIVED
 }
 
 model FeatureFlag {

@@ -37,6 +37,7 @@ import {
   Users,
   Upload,
   MessageCircle,
+  Send,
 } from "lucide-react";
 import Link from "next/link";
 import { useSendAccess } from "~/lib/use-send-access";
@@ -229,6 +230,19 @@ export default function CustomersPage() {
           <Button variant="outline" asChild={!sendDisabled} disabled={sendDisabled}>
             {sendDisabled ? (
               <span className="cursor-not-allowed">
+                <Send className="mr-2 h-4 w-4" />
+                Send Statements
+              </span>
+            ) : (
+              <Link href="/customers/send-statements">
+                <Send className="mr-2 h-4 w-4" />
+                Send Statements
+              </Link>
+            )}
+          </Button>
+          <Button variant="outline" asChild={!sendDisabled} disabled={sendDisabled}>
+            {sendDisabled ? (
+              <span className="cursor-not-allowed">
                 <Upload className="mr-2 h-4 w-4" />
                 Import Customers
               </span>
@@ -295,7 +309,7 @@ export default function CustomersPage() {
             {data.customers.map((customer) => (
               <Card
                 key={customer.id}
-                onClick={() => router.push(`/invoices?tab=sent&customerId=${customer.id}`)}
+                onClick={() => router.push(`/customers/${customer.id}`)}
                 className="cursor-pointer transition-shadow hover:shadow-md"
               >
                 <CardHeader className="pb-3">

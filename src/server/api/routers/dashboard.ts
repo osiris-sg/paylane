@@ -82,10 +82,9 @@ export const dashboardRouter = createTRPCRouter({
 
     const companyId = user.companyId;
 
-    const unpaidInvoices = await ctx.db.invoice.findMany({
+    const receivedInvoices = await ctx.db.invoice.findMany({
       where: {
         receiverCompanyId: companyId,
-        invoiceStatus: "SENT",
       },
       select: {
         id: true,
@@ -102,7 +101,7 @@ export const dashboardRouter = createTRPCRouter({
       { label: "3+", minMonths: 3, maxMonths: Infinity, count: 0, amount: 0 },
     ];
 
-    for (const invoice of unpaidInvoices) {
+    for (const invoice of receivedInvoices) {
       const inv = new Date(invoice.invoicedDate);
       // Full calendar months elapsed between invoicedDate and now.
       const monthsSinceInvoiced =

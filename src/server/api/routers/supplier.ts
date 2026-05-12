@@ -1,6 +1,7 @@
 import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
 import { z } from "zod";
 import type { PrismaClient } from "@prisma/client";
+import { aggregateByBucket } from "~/server/api/lib/time-series";
 
 /**
  * Suppliers are stored in their own table (mirrors Customer) and ALSO
@@ -149,6 +150,64 @@ export const supplierRouter = createTRPCRouter({
         : 0;
 
       return { ...supplier, invoiceCount };
+    }),
+
+  getTimeSeries: protectedProcedure
+    .input(
+      z.object({
+        supplierId: z.string(),
+        granularity: z.enum(["daily", "weekly", "monthly"]).default("monthly"),
+        from: z.coerce.date(),
+        to: z.coerce.date(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const user = await ctx.db.user.findUniqueOrThrow({
+        where: { clerkId: ctx.auth.userId },
+      });
+
+      const supplier = await ctx.db.supplier.findUniqueOrThrow({
+        where: { id: input.supplierId, companyId: user.companyId },
+        select: { linkedCompanyId: true },
+      });
+
+      // Unlinked suppliers have no real invoices in the system yet.
+      if (!supplier.linkedCompanyId) {
+        return {
+          granularity: input.granularity,
+          from: input.from,
+          to: input.to,
+          series: aggregateByBucket([], input.from, input.to, input.granularity),
+          total: 0,
+          invoiceCount: 0,
+        };
+      }
+
+      const invoices = await ctx.db.invoice.findMany({
+        where: {
+          receiverCompanyId: user.companyId,
+          senderCompanyId: supplier.linkedCompanyId,
+          invoicedDate: { gte: input.from, lte: input.to },
+        },
+        select: { invoicedDate: true, amount: true },
+      });
+
+      const series = aggregateByBucket(
+        invoices,
+        input.from,
+        input.to,
+        input.granularity,
+      );
+      const total = series.reduce((sum, s) => sum + s.amount, 0);
+
+      return {
+        granularity: input.granularity,
+        from: input.from,
+        to: input.to,
+        series,
+        total,
+        invoiceCount: invoices.length,
+      };
     }),
 
   getByLinkedCompanyId: protectedProcedure

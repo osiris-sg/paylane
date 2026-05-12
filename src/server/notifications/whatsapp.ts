@@ -18,28 +18,32 @@ const API_VERSION = env.META_WHATSAPP_API_VERSION ?? "v21.0";
 
 const templates = {
   invoice_received: {
-    name: "paylane_invoice_received",
+    name: "invoice_received",
     vars: ["senderName", "invoiceNumber", "amount"] as const,
   },
   payment_submitted: {
-    name: "paylane_payment_submitted",
+    name: "payment_submitted",
     vars: ["receiverName", "invoiceNumber", "amount"] as const,
   },
   payment_approved: {
-    name: "paylane_payment_approved",
+    name: "payment_approved",
     vars: ["invoiceNumber", "amount"] as const,
   },
   payment_due_soon: {
-    name: "paylane_payment_due_soon",
+    name: "payment_due_soon",
     vars: ["invoiceNumber", "daysUntilDue"] as const,
   },
   payment_overdue: {
-    name: "paylane_payment_overdue",
+    name: "payment_overdue",
     vars: ["invoiceNumber", "daysOverdue"] as const,
   },
   verification: {
-    name: "paylane_verification",
+    name: "verification",
     vars: ["code"] as const,
+  },
+  statement_received: {
+    name: "statement_received",
+    vars: ["senderName"] as const,
   },
 } as const;
 

@@ -253,12 +253,8 @@ export default function SuppliersPage() {
             {data.suppliers.map((supplier) => (
               <Card
                 key={supplier.id}
-                onClick={() => {
-                  if (supplier.linkedCompanyId) {
-                    router.push(`/invoices?tab=received&senderCompanyId=${supplier.linkedCompanyId}`);
-                  }
-                }}
-                className={`transition-shadow ${supplier.linkedCompanyId ? "cursor-pointer hover:shadow-md" : ""}`}
+                onClick={() => router.push(`/suppliers/${supplier.id}`)}
+                className="cursor-pointer transition-shadow hover:shadow-md"
               >
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">

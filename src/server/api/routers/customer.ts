@@ -1,6 +1,9 @@
 import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
 import { z } from "zod";
 import { requireSendAccess } from "~/server/api/lib/sending-access";
+import { aggregateByBucket } from "~/server/api/lib/time-series";
+import { syncCustomerReceivers } from "~/server/api/lib/customer-routing";
+import type { PrismaClient } from "@prisma/client";
 
 export const customerRouter = createTRPCRouter({
   list: protectedProcedure
@@ -95,6 +98,53 @@ export const customerRouter = createTRPCRouter({
       return customer;
     }),
 
+  getTimeSeries: protectedProcedure
+    .input(
+      z.object({
+        customerId: z.string(),
+        granularity: z.enum(["daily", "weekly", "monthly"]).default("monthly"),
+        from: z.coerce.date(),
+        to: z.coerce.date(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const user = await ctx.db.user.findUniqueOrThrow({
+        where: { clerkId: ctx.auth.userId },
+      });
+
+      // Confirm the customer belongs to the caller's company.
+      await ctx.db.customer.findUniqueOrThrow({
+        where: { id: input.customerId, companyId: user.companyId },
+        select: { id: true },
+      });
+
+      const invoices = await ctx.db.invoice.findMany({
+        where: {
+          senderCompanyId: user.companyId,
+          customerId: input.customerId,
+          invoicedDate: { gte: input.from, lte: input.to },
+        },
+        select: { invoicedDate: true, amount: true },
+      });
+
+      const series = aggregateByBucket(
+        invoices,
+        input.from,
+        input.to,
+        input.granularity,
+      );
+      const total = series.reduce((sum, s) => sum + s.amount, 0);
+
+      return {
+        granularity: input.granularity,
+        from: input.from,
+        to: input.to,
+        series,
+        total,
+        invoiceCount: invoices.length,
+      };
+    }),
+
   create: protectedProcedure
     .input(
       z.object({
@@ -143,10 +193,35 @@ export const customerRouter = createTRPCRouter({
 
       const { id, ...data } = input;
 
+      // If the email is being changed, find the new linked company (if any)
+      // and rewrite linkedCompanyId so future sends + historical rows match.
+      let nextLinkedCompanyId: string | null | undefined = undefined;
+      if (typeof data.email === "string") {
+        const normalised = data.email.trim().toLowerCase();
+        const matched = normalised
+          ? await ctx.db.company.findFirst({
+              where: { email: normalised },
+              select: { id: true },
+            })
+          : null;
+        nextLinkedCompanyId = matched?.id ?? null;
+      }
+
       const customer = await ctx.db.customer.update({
         where: { id, companyId: user.companyId },
-        data,
+        data: {
+          ...data,
+          ...(nextLinkedCompanyId !== undefined
+            ? { linkedCompanyId: nextLinkedCompanyId }
+            : {}),
+        },
       });
+
+      // Whether the link changed or just stayed the same, ensure all the
+      // customer's invoices + statements point at the current company.
+      if (nextLinkedCompanyId !== undefined) {
+        await syncCustomerReceivers(ctx.db as unknown as PrismaClient, id);
+      }
 
       return customer;
     }),

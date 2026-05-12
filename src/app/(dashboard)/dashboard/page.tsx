@@ -11,7 +11,6 @@ import {
   DollarSign,
   Plus,
   Upload,
-  FileSpreadsheet,
   FileClock,
 } from "lucide-react";
 import {
@@ -328,12 +327,6 @@ export default function DashboardPage() {
                 Upload Invoice
               </Link>
             </Button>
-            <Button variant="outline" asChild>
-              <Link href="/invoices/import-statement">
-                <FileSpreadsheet className="mr-2 h-4 w-4" />
-                Import Statement
-              </Link>
-            </Button>
             <Button asChild>
               <Link href="/invoices/new">
                 <Plus className="mr-2 h-4 w-4" />
@@ -358,7 +351,11 @@ export default function DashboardPage() {
 
 
       {/* Charts */}
-      <div className={`grid gap-6 ${canReceive && canSend ? "lg:grid-cols-2" : ""}`}>
+      <div
+        className={`grid gap-6 ${
+          canReceive || (canSend && canReceive) ? "lg:grid-cols-2" : ""
+        }`}
+      >
         {/* Invoice Aging Bar Chart — only for RECEIVE-capable accounts */}
         {canReceive && aging.isLoading ? (
           <SkeletonChart />
@@ -369,7 +366,7 @@ export default function DashboardPage() {
                 Invoice Aging
               </CardTitle>
               <p className="text-xs text-muted-foreground">
-                Unpaid supplier invoices grouped by months outstanding
+                Supplier invoices by months since invoiced
               </p>
             </CardHeader>
             <CardContent>
@@ -413,78 +410,94 @@ export default function DashboardPage() {
           </Card>
         ) : null}
 
-        {/* Monthly Totals Line Chart */}
-        {monthly.isLoading ? (
+        {/* Sales — sent invoices over last 6 months */}
+        {canSend && monthly.isLoading ? (
           <SkeletonChart />
-        ) : monthly.data ? (
-          <Card className="shadow-sm">
-            <CardHeader>
-              <CardTitle className="text-base font-semibold">
-                Monthly Totals
-              </CardTitle>
-              <p className="text-xs text-muted-foreground">
-                {canSend && canReceive
-                  ? "Invoices sent and received over the last 6 months"
-                  : canSend
-                    ? "Invoices sent over the last 6 months"
-                    : "Invoices received over the last 6 months"}
-              </p>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={220}>
-                <LineChart
-                  data={monthly.data}
-                  margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
-                  <XAxis
-                    dataKey="month"
-                    tickLine={false}
-                    axisLine={false}
-                    fontSize={12}
-                    tickFormatter={(v: string) => dayjs(v).format("MMM YY")}
-                  />
-                  <YAxis
-                    tickLine={false}
-                    axisLine={false}
-                    fontSize={12}
-                  />
-                  <Tooltip
-                    labelFormatter={(label) => dayjs(String(label)).format("MMMM YYYY")}
-                    contentStyle={{
-                      borderRadius: "8px",
-                      border: "1px solid #e5e7eb",
-                      fontSize: "13px",
-                    }}
-                  />
-                  {canSend && (
-                    <Line
-                      type="monotone"
-                      dataKey="sent"
-                      stroke="#3b82f6"
-                      strokeWidth={2}
-                      dot={{ r: 4, fill: "#3b82f6" }}
-                      activeDot={{ r: 6 }}
-                      name="Customer"
-                    />
-                  )}
-                  {canReceive && (
-                    <Line
-                      type="monotone"
-                      dataKey="received"
-                      stroke="#8b5cf6"
-                      strokeWidth={2}
-                      dot={{ r: 4, fill: "#8b5cf6" }}
-                      activeDot={{ r: 6 }}
-                      name="Supplier"
-                    />
-                  )}
-                </LineChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
+        ) : canSend && monthly.data ? (
+          <MonthlyChart
+            title="Sales"
+            subtitle="Invoices sent over the last 6 months"
+            data={monthly.data}
+            dataKey="sent"
+            stroke="#3b82f6"
+            seriesLabel="Sales"
+          />
+        ) : null}
+
+        {/* Purchases — received invoices over last 6 months */}
+        {canReceive && monthly.isLoading ? (
+          <SkeletonChart />
+        ) : canReceive && monthly.data ? (
+          <MonthlyChart
+            title="Purchases"
+            subtitle="Invoices received over the last 6 months"
+            data={monthly.data}
+            dataKey="received"
+            stroke="#8b5cf6"
+            seriesLabel="Purchases"
+          />
         ) : null}
       </div>
     </div>
+  );
+}
+
+function MonthlyChart({
+  title,
+  subtitle,
+  data,
+  dataKey,
+  stroke,
+  seriesLabel,
+}: {
+  title: string;
+  subtitle: string;
+  data: Array<{ month: string; sent: number; received: number }>;
+  dataKey: "sent" | "received";
+  stroke: string;
+  seriesLabel: string;
+}) {
+  return (
+    <Card className="shadow-sm">
+      <CardHeader>
+        <CardTitle className="text-base font-semibold">{title}</CardTitle>
+        <p className="text-xs text-muted-foreground">{subtitle}</p>
+      </CardHeader>
+      <CardContent>
+        <ResponsiveContainer width="100%" height={220}>
+          <LineChart
+            data={data}
+            margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
+          >
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+            <XAxis
+              dataKey="month"
+              tickLine={false}
+              axisLine={false}
+              fontSize={12}
+              tickFormatter={(v: string) => dayjs(v).format("MMM YY")}
+            />
+            <YAxis tickLine={false} axisLine={false} fontSize={12} />
+            <Tooltip
+              labelFormatter={(label) => dayjs(String(label)).format("MMMM YYYY")}
+              contentStyle={{
+                borderRadius: "8px",
+                border: "1px solid #e5e7eb",
+                fontSize: "13px",
+              }}
+            />
+            <Line
+              type="monotone"
+              dataKey={dataKey}
+              stroke={stroke}
+              strokeWidth={2}
+              dot={{ r: 4, fill: stroke }}
+              activeDot={{ r: 6 }}
+              name={seriesLabel}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </CardContent>
+    </Card>
   );
 }
