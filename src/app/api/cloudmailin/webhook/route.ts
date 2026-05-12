@@ -81,26 +81,29 @@ function extractInboundToken(toAddress: string | null | undefined): string | nul
   return local.slice(plus + 1);
 }
 
-// CloudMailin "Multipart Normalized" sends bracket-notation fields:
-//   envelope[to], envelope[from], envelope[recipients][0],
-//   headers[Subject], headers[From], headers[Message-ID], ...
-// We also accept a JSON-stringified `envelope` / `headers` field as a fallback
-// in case the format is switched to "JSON Normalized" later.
+// CloudMailin "Multipart Normalized" sends bracket-notation fields with
+// lowercase snake_case keys: headers[subject], headers[message_id], envelope[to], ...
+// We accept several casings of each key for robustness.
 function readField(form: FormData, key: string): string | null {
   const v = form.get(key);
   return typeof v === "string" ? v : null;
 }
 
-function readJsonOrString(form: FormData, root: string, key: string): string | null {
-  const direct = readField(form, `${root}[${key}]`);
-  if (direct) return direct;
+function readBracketField(form: FormData, root: string, ...keyCandidates: string[]): string | null {
+  for (const k of keyCandidates) {
+    const v = form.get(`${root}[${k}]`);
+    if (typeof v === "string") return v;
+  }
+  // Fall back to a JSON-stringified `<root>` field in case the format is switched to JSON Normalized.
   const raw = form.get(root);
   if (typeof raw === "string") {
     try {
       const parsed = JSON.parse(raw) as Record<string, unknown>;
-      const v = parsed?.[key];
-      if (typeof v === "string") return v;
-      if (Array.isArray(v) && typeof v[0] === "string") return v[0];
+      for (const k of keyCandidates) {
+        const v = parsed?.[k];
+        if (typeof v === "string") return v;
+        if (Array.isArray(v) && typeof v[0] === "string") return v[0];
+      }
     } catch {
       /* ignore */
     }
@@ -122,34 +125,26 @@ export async function POST(req: NextRequest) {
   }
 
   const toAddress =
-    readJsonOrString(formData, "envelope", "to") ??
+    readBracketField(formData, "envelope", "to") ??
     readField(formData, "envelope[recipients][]") ??
     readField(formData, "envelope[recipients][0]") ??
-    readJsonOrString(formData, "headers", "To");
+    readBracketField(formData, "headers", "to", "To");
   const fromAddress =
-    readJsonOrString(formData, "envelope", "from") ??
-    readJsonOrString(formData, "headers", "From") ??
+    readBracketField(formData, "envelope", "from") ??
+    readBracketField(formData, "headers", "from", "From") ??
     "unknown@unknown";
-  const subject = readJsonOrString(formData, "headers", "Subject");
-  const messageId =
-    readJsonOrString(formData, "headers", "Message-ID") ??
-    readJsonOrString(formData, "headers", "Message-Id");
+  const subject = readBracketField(formData, "headers", "subject", "Subject");
+  const messageId = readBracketField(
+    formData,
+    "headers",
+    "message_id",
+    "Message-ID",
+    "Message-Id",
+  );
   const plainBody = readField(formData, "plain");
   const htmlBody = readField(formData, "html");
 
   const inboundToken = extractInboundToken(toAddress);
-  // One-time diagnostic — dump all FormData keys + body field previews so we can
-  // confirm the actual CloudMailin field naming.
-  const allKeys: string[] = [];
-  const stringPreviews: Record<string, string> = {};
-  for (const [k, v] of Array.from(formData.entries())) {
-    allKeys.push(k);
-    if (typeof v === "string" && stringPreviews[k] === undefined) {
-      stringPreviews[k] = v.length > 80 ? `${v.slice(0, 80)}…(${v.length} chars)` : v;
-    }
-  }
-  console.log("[cloudmailin] formdata keys:", allKeys);
-  console.log("[cloudmailin] formdata previews:", stringPreviews);
   console.log("[cloudmailin] routing", { toAddress, inboundToken, fromAddress, subject });
 
   if (!inboundToken) {
@@ -428,10 +423,11 @@ function detectForwardingConfirmation(args: {
 
   const body = `${plainBody ?? ""}\n${htmlBody ?? ""}`;
 
-  // Gmail confirmation URL pattern; falls back to any URL on google's mail-settings host.
+  // Gmail confirmation URLs include URL-encoded chars (%5B, %5D, etc.), so allow
+  // anything that's not whitespace or a quote/angle-bracket terminator.
   const linkMatch =
-    body.match(/https:\/\/mail-settings\.google\.com\/mail\/vf-[A-Za-z0-9_-]+/) ??
-    body.match(/https:\/\/mail\.google\.com\/[^\s"'<>]*vf-[A-Za-z0-9_-]+/);
+    body.match(/https:\/\/mail-settings\.google\.com\/mail\/[^\s"'<>]+/) ??
+    body.match(/https:\/\/mail\.google\.com\/mail\/[^\s"'<>]+vf-[^\s"'<>]+/);
   const codeMatch = body.match(/\b(\d{9})\b/);
 
   return {
