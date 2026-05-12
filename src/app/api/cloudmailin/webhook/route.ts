@@ -428,11 +428,11 @@ function detectForwardingConfirmation(args: {
 
   const body = `${plainBody ?? ""}\n${htmlBody ?? ""}`;
 
-  // Gmail confirmation URLs include URL-encoded chars (%5B, %5D, etc.), so allow
-  // anything that's not whitespace or a quote/angle-bracket terminator.
-  const linkMatch =
-    body.match(/https:\/\/mail-settings\.google\.com\/mail\/[^\s"'<>]+/) ??
-    body.match(/https:\/\/mail\.google\.com\/mail\/[^\s"'<>]+vf-[^\s"'<>]+/);
+  // Gmail confirmation links use `vf-` (verify-forward); `uf-` is the cancel link.
+  // Match either host and allow URL-encoded chars (%5B/%5D) inside the token.
+  const linkMatch = body.match(
+    /https:\/\/mail(?:-settings)?\.google\.com\/mail\/vf-[^\s"'<>]+/,
+  );
   const codeMatch = body.match(/\b(\d{9})\b/);
 
   return {
