@@ -61,7 +61,13 @@ export function WhatsAppSettings() {
       );
       return;
     }
-    update.mutate({ whatsappNumber: effectiveNumber, whatsappOptIn: optIn });
+    // Strip whitespace and any non-digit chars after the leading '+' so the
+    // server-side E.164 regex (^\+[1-9]\d{6,14}$) accepts pasted/formatted
+    // numbers like "+65 91234567" or "+1 (415) 555-1234".
+    const normalised = effectiveNumber
+      .replace(/[^\d+]/g, "")
+      .replace(/^\++/, "+");
+    update.mutate({ whatsappNumber: normalised, whatsappOptIn: optIn });
   };
 
   const dirty =
