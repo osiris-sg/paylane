@@ -137,6 +137,7 @@ export const notificationRouter = createTRPCRouter({
           amount: "SGD 1.00",
         },
       },
+      buttonUrlSlug: "test",
     });
     if (!result.ok) {
       throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: result.error ?? "Send failed" });
