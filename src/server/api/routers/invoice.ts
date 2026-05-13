@@ -802,7 +802,7 @@ export const invoiceRouter = createTRPCRouter({
           where: { id: invoice.senderCompanyId },
           select: { name: true },
         });
-        void sendWhatsAppToCompany(
+        await sendWhatsAppToCompany(
           receiverCompanyId,
           {
             template: "invoice_received",
@@ -1051,7 +1051,7 @@ export const invoiceRouter = createTRPCRouter({
               select: { name: true },
             })
           : null;
-        void sendWhatsAppToCompany(invoice.senderCompanyId, {
+        await sendWhatsAppToCompany(invoice.senderCompanyId, {
           template: "payment_submitted",
           contentVariables: {
             receiverName: receiverCompany?.name ?? "A customer",
@@ -1101,7 +1101,7 @@ export const invoiceRouter = createTRPCRouter({
           tag: `payment-${invoice.id}`,
         });
 
-        void sendWhatsAppToCompany(invoice.receiverCompanyId, {
+        await sendWhatsAppToCompany(invoice.receiverCompanyId, {
           template: "payment_approved",
           contentVariables: {
             invoiceNumber: invoice.invoiceNumber,

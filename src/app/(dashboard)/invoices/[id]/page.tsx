@@ -213,21 +213,31 @@ export default function InvoiceDetailPage() {
     },
   });
 
+  const { data: onboardingStatus } = api.onboarding.getStatus.useQuery();
+  const myCompanyId = onboardingStatus?.companyId;
+
   const markViewed = api.invoice.markViewed.useMutation({
     onSuccess: () => {
+      void utils.invoice.getById.invalidate({ id: params.id });
       void utils.invoice.getTabCounts.invalidate();
       void utils.invoice.list.invalidate();
+    },
+    onError: (err) => {
+      console.error("markViewed failed", err);
     },
   });
 
   // First-time receiver visit → mark as viewed so the SUPPLIER tab badge
-  // ticks down. No-op for sender or for invoices already viewed.
+  // ticks down. Only fires when this user's company IS the receiver and
+  // the invoice hasn't been viewed yet.
   useEffect(() => {
-    if (invoice && !!invoice.receiverCompany && !invoice.viewedAt) {
-      markViewed.mutate({ id: invoice.id });
-    }
+    if (!invoice || !myCompanyId) return;
+    if (invoice.receiverCompanyId !== myCompanyId) return;
+    if (invoice.viewedAt) return;
+    if (markViewed.isPending || markViewed.isSuccess) return;
+    markViewed.mutate({ id: invoice.id });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [invoice?.id, invoice?.viewedAt, invoice?.receiverCompany]);
+  }, [invoice?.id, invoice?.viewedAt, invoice?.receiverCompanyId, myCompanyId]);
 
   const { data: customersData } = api.customer.list.useQuery({ limit: 100 });
   const customerList = customersData?.customers ?? [];
