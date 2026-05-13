@@ -68,6 +68,11 @@ const invoiceStatusConfig: Record<string, { label: string; className: string }> 
   CANCELLED: { label: "Cancelled", className: "bg-gray-100 text-gray-500 border-gray-300 dark:bg-gray-800 dark:text-gray-400" },
 };
 
+function receiverBadgeLabel(invoiceStatus: string, viewedAt: Date | string | null | undefined): string | undefined {
+  if (invoiceStatus !== "SENT") return undefined;
+  return viewedAt ? "Viewed" : "Received";
+}
+
 import { formatCurrency } from "~/lib/currency";
 
 function DetailRow({
@@ -430,7 +435,9 @@ export default function InvoiceDetailPage() {
               </div>
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-1.5">
-              <Badge variant="outline" className={iStatusConfig?.className}>{(invoice.invoiceStatus === "SENT" && isReceived) ? "Received" : (iStatusConfig?.label ?? invoice.invoiceStatus)}</Badge>
+              <Badge variant="outline" className={iStatusConfig?.className}>{isReceived
+              ? (receiverBadgeLabel(invoice.invoiceStatus, invoice.viewedAt) ?? iStatusConfig?.label ?? invoice.invoiceStatus)
+              : (iStatusConfig?.label ?? invoice.invoiceStatus)}</Badge>
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
               <div>
@@ -498,7 +505,9 @@ export default function InvoiceDetailPage() {
         <div className="flex flex-col gap-2">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-3xl font-bold tracking-tight">{invoice.invoiceNumber}</h1>
-            <Badge variant="outline" className={iStatusConfig?.className}>{(invoice.invoiceStatus === "SENT" && isReceived) ? "Received" : (iStatusConfig?.label ?? invoice.invoiceStatus)}</Badge>
+            <Badge variant="outline" className={iStatusConfig?.className}>{isReceived
+              ? (receiverBadgeLabel(invoice.invoiceStatus, invoice.viewedAt) ?? iStatusConfig?.label ?? invoice.invoiceStatus)
+              : (iStatusConfig?.label ?? invoice.invoiceStatus)}</Badge>
           </div>
           <p className="text-muted-foreground">
             {isReceived ? `From ${invoice.senderCompany?.name ?? "Unknown"}` : `To ${invoice.customer?.company || invoice.customer?.name || "Unknown"}`}
