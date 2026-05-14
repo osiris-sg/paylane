@@ -18,16 +18,28 @@ function SignUpForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // If already signed in, go to dashboard
-  useEffect(() => {
-    if (isSignedIn) {
-      router.replace(typeof window !== "undefined" && localStorage.getItem("paylane:pending-invite-token") ? "/invoices/accept-invite" : "/dashboard");
-    }
-  }, [isSignedIn, router]);
-
   const prefilledEmail = searchParams.get("email") ?? "";
   const inviteToken = searchParams.get("invite") ?? "";
   const isEmailLocked = !!prefilledEmail;
+  const rawRedirectUrl = searchParams.get("redirect_url") ?? "";
+  const safeRedirectUrl = rawRedirectUrl.startsWith("/") && !rawRedirectUrl.startsWith("//")
+    ? rawRedirectUrl
+    : "";
+
+  const targetAfterAuth = () => {
+    if (typeof window !== "undefined" && localStorage.getItem("paylane:pending-invite-token")) {
+      return "/invoices/accept-invite";
+    }
+    return safeRedirectUrl || "/dashboard";
+  };
+
+  // If already signed in, go to dashboard
+  useEffect(() => {
+    if (isSignedIn) {
+      router.replace(targetAfterAuth());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSignedIn, router]);
 
   // Stash the invite token in sessionStorage so it survives the Clerk
   // verification + onboarding chain; it gets consumed by /invoices/accept-invite.

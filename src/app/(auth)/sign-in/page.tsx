@@ -17,6 +17,13 @@ function SignInForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const inviteToken = searchParams.get("invite") ?? "";
+  // Clerk middleware appends ?redirect_url=<original> when bouncing the
+  // user here. We honour it for WhatsApp deep links etc., but only when
+  // it's a relative same-origin path — never an absolute URL.
+  const rawRedirectUrl = searchParams.get("redirect_url") ?? "";
+  const safeRedirectUrl = rawRedirectUrl.startsWith("/") && !rawRedirectUrl.startsWith("//")
+    ? rawRedirectUrl
+    : "";
 
   // Same flow as sign-up: stash the invite so post-signin we can deep-link.
   useEffect(() => {
@@ -25,10 +32,12 @@ function SignInForm() {
     }
   }, [inviteToken]);
 
-  const targetAfterAuth = () =>
-    typeof window !== "undefined" && localStorage.getItem("paylane:pending-invite-token")
-      ? "/invoices/accept-invite"
-      : "/dashboard";
+  const targetAfterAuth = () => {
+    if (typeof window !== "undefined" && localStorage.getItem("paylane:pending-invite-token")) {
+      return "/invoices/accept-invite";
+    }
+    return safeRedirectUrl || "/dashboard";
+  };
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

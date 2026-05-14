@@ -141,9 +141,18 @@ export default function InvoiceDetailPage() {
   const router = useRouter();
   const utils = api.useUtils();
 
-  const { data: invoice, isLoading } = api.invoice.getById.useQuery({
-    id: params.id,
-  });
+  const {
+    data: invoice,
+    isLoading,
+    isFetching,
+    error: invoiceError,
+  } = api.invoice.getById.useQuery(
+    { id: params.id },
+    {
+      retry: 3,
+      retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 4000),
+    },
+  );
   const { data: featureFlags } = api.featureFlag.getAll.useQuery();
 
   const sendInvoice = api.invoice.send.useMutation({
@@ -291,7 +300,33 @@ export default function InvoiceDetailPage() {
     );
   }
 
+  // Differentiate "still working" from a definitive miss. A retried-out
+  // query (network, auth flap) is shown as a transient error with a
+  // retry CTA, not as a hard "not found" — that confused users clicking
+  // through from WhatsApp on a fresh in-app browser session.
   if (!invoice) {
+    if (isFetching) {
+      return (
+        <div className="flex flex-col items-center justify-center gap-4 p-12">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent" />
+          <p className="text-sm text-muted-foreground">Loading invoice…</p>
+        </div>
+      );
+    }
+    if (invoiceError) {
+      return (
+        <div className="flex flex-col items-center justify-center gap-4 p-12">
+          <FileText className="h-12 w-12 text-muted-foreground" />
+          <h2 className="text-xl font-semibold">Couldn&apos;t load invoice</h2>
+          <p className="text-muted-foreground">
+            {invoiceError.message || "Network error. Try refreshing the page."}
+          </p>
+          <Button onClick={() => window.location.reload()} variant="outline">
+            Retry
+          </Button>
+        </div>
+      );
+    }
     return (
       <div className="flex flex-col items-center justify-center gap-4 p-12">
         <FileText className="h-12 w-12 text-muted-foreground" />
