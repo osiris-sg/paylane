@@ -98,6 +98,55 @@ export const customerRouter = createTRPCRouter({
       return customer;
     }),
 
+  /** Aging buckets for invoices sent to a specific customer (months outstanding). */
+  getAgingData: protectedProcedure
+    .input(z.object({ customerId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const user = await ctx.db.user.findUniqueOrThrow({
+        where: { clerkId: ctx.auth.userId },
+      });
+
+      // Confirm ownership of the customer record.
+      await ctx.db.customer.findUniqueOrThrow({
+        where: { id: input.customerId, companyId: user.companyId },
+        select: { id: true },
+      });
+
+      const invoices = await ctx.db.invoice.findMany({
+        where: {
+          senderCompanyId: user.companyId,
+          customerId: input.customerId,
+          invoiceStatus: { notIn: ["DRAFT", "CANCELLED"] },
+        },
+        select: { amount: true, invoicedDate: true },
+      });
+
+      const now = new Date();
+      const buckets = [
+        { label: "0-1", minMonths: 0, maxMonths: 0, count: 0, amount: 0 },
+        { label: "1-2", minMonths: 1, maxMonths: 1, count: 0, amount: 0 },
+        { label: "2-3", minMonths: 2, maxMonths: 2, count: 0, amount: 0 },
+        { label: "3+", minMonths: 3, maxMonths: Infinity, count: 0, amount: 0 },
+      ];
+
+      for (const invoice of invoices) {
+        const inv = new Date(invoice.invoicedDate);
+        const monthsSinceInvoiced =
+          (now.getFullYear() - inv.getFullYear()) * 12 +
+          (now.getMonth() - inv.getMonth()) -
+          (now.getDate() < inv.getDate() ? 1 : 0);
+        const bucket = buckets.find(
+          (b) => monthsSinceInvoiced >= b.minMonths && monthsSinceInvoiced <= b.maxMonths,
+        );
+        if (bucket) {
+          bucket.count += 1;
+          bucket.amount += Number(invoice.amount);
+        }
+      }
+
+      return buckets.map(({ label, count, amount }) => ({ label, count, amount }));
+    }),
+
   getTimeSeries: protectedProcedure
     .input(
       z.object({

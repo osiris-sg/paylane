@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import dayjs from "dayjs";
 import { PWAInstallBanner } from "~/components/pwa-install-guide";
@@ -12,10 +13,10 @@ import {
   Plus,
   Upload,
   FileClock,
+  TrendingUp,
+  TrendingDown,
 } from "lucide-react";
 import {
-  BarChart,
-  Bar,
   XAxis,
   YAxis,
   Tooltip,
@@ -30,6 +31,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { Separator } from "~/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
+import {
+  DateRangeFilter,
+  rangeForPreset,
+  type RangePreset,
+  type DateRange,
+} from "~/components/dashboard/date-range-filter";
 
 const formatCurrency = (value: number | { toNumber?: () => number } | unknown) =>
   new Intl.NumberFormat("en-SG", {
@@ -58,20 +65,6 @@ function SkeletonCard() {
       <CardContent>
         <div className="h-8 w-16 animate-pulse rounded bg-muted" />
         <div className="mt-2 h-3 w-28 animate-pulse rounded bg-muted" />
-      </CardContent>
-    </Card>
-  );
-}
-
-function SkeletonChart() {
-  return (
-    <Card>
-      <CardHeader>
-        <div className="h-5 w-36 animate-pulse rounded bg-muted" />
-        <div className="h-3 w-52 animate-pulse rounded bg-muted" />
-      </CardHeader>
-      <CardContent>
-        <div className="h-[300px] w-full animate-pulse rounded bg-muted" />
       </CardContent>
     </Card>
   );
@@ -214,12 +207,16 @@ function DashboardSummary({
   canSend,
   canReceive,
   buildHref,
+  mobileTab,
+  onMobileTabChange,
 }: {
   summary: SummaryShape | undefined;
   isLoading: boolean;
   canSend: boolean;
   canReceive: boolean;
   buildHref: (tab: "sent" | "received", statusFilter: string | null) => string;
+  mobileTab: "customer" | "supplier";
+  onMobileTabChange: (v: "customer" | "supplier") => void;
 }) {
   const customerGrid = canSend ? (
     <CardGrid
@@ -261,7 +258,10 @@ function DashboardSummary({
     <>
       {canSend && canReceive ? (
         <div className="md:hidden">
-          <Tabs defaultValue="customer">
+          <Tabs
+            value={mobileTab}
+            onValueChange={(v) => onMobileTabChange(v as "customer" | "supplier")}
+          >
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="customer" className="font-bold">
                 CUSTOMER
@@ -295,19 +295,39 @@ function DashboardSummary({
 
 export default function DashboardPage() {
   const summary = api.dashboard.getSummary.useQuery();
-  const aging = api.dashboard.getAgingData.useQuery();
-  const monthly = api.dashboard.getMonthlyTotals.useQuery();
   const { data: onboardingStatus } = api.onboarding.getStatus.useQuery();
 
   const companyModule = onboardingStatus?.module;
   const canSend = companyModule === "SEND" || companyModule === "BOTH";
   const canReceive = companyModule === "RECEIVE" || companyModule === "BOTH";
 
+  // Filter state — preset + custom range. Default to "Last 6 months".
+  const [preset, setPreset] = useState<RangePreset>("6mo");
+  const [customRange, setCustomRange] = useState<DateRange>(rangeForPreset("6mo"));
+  const effectiveRange = useMemo<DateRange>(
+    () => (preset === "custom" ? customRange : rangeForPreset(preset)),
+    [preset, customRange],
+  );
+
+  const monthly = api.dashboard.getMonthlyTotals.useQuery({
+    from: new Date(effectiveRange.from),
+    to: new Date(effectiveRange.to),
+  });
+
+  // Mobile tab — shared between summary section AND chart section so that
+  // selecting CUSTOMER shows only Sales, SUPPLIER shows only Purchases.
+  const [mobileTab, setMobileTab] = useState<"customer" | "supplier">(
+    canReceive && !canSend ? "supplier" : "customer",
+  );
+
   const buildHref = (tab: "sent" | "received", statusFilter: string | null) => {
     const params = new URLSearchParams({ tab });
     if (statusFilter) params.set("status", statusFilter);
     return `/invoices?${params.toString()}`;
   };
+
+  const showSales = canSend;
+  const showPurchases = canReceive;
 
   return (
     <div className="space-y-6 p-3 md:space-y-8 md:p-6 lg:p-8">
@@ -347,97 +367,135 @@ export default function DashboardPage() {
         canSend={canSend}
         canReceive={canReceive}
         buildHref={buildHref}
+        mobileTab={mobileTab}
+        onMobileTabChange={setMobileTab}
       />
 
-
       {/* Charts */}
-      <div
-        className={`grid gap-6 ${
-          canReceive || (canSend && canReceive) ? "lg:grid-cols-2" : ""
-        }`}
-      >
-        {/* Invoice Aging Bar Chart — only for RECEIVE-capable accounts */}
-        {canReceive && aging.isLoading ? (
-          <SkeletonChart />
-        ) : canReceive && aging.data ? (
-          <Card className="shadow-sm">
-            <CardHeader>
-              <CardTitle className="text-base font-semibold">
-                Invoice Aging
-              </CardTitle>
-              <p className="text-xs text-muted-foreground">
-                Supplier invoices by months since invoiced
-              </p>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart
-                  data={aging.data}
-                  margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
-                  <XAxis
-                    dataKey="label"
-                    tickLine={false}
-                    axisLine={false}
-                    fontSize={12}
-                    tickFormatter={(v: string) => `${v} mo`}
-                  />
-                  <YAxis
-                    tickLine={false}
-                    axisLine={false}
-                    fontSize={12}
-                    tickFormatter={(v) => formatCurrencyCompact(v)}
-                  />
-                  <Tooltip
-                    formatter={(value) => [formatCurrency(value), "Amount"]}
-                    labelFormatter={(label) => `${label} months`}
-                    contentStyle={{
-                      borderRadius: "8px",
-                      border: "1px solid #e5e7eb",
-                      fontSize: "13px",
-                    }}
-                  />
-                  <Bar
-                    dataKey="amount"
-                    fill="#3b82f6"
-                    radius={[4, 4, 0, 0]}
-                    maxBarSize={60}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        ) : null}
-
-        {/* Sales — sent invoices over last 6 months */}
-        {canSend && monthly.isLoading ? (
-          <SkeletonChart />
-        ) : canSend && monthly.data ? (
-          <MonthlyChart
-            title="Sales"
-            subtitle="Invoices sent over the last 6 months"
-            data={monthly.data}
-            dataKey="sent"
-            stroke="#3b82f6"
-            seriesLabel="Sales"
+      {(showSales || showPurchases) && (
+        <div className="space-y-4">
+          <DateRangeFilter
+            preset={preset}
+            range={effectiveRange}
+            onPresetChange={(p) => {
+              setPreset(p);
+              if (p !== "custom") setCustomRange(rangeForPreset(p));
+            }}
+            onRangeChange={(r) => {
+              setPreset("custom");
+              setCustomRange(r);
+            }}
           />
-        ) : null}
 
-        {/* Purchases — received invoices over last 6 months */}
-        {canReceive && monthly.isLoading ? (
-          <SkeletonChart />
-        ) : canReceive && monthly.data ? (
-          <MonthlyChart
-            title="Purchases"
-            subtitle="Invoices received over the last 6 months"
-            data={monthly.data}
-            dataKey="received"
-            stroke="#8b5cf6"
-            seriesLabel="Purchases"
-          />
-        ) : null}
-      </div>
+          {/* Desktop / tablet — show both side by side */}
+          <div className="hidden md:grid md:grid-cols-2 md:gap-6">
+            {showSales && (
+              <MonthlyChart
+                title="Sales"
+                subtitle="Invoices sent"
+                icon={TrendingUp}
+                accent="text-blue-600"
+                bg="bg-blue-50"
+                data={monthly.data?.buckets ?? []}
+                dataKey="sent"
+                stroke="#3b82f6"
+                seriesLabel="Sales"
+                total={monthly.data?.sentTotal ?? 0}
+                granularity={monthly.data?.granularity ?? "monthly"}
+                isLoading={monthly.isLoading}
+              />
+            )}
+            {showPurchases && (
+              <MonthlyChart
+                title="Purchases"
+                subtitle="Invoices received"
+                icon={TrendingDown}
+                accent="text-purple-600"
+                bg="bg-purple-50"
+                data={monthly.data?.buckets ?? []}
+                dataKey="received"
+                stroke="#8b5cf6"
+                seriesLabel="Purchases"
+                total={monthly.data?.receivedTotal ?? 0}
+                granularity={monthly.data?.granularity ?? "monthly"}
+                isLoading={monthly.isLoading}
+              />
+            )}
+          </div>
+
+          {/* Mobile — show only the chart for the active tab */}
+          <div className="md:hidden">
+            {showSales && showPurchases ? (
+              mobileTab === "customer" ? (
+                <MonthlyChart
+                  title="Sales"
+                  subtitle="Invoices sent"
+                  icon={TrendingUp}
+                  accent="text-blue-600"
+                  bg="bg-blue-50"
+                  data={monthly.data?.buckets ?? []}
+                  dataKey="sent"
+                  stroke="#3b82f6"
+                  seriesLabel="Sales"
+                  total={monthly.data?.sentTotal ?? 0}
+                  granularity={monthly.data?.granularity ?? "monthly"}
+                  isLoading={monthly.isLoading}
+                />
+              ) : (
+                <MonthlyChart
+                  title="Purchases"
+                  subtitle="Invoices received"
+                  icon={TrendingDown}
+                  accent="text-purple-600"
+                  bg="bg-purple-50"
+                  data={monthly.data?.buckets ?? []}
+                  dataKey="received"
+                  stroke="#8b5cf6"
+                  seriesLabel="Purchases"
+                  total={monthly.data?.receivedTotal ?? 0}
+                  granularity={monthly.data?.granularity ?? "monthly"}
+                  isLoading={monthly.isLoading}
+                />
+              )
+            ) : (
+              <>
+                {showSales && (
+                  <MonthlyChart
+                    title="Sales"
+                    subtitle="Invoices sent"
+                    icon={TrendingUp}
+                    accent="text-blue-600"
+                    bg="bg-blue-50"
+                    data={monthly.data?.buckets ?? []}
+                    dataKey="sent"
+                    stroke="#3b82f6"
+                    seriesLabel="Sales"
+                    total={monthly.data?.sentTotal ?? 0}
+                    granularity={monthly.data?.granularity ?? "monthly"}
+                    isLoading={monthly.isLoading}
+                  />
+                )}
+                {showPurchases && (
+                  <MonthlyChart
+                    title="Purchases"
+                    subtitle="Invoices received"
+                    icon={TrendingDown}
+                    accent="text-purple-600"
+                    bg="bg-purple-50"
+                    data={monthly.data?.buckets ?? []}
+                    dataKey="received"
+                    stroke="#8b5cf6"
+                    seriesLabel="Purchases"
+                    total={monthly.data?.receivedTotal ?? 0}
+                    granularity={monthly.data?.granularity ?? "monthly"}
+                    isLoading={monthly.isLoading}
+                  />
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -445,58 +503,106 @@ export default function DashboardPage() {
 function MonthlyChart({
   title,
   subtitle,
+  icon: Icon,
+  accent,
+  bg,
   data,
   dataKey,
   stroke,
   seriesLabel,
+  total,
+  granularity,
+  isLoading,
 }: {
   title: string;
   subtitle: string;
+  icon: React.ElementType;
+  accent: string;
+  bg: string;
   data: Array<{ month: string; sent: number; received: number }>;
   dataKey: "sent" | "received";
   stroke: string;
   seriesLabel: string;
+  total: number;
+  granularity: "daily" | "weekly" | "monthly";
+  isLoading?: boolean;
 }) {
+  const tickFormat = (v: string) => {
+    const d = dayjs(v);
+    if (granularity === "monthly") return d.format("MMM YY");
+    return d.format("D MMM");
+  };
+  const labelFormat = (v: string) => {
+    const d = dayjs(v);
+    if (granularity === "monthly") return d.format("MMMM YYYY");
+    if (granularity === "weekly") return `Week of ${d.format("D MMM YYYY")}`;
+    return d.format("D MMM YYYY");
+  };
   return (
-    <Card className="shadow-sm">
-      <CardHeader>
-        <CardTitle className="text-base font-semibold">{title}</CardTitle>
-        <p className="text-xs text-muted-foreground">{subtitle}</p>
+    <Card className="overflow-hidden shadow-sm">
+      <CardHeader className="space-y-3 pb-3">
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-2">
+            <div className={`rounded-lg p-2 ${bg}`}>
+              <Icon className={`h-4 w-4 ${accent}`} />
+            </div>
+            <div>
+              <CardTitle className="text-base font-semibold">{title}</CardTitle>
+              <p className="text-xs text-muted-foreground">{subtitle}</p>
+            </div>
+          </div>
+          <div className="text-right">
+            <p className="text-xs text-muted-foreground">Total</p>
+            <p className="text-2xl font-bold tabular-nums">
+              {formatCurrency(total)}
+            </p>
+          </div>
+        </div>
       </CardHeader>
       <CardContent>
-        <ResponsiveContainer width="100%" height={220}>
-          <LineChart
-            data={data}
-            margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
-          >
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
-            <XAxis
-              dataKey="month"
-              tickLine={false}
-              axisLine={false}
-              fontSize={12}
-              tickFormatter={(v: string) => dayjs(v).format("MMM YY")}
-            />
-            <YAxis tickLine={false} axisLine={false} fontSize={12} />
-            <Tooltip
-              labelFormatter={(label) => dayjs(String(label)).format("MMMM YYYY")}
-              contentStyle={{
-                borderRadius: "8px",
-                border: "1px solid #e5e7eb",
-                fontSize: "13px",
-              }}
-            />
-            <Line
-              type="monotone"
-              dataKey={dataKey}
-              stroke={stroke}
-              strokeWidth={2}
-              dot={{ r: 4, fill: stroke }}
-              activeDot={{ r: 6 }}
-              name={seriesLabel}
-            />
-          </LineChart>
-        </ResponsiveContainer>
+        {isLoading ? (
+          <div className="h-[220px] animate-pulse rounded bg-muted/40" />
+        ) : (
+          <ResponsiveContainer width="100%" height={220}>
+            <LineChart
+              data={data}
+              margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+              <XAxis
+                dataKey="month"
+                tickLine={false}
+                axisLine={false}
+                fontSize={12}
+                tickFormatter={tickFormat}
+              />
+              <YAxis
+                tickLine={false}
+                axisLine={false}
+                fontSize={12}
+                tickFormatter={(v) => formatCurrencyCompact(v)}
+              />
+              <Tooltip
+                labelFormatter={(v) => labelFormat(String(v))}
+                formatter={(value) => [formatCurrency(value), "Amount"]}
+                contentStyle={{
+                  borderRadius: "8px",
+                  border: "1px solid #e5e7eb",
+                  fontSize: "13px",
+                }}
+              />
+              <Line
+                type="monotone"
+                dataKey={dataKey}
+                stroke={stroke}
+                strokeWidth={2}
+                dot={{ r: 3, fill: stroke }}
+                activeDot={{ r: 5 }}
+                name={seriesLabel}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        )}
       </CardContent>
     </Card>
   );
