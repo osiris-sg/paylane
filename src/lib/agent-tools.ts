@@ -50,15 +50,10 @@ export const AGENT_TOOLS: Anthropic.Tool[] = [
   {
     name: "list_invoices",
     description:
-      "List recent invoices the user has sent. Useful for questions like 'what did I send last week' or 'which are still unpaid'. Returns up to 20.",
+      "List recent invoices the user has sent. Useful for questions like 'what did I send last week'. Returns up to 20.",
     input_schema: {
       type: "object",
       properties: {
-        status: {
-          type: "string",
-          enum: ["DRAFT", "SENT", "PAID", "OVERDUE", "CANCELLED"],
-          description: "Filter by status.",
-        },
         customerId: {
           type: "string",
           description: "Filter to a single customer (use list_customers first).",
@@ -199,20 +194,6 @@ export async function executeTool(
     }
 
     case "list_invoices": {
-      const STATUSES = [
-        "DRAFT",
-        "SENT",
-        "PENDING_APPROVAL",
-        "PAID",
-        "OVERDUE",
-        "CANCELLED",
-      ] as const;
-      type Status = (typeof STATUSES)[number];
-      const status =
-        typeof input.status === "string" &&
-        (STATUSES as readonly string[]).includes(input.status)
-          ? (input.status as Status)
-          : undefined;
       const customerId =
         typeof input.customerId === "string" ? input.customerId : undefined;
       const limit =
@@ -221,7 +202,6 @@ export async function executeTool(
           : 20;
       const res = await caller.invoice.list({
         type: "sent",
-        status,
         customerId,
         page: 1,
         limit,
@@ -230,7 +210,6 @@ export async function executeTool(
         invoices: res.invoices.map((i) => ({
           id: i.id,
           invoiceNumber: i.invoiceNumber,
-          status: i.invoiceStatus,
           amount: Number(i.amount),
           currency: i.currency,
           invoicedDate: i.invoicedDate,
@@ -253,7 +232,6 @@ export async function executeTool(
       return {
         id: inv.id,
         invoiceNumber: inv.invoiceNumber,
-        status: inv.invoiceStatus,
         amount: Number(inv.amount),
         subtotal: Number(inv.subtotal),
         taxRate: Number(inv.taxRate),
@@ -339,7 +317,6 @@ export async function executeTool(
       return {
         id: out.id,
         invoiceNumber: out.invoiceNumber,
-        status: out.invoiceStatus,
         amount: Number(out.amount),
         currency: out.currency,
         dueDate: out.dueDate,

@@ -7,12 +7,8 @@ import { PWAInstallBanner } from "~/components/pwa-install-guide";
 import {
   FileText,
   FileDown,
-  Clock,
-  AlertTriangle,
-  DollarSign,
   Plus,
   Upload,
-  FileClock,
   TrendingUp,
   TrendingDown,
 } from "lucide-react";
@@ -76,17 +72,10 @@ type CardDef = {
 
 const CUSTOMER_CARDS: CardDef[] = [
   { key: "total", label: "Total", icon: FileText, accent: "text-blue-600", bg: "bg-blue-50", statusFilter: null },
-  { key: "draft", label: "Draft", icon: FileClock, accent: "text-gray-600", bg: "bg-gray-100", statusFilter: "DRAFT" },
-  { key: "pending", label: "Pending", icon: Clock, accent: "text-amber-600", bg: "bg-amber-50", statusFilter: "SENT" },
-  { key: "overdue", label: "Overdue", icon: AlertTriangle, accent: "text-red-600", bg: "bg-red-50", highlight: "overdue", statusFilter: "OVERDUE" },
-  { key: "paid", label: "Paid", icon: DollarSign, accent: "text-emerald-600", bg: "bg-emerald-50", statusFilter: "PAID" },
 ];
 
 const SUPPLIER_CARDS: CardDef[] = [
   { key: "total", label: "Total", icon: FileDown, accent: "text-purple-600", bg: "bg-purple-50", statusFilter: null },
-  { key: "pending", label: "Pending", icon: Clock, accent: "text-amber-600", bg: "bg-amber-50", statusFilter: "SENT" },
-  { key: "overdue", label: "Overdue", icon: AlertTriangle, accent: "text-red-600", bg: "bg-red-50", highlight: "overdue", statusFilter: "OVERDUE" },
-  { key: "paid", label: "Paid", icon: DollarSign, accent: "text-emerald-600", bg: "bg-emerald-50", statusFilter: "PAID" },
 ];
 
 type Bucket = { count: number; amount: number };
@@ -174,7 +163,7 @@ function CardGrid({
 }) {
   if (isLoading) {
     return (
-      <div className={`grid grid-cols-2 gap-4 ${cols}`}>
+      <div className={`grid gap-4 ${cols}`}>
         {cards.map((c) => (
           <SkeletonCard key={c.key} />
         ))}
@@ -182,7 +171,7 @@ function CardGrid({
     );
   }
   return (
-    <div className={`grid grid-cols-2 gap-4 ${cols}`}>
+    <div className={`grid gap-4 ${cols}`}>
       {cards.map((card) => (
         <SummaryCard
           key={card.key}
@@ -219,7 +208,7 @@ function DashboardSummary({
       isLoading={isLoading}
       buildHref={buildHref}
       tab="sent"
-      cols="md:grid-cols-3 lg:grid-cols-5"
+      cols="max-w-xs"
     />
   ) : null;
 
@@ -230,7 +219,7 @@ function DashboardSummary({
       isLoading={isLoading}
       buildHref={buildHref}
       tab="received"
-      cols="md:grid-cols-4"
+      cols="max-w-xs"
     />
   ) : null;
 

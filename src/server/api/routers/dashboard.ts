@@ -23,13 +23,7 @@ function resolveRange(input: { from?: Date; to?: Date } | undefined): {
 
 export const dashboardRouter = createTRPCRouter({
   getSummary: protectedProcedure.query(async ({ ctx }) => {
-    const user = ctx.user;
-
-    const companyId = user.companyId;
-    const now = new Date();
-
-    const sentBase = { senderCompanyId: companyId } as const;
-    const receivedBase = { receiverCompanyId: companyId } as const;
+    const companyId = ctx.user.companyId;
 
     const countAndSum = async (where: Record<string, unknown>) => {
       const [count, agg] = await Promise.all([
@@ -39,58 +33,14 @@ export const dashboardRouter = createTRPCRouter({
       return { count, amount: Number(agg._sum.amount ?? 0) };
     };
 
-    const [
-      sentTotal,
-      sentDraft,
-      sentPending,
-      sentOverdue,
-      sentPaid,
-      receivedTotal,
-      receivedPending,
-      receivedOverdue,
-      receivedPaid,
-    ] = await Promise.all([
-      countAndSum(sentBase),
-      countAndSum({ ...sentBase, invoiceStatus: "DRAFT" }),
-      countAndSum({
-        ...sentBase,
-        invoiceStatus: { in: ["SENT", "PENDING_APPROVAL"] },
-        dueDate: { gte: now },
-      }),
-      countAndSum({
-        ...sentBase,
-        invoiceStatus: { notIn: ["PAID", "CANCELLED", "DRAFT"] },
-        dueDate: { lt: now },
-      }),
-      countAndSum({ ...sentBase, invoiceStatus: "PAID" }),
-      countAndSum(receivedBase),
-      countAndSum({
-        ...receivedBase,
-        invoiceStatus: { in: ["SENT", "PENDING_APPROVAL"] },
-        dueDate: { gte: now },
-      }),
-      countAndSum({
-        ...receivedBase,
-        invoiceStatus: { notIn: ["PAID", "CANCELLED", "DRAFT"] },
-        dueDate: { lt: now },
-      }),
-      countAndSum({ ...receivedBase, invoiceStatus: "PAID" }),
+    const [sentTotal, receivedTotal] = await Promise.all([
+      countAndSum({ senderCompanyId: companyId }),
+      countAndSum({ receiverCompanyId: companyId }),
     ]);
 
     return {
-      sent: {
-        total: sentTotal,
-        draft: sentDraft,
-        pending: sentPending,
-        overdue: sentOverdue,
-        paid: sentPaid,
-      },
-      received: {
-        total: receivedTotal,
-        pending: receivedPending,
-        overdue: receivedOverdue,
-        paid: receivedPaid,
-      },
+      sent: { total: sentTotal },
+      received: { total: receivedTotal },
     };
   }),
 

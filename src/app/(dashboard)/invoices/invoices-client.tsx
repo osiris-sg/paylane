@@ -33,7 +33,6 @@ function InvoicesContent() {
       ? requestedTab
       : defaultTab;
 
-  const urlStatus = searchParams.get("status") ?? undefined;
   const urlSearch = searchParams.get("search") ?? undefined;
   const urlCustomerId = searchParams.get("customerId") ?? undefined;
   const urlSenderCompanyId = searchParams.get("senderCompanyId") ?? undefined;
@@ -43,7 +42,6 @@ function InvoicesContent() {
     params.set("tab", value);
     params.delete("page");
     params.delete("search");
-    params.delete("status");
     router.push(`/invoices?${params.toString()}`);
   };
 
@@ -119,12 +117,12 @@ function InvoicesContent() {
         </TabsList>
         {canSend && (
           <TabsContent value="sent" className="mt-4">
-            <InvoiceTable type="sent" initialStatus={urlStatus} initialSearch={urlSearch} initialCustomerId={urlCustomerId} />
+            <InvoiceTable type="sent" initialSearch={urlSearch} initialCustomerId={urlCustomerId} />
           </TabsContent>
         )}
         {canReceive && (
           <TabsContent value="received" className="mt-4">
-            <InvoiceTable type="received" initialStatus={urlStatus} initialSearch={urlSearch} initialCustomerId={urlCustomerId} initialSenderCompanyId={urlSenderCompanyId} />
+            <InvoiceTable type="received" initialSearch={urlSearch} initialCustomerId={urlCustomerId} initialSenderCompanyId={urlSenderCompanyId} />
           </TabsContent>
         )}
       </Tabs>

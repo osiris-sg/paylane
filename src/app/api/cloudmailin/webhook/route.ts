@@ -372,7 +372,7 @@ async function createInvoiceFromExtraction(args: {
       taxRate: extracted.taxRate ?? 0,
       taxAmount: extracted.taxAmount ?? 0,
       currency: extracted.currency ?? "SGD",
-      invoiceStatus: "SENT",
+      sentAt: new Date(),
       source: "EMAIL_FORWARD",
       fromAddress: vendorEmail || null,
       description: extracted.notes,

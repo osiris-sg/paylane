@@ -20,6 +20,9 @@ import {
   CalendarClock,
   Pencil,
 } from "lucide-react";
+// NOTE: AlertTriangle is still used by the timeline icon logic and the shared
+// confirmation dialog; Clock is still used by the empty-timeline placeholder.
+// Both are intentionally retained.
 
 import { api } from "~/trpc/react";
 import { Button } from "~/components/ui/button";
@@ -28,7 +31,6 @@ import { ExpiredBanner } from "~/components/subscription/expired-banner";
 import { LockedSendingCTA } from "~/components/subscription/locked-sending-cta";
 import { OpenInAppBanner } from "~/components/open-in-app-banner";
 import { Input } from "~/components/ui/input";
-import { Badge } from "~/components/ui/badge";
 import {
   Popover,
   PopoverContent,
@@ -58,20 +60,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "~/components/ui/select";
-
-const invoiceStatusConfig: Record<string, { label: string; className: string }> = {
-  DRAFT: { label: "Draft", className: "bg-gray-100 text-gray-700 border-gray-300 dark:bg-gray-800 dark:text-gray-300" },
-  SENT: { label: "Sent", className: "bg-blue-100 text-blue-700 border-blue-400 dark:bg-blue-950 dark:text-blue-400" },
-  PENDING_APPROVAL: { label: "Pending Approval", className: "bg-amber-100 text-amber-700 border-amber-400 dark:bg-amber-950 dark:text-amber-400" },
-  PAID: { label: "Paid", className: "bg-green-100 text-green-700 border-green-400 dark:bg-green-950 dark:text-green-400" },
-  OVERDUE: { label: "Overdue", className: "bg-red-100 text-red-700 border-red-400 dark:bg-red-950 dark:text-red-400" },
-  CANCELLED: { label: "Cancelled", className: "bg-gray-100 text-gray-500 border-gray-300 dark:bg-gray-800 dark:text-gray-400" },
-};
-
-function receiverBadgeLabel(invoiceStatus: string, viewedAt: Date | string | null | undefined): string | undefined {
-  if (invoiceStatus !== "SENT") return undefined;
-  return viewedAt ? "Viewed" : "Received";
-}
 
 import { formatCurrency } from "~/lib/currency";
 
@@ -162,36 +150,6 @@ export default function InvoiceDetailPage() {
     },
     onError: () => {
       toast.error("Failed to send invoice");
-    },
-  });
-
-  const markPaid = api.invoice.markPaid.useMutation({
-    onSuccess: () => {
-      toast.success("Payment submitted — pending sender approval");
-      void utils.invoice.getById.invalidate({ id: params.id });
-    },
-    onError: () => {
-      toast.error("Failed to submit payment");
-    },
-  });
-
-  const approvePayment = api.invoice.approvePayment.useMutation({
-    onSuccess: () => {
-      toast.success("Payment approved");
-      void utils.invoice.getById.invalidate({ id: params.id });
-    },
-    onError: () => {
-      toast.error("Failed to approve payment");
-    },
-  });
-
-  const rejectPayment = api.invoice.rejectPayment.useMutation({
-    onSuccess: () => {
-      toast.success("Payment rejected");
-      void utils.invoice.getById.invalidate({ id: params.id });
-    },
-    onError: () => {
-      toast.error("Failed to reject payment");
     },
   });
 
@@ -342,12 +300,6 @@ export default function InvoiceDetailPage() {
   }
 
   const isReceived = !!invoice.receiverCompany;
-  const daysUntilDue = dayjs(invoice.dueDate).diff(dayjs(), "day");
-  const isOverdue = daysUntilDue < 0;
-  const isDueSoon = !isOverdue && daysUntilDue <= 20;
-  const showUrgencyBanner = isReceived && (isOverdue || isDueSoon);
-
-  const iStatusConfig = invoiceStatusConfig[invoice.invoiceStatus];
 
   const isSender = !isReceived; // This user's company sent the invoice
   const isReceiver = isReceived; // This user's company received the invoice
@@ -355,19 +307,13 @@ export default function InvoiceDetailPage() {
   const paymentApprovalEnabled = featureFlags?.paymentApprovalFlow ?? false;
   const sendingLocked = isSender && !sendAccess.canSend;
 
-  const canSend = isSender && invoice.invoiceStatus === "DRAFT" && !sendingLocked;
-  const canMarkPaid =
-    paymentApprovalEnabled &&
-    isReceiver &&
-    (invoice.invoiceStatus === "SENT" || invoice.invoiceStatus === "OVERDUE");
-  const canApprovePayment = paymentApprovalEnabled && isSender && invoice.invoiceStatus === "PENDING_APPROVAL";
-  const canRejectPayment = paymentApprovalEnabled && isSender && invoice.invoiceStatus === "PENDING_APPROVAL";
+  const canSend = isSender && !invoice.sentAt && !sendingLocked;
   const canDelete = isSender && !sendingLocked;
-  const canEdit = isSender && invoice.invoiceStatus === "DRAFT" && !sendingLocked;
+  const canEdit = isSender && !invoice.sentAt && !sendingLocked;
+  // Receivers can schedule a payment date once the invoice has actually been
+  // sent to them (no more invoiceStatus to gate on).
   const canSchedulePayment =
-    paymentApprovalEnabled &&
-    isReceiver &&
-    (invoice.invoiceStatus === "SENT" || invoice.invoiceStatus === "OVERDUE");
+    paymentApprovalEnabled && isReceiver && !!invoice.sentAt;
 
   const openEdit = () => {
     setEditForm({
@@ -428,7 +374,7 @@ export default function InvoiceDetailPage() {
     (a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf()
   );
 
-  const hasActions = canSend || canSchedulePayment || canMarkPaid || canApprovePayment || canRejectPayment || canDelete || canEdit;
+  const hasActions = canSend || canSchedulePayment || canDelete || canEdit;
 
   return (
     <div className="flex flex-col gap-4 p-3 pb-24 sm:gap-6 sm:p-6 sm:pb-6">
@@ -469,11 +415,6 @@ export default function InvoiceDetailPage() {
                 <p className="text-xl font-bold">{formatCurrency(invoice.amount, invoice.currency)}</p>
               </div>
             </div>
-            <div className="mt-3 flex flex-wrap items-center gap-1.5">
-              <Badge variant="outline" className={iStatusConfig?.className}>{isReceived
-              ? (receiverBadgeLabel(invoice.invoiceStatus, invoice.viewedAt) ?? iStatusConfig?.label ?? invoice.invoiceStatus)
-              : (iStatusConfig?.label ?? invoice.invoiceStatus)}</Badge>
-            </div>
             <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
               <div>
                 <p className="text-xs text-muted-foreground">Invoice Date</p>
@@ -481,7 +422,7 @@ export default function InvoiceDetailPage() {
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Due Date</p>
-                <p className={`font-medium ${isOverdue ? "text-red-600" : isDueSoon ? "text-amber-600" : ""}`}>
+                <p className="font-medium">
                   {dayjs(invoice.dueDate).format("MMM D, YYYY")}
                 </p>
               </div>
@@ -492,18 +433,6 @@ export default function InvoiceDetailPage() {
                 </div>
               )}
             </div>
-            {isOverdue && (
-              <div className="mt-3 flex items-center gap-2 rounded-md bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
-                <AlertTriangle className="h-4 w-4" />
-                Overdue by {Math.abs(daysUntilDue)} days
-              </div>
-            )}
-            {isDueSoon && !isOverdue && (
-              <div className="mt-3 flex items-center gap-2 rounded-md bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700">
-                <Clock className="h-4 w-4" />
-                Due in {daysUntilDue} days
-              </div>
-            )}
             {invoice.fileUrl && (
               <Button variant="outline" className="mt-3 w-full" onClick={() => setShowDocument(true)}>
                 <FileText className="mr-2 h-4 w-4" />
@@ -514,35 +443,11 @@ export default function InvoiceDetailPage() {
         </Card>
       </div>
 
-      {/* Desktop: Urgency Banner */}
-      {showUrgencyBanner && (
-        <div
-          className={`hidden items-center gap-3 rounded-lg border px-4 py-3 sm:flex ${
-            isOverdue
-              ? "border-red-300 bg-red-50 text-red-800"
-              : "border-amber-300 bg-amber-50 text-amber-800"
-          }`}
-        >
-          {isOverdue ? <AlertTriangle className="h-5 w-5 shrink-0" /> : <Clock className="h-5 w-5 shrink-0" />}
-          <div>
-            <p className="font-semibold">
-              {isOverdue ? `This invoice is overdue by ${Math.abs(daysUntilDue)} day${Math.abs(daysUntilDue) !== 1 ? "s" : ""}` : `This invoice is due in ${daysUntilDue} day${daysUntilDue !== 1 ? "s" : ""}`}
-            </p>
-            <p className="text-sm opacity-80">
-              {isOverdue ? "Payment was expected by " + dayjs(invoice.dueDate).format("MMMM D, YYYY") : "Due date: " + dayjs(invoice.dueDate).format("MMMM D, YYYY")}
-            </p>
-          </div>
-        </div>
-      )}
-
       {/* Desktop: Header */}
       <div className="hidden flex-col gap-4 sm:flex sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-col gap-2">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-3xl font-bold tracking-tight">{invoice.invoiceNumber}</h1>
-            <Badge variant="outline" className={iStatusConfig?.className}>{isReceived
-              ? (receiverBadgeLabel(invoice.invoiceStatus, invoice.viewedAt) ?? iStatusConfig?.label ?? invoice.invoiceStatus)
-              : (iStatusConfig?.label ?? invoice.invoiceStatus)}</Badge>
           </div>
           <p className="text-muted-foreground">
             {isReceived ? `From ${invoice.senderCompany?.name ?? "Unknown"}` : `To ${invoice.customer?.company || invoice.customer?.name || "Unknown"}`}
@@ -609,57 +514,6 @@ export default function InvoiceDetailPage() {
               </PopoverContent>
             </Popover>
           )}
-          {canMarkPaid && (
-            <Button
-              onClick={() =>
-                askConfirm(
-                  "Mark as paid?",
-                  "This submits the payment for sender approval.",
-                  "Mark as Paid",
-                  () => markPaid.mutate({ id: invoice.id }),
-                )
-              }
-              disabled={markPaid.isPending}
-              className="bg-green-600 hover:bg-green-700"
-            >
-              <CreditCard className="mr-2 h-4 w-4" />
-              {markPaid.isPending ? "Submitting..." : "Mark as Paid"}
-            </Button>
-          )}
-          {canApprovePayment && (
-            <Button
-              onClick={() =>
-                askConfirm(
-                  "Approve this payment?",
-                  "This marks the invoice as paid.",
-                  "Approve Payment",
-                  () => approvePayment.mutate({ id: invoice.id }),
-                )
-              }
-              disabled={approvePayment.isPending}
-              className="bg-green-600 hover:bg-green-700"
-            >
-              <CheckCircle className="mr-2 h-4 w-4" />
-              {approvePayment.isPending ? "Approving..." : "Approve Payment"}
-            </Button>
-          )}
-          {canRejectPayment && (
-            <Button
-              onClick={() =>
-                askConfirm(
-                  "Reject this payment?",
-                  "This sends the invoice back to SENT. The receiver will be notified.",
-                  "Reject Payment",
-                  () => rejectPayment.mutate({ id: invoice.id }),
-                  true,
-                )
-              }
-              disabled={rejectPayment.isPending}
-              variant="destructive"
-            >
-              {rejectPayment.isPending ? "Rejecting..." : "Reject Payment"}
-            </Button>
-          )}
           {canDelete && (
             <Button
               variant="outline"
@@ -704,19 +558,7 @@ export default function InvoiceDetailPage() {
                 <DetailRow
                   icon={Calendar}
                   label="Due Date"
-                  value={
-                    <span
-                      className={
-                        isOverdue
-                          ? "text-red-600 dark:text-red-400"
-                          : isDueSoon
-                            ? "text-amber-600 dark:text-amber-400"
-                            : ""
-                      }
-                    >
-                      {dayjs(invoice.dueDate).format("MMMM D, YYYY")}
-                    </span>
-                  }
+                  value={dayjs(invoice.dueDate).format("MMMM D, YYYY")}
                 />
                 <DetailRow
                   icon={DollarSign}
@@ -815,21 +657,6 @@ export default function InvoiceDetailPage() {
               disabled={sendInvoice.isPending}
             >
               <Send className="mr-1.5 h-3.5 w-3.5" /> Send
-            </Button>
-          )}
-          {canMarkPaid && (
-            <Button size="sm" className="flex-1 bg-green-600 hover:bg-green-700" onClick={() => askConfirm("Mark as paid?", "Submits for sender approval.", "Mark Paid", () => markPaid.mutate({ id: invoice.id }))} disabled={markPaid.isPending}>
-              Mark Paid
-            </Button>
-          )}
-          {canApprovePayment && (
-            <Button size="sm" className="flex-1 bg-green-600 hover:bg-green-700" onClick={() => askConfirm("Approve this payment?", "Marks the invoice as paid.", "Approve", () => approvePayment.mutate({ id: invoice.id }))} disabled={approvePayment.isPending}>
-              Approve
-            </Button>
-          )}
-          {canRejectPayment && (
-            <Button size="sm" variant="destructive" className="flex-1" onClick={() => askConfirm("Reject this payment?", "Sends the invoice back to SENT.", "Reject", () => rejectPayment.mutate({ id: invoice.id }), true)} disabled={rejectPayment.isPending}>
-              Reject
             </Button>
           )}
         </div>

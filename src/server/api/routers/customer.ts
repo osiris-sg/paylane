@@ -110,7 +110,7 @@ export const customerRouter = createTRPCRouter({
         where: {
           senderCompanyId: user.companyId,
           customerId: input.customerId,
-          invoiceStatus: { notIn: ["DRAFT", "CANCELLED"] },
+          sentAt: { not: null },
         },
         select: { amount: true, invoicedDate: true },
       });

@@ -11,12 +11,9 @@ import {
   ChevronsUpDown,
   ChevronUp,
   Send,
-  CreditCard,
   Trash2,
   AlertTriangle,
-  Clock,
   FileX,
-  CheckCircle,
   Check as CheckIcon,
   SlidersHorizontal,
   X,
@@ -28,7 +25,6 @@ import { formatCurrency } from "~/lib/currency";
 import { useSendAccess } from "~/lib/use-send-access";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
-import { Badge } from "~/components/ui/badge";
 import { Checkbox } from "~/components/ui/checkbox";
 import {
   Card,
@@ -65,13 +61,10 @@ import {
 import { ArrowDownUp, ArrowDown, ArrowUp } from "lucide-react";
 interface InvoiceTableProps {
   type: "sent" | "received";
-  initialStatus?: string;
   initialSearch?: string;
   initialCustomerId?: string;
   initialSenderCompanyId?: string;
 }
-
-type StatusOption = "all" | "DRAFT" | "SENT" | "PENDING_APPROVAL" | "PAID" | "OVERDUE" | "CANCELLED";
 
 type SortField =
   | "invoiceNumber"
@@ -80,119 +73,10 @@ type SortField =
   | "invoicedDate"
   | "sentAt"
   | "dueDate"
-  | "amount"
-  | "invoiceStatus";
+  | "amount";
 type SortDir = "asc" | "desc";
 
-const VALID_STATUSES: StatusOption[] = ["all", "DRAFT", "SENT", "PENDING_APPROVAL", "PAID", "OVERDUE", "CANCELLED"];
-
-function normalizeStatus(raw: string | undefined): StatusOption {
-  if (!raw) return "all";
-  const upper = raw.toUpperCase();
-  return (VALID_STATUSES.includes(upper as StatusOption) ? upper : "all") as StatusOption;
-}
-
 const ITEMS_PER_PAGE = 10;
-
-/**
- * Status pill text + classes for a row.
- *
- * SUPPLIER (received): unviewed invoices get a bold blue "New" pill so the
- * user can scan for fresh items.
- *
- * CUSTOMER (sent): statuses collapse to Draft / Received / Viewed /
- * Cancelled — payment workflow ("pending approval", "paid") isn't surfaced
- * anymore.
- */
-function statusPill(
-  invoice: { invoiceStatus: string; viewedAt?: Date | string | null },
-  perspective: "sent" | "received",
-): { label: string; className: string } {
-  // Draft / Cancelled are independent of view state.
-  if (invoice.invoiceStatus === "DRAFT") {
-    return { label: "Draft", className: invoiceStatusConfig.DRAFT!.className };
-  }
-  if (invoice.invoiceStatus === "CANCELLED") {
-    return {
-      label: "Cancelled",
-      className: invoiceStatusConfig.CANCELLED!.className,
-    };
-  }
-
-  // SUPPLIER side: unviewed = bold "New", viewed = emerald "Viewed".
-  if (perspective === "received") {
-    if (!invoice.viewedAt) {
-      return {
-        label: "New",
-        className: "bg-blue-600 text-white border-blue-600 font-semibold",
-      };
-    }
-    return {
-      label: "Viewed",
-      className:
-        "bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-400",
-    };
-  }
-
-  // CUSTOMER side: collapse workflow → Received until receiver opens, then Viewed.
-  if (invoice.viewedAt) {
-    return {
-      label: "Viewed",
-      className:
-        "bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-400",
-    };
-  }
-  return {
-    label: "Received",
-    className: invoiceStatusConfig.SENT!.className,
-  };
-}
-
-const invoiceStatusConfig: Record<string, { label: string; className: string }> = {
-  DRAFT: { label: "Draft", className: "bg-gray-100 text-gray-700 border-gray-300 dark:bg-gray-800 dark:text-gray-300" },
-  SENT: { label: "Sent", className: "bg-blue-100 text-blue-700 border-blue-400 dark:bg-blue-950 dark:text-blue-400" },
-  PENDING_APPROVAL: { label: "Pending Approval", className: "bg-amber-100 text-amber-700 border-amber-400 dark:bg-amber-950 dark:text-amber-400" },
-  PAID: { label: "Paid", className: "bg-green-100 text-green-700 border-green-400 dark:bg-green-950 dark:text-green-400" },
-  OVERDUE: { label: "Overdue", className: "bg-red-100 text-red-700 border-red-400 dark:bg-red-950 dark:text-red-400" },
-  CANCELLED: { label: "Cancelled", className: "bg-gray-100 text-gray-500 border-gray-300 dark:bg-gray-800 dark:text-gray-400" },
-};
-
-function getDueDateUrgency(dueDate: string | Date) {
-  const now = dayjs();
-  const due = dayjs(dueDate);
-  const daysUntilDue = due.diff(now, "day");
-
-  if (daysUntilDue < 0) return "overdue";
-  if (daysUntilDue <= 10) return "urgent";
-  if (daysUntilDue <= 30) return "warning";
-  return "normal";
-}
-
-function getRowUrgency(dueDate: string | Date) {
-  const now = dayjs();
-  const due = dayjs(dueDate);
-  const daysUntilDue = due.diff(now, "day");
-
-  if (daysUntilDue < 0) return "overdue";
-  if (daysUntilDue <= 20) return "due-soon";
-  return "normal";
-}
-
-function DueDateCell({ dueDate }: { dueDate: string | Date; type: "sent" | "received" }) {
-  const formatted = dayjs(dueDate).format("MMM D, YYYY");
-  const urgency = getDueDateUrgency(dueDate);
-
-  if (urgency === "overdue") {
-    return <span className="font-semibold text-red-700 dark:text-red-400">{formatted}</span>;
-  }
-  if (urgency === "urgent") {
-    return <span className="font-medium text-red-500 dark:text-red-400">{formatted}</span>;
-  }
-  if (urgency === "warning") {
-    return <span className="font-medium text-yellow-600 dark:text-yellow-400">{formatted}</span>;
-  }
-  return <span className="text-green-600 dark:text-green-400">{formatted}</span>;
-}
 
 function SortableHead({
   field,
@@ -239,11 +123,10 @@ function SkeletonRow({ columns }: { columns: number }) {
   );
 }
 
-export function InvoiceTable({ type, initialStatus, initialSearch, initialCustomerId, initialSenderCompanyId }: InvoiceTableProps) {
+export function InvoiceTable({ type, initialSearch, initialCustomerId, initialSenderCompanyId }: InvoiceTableProps) {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState(initialSearch ?? "");
   const [debouncedSearch, setDebouncedSearch] = useState(initialSearch ?? "");
-  const [statusFilter, setStatusFilter] = useState<StatusOption>(normalizeStatus(initialStatus));
   const [customerId, setCustomerId] = useState<string | undefined>(initialCustomerId);
   const [senderCompanyId, setSenderCompanyId] = useState<string | undefined>(initialSenderCompanyId);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -265,11 +148,6 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
 
   // Keep state in sync if the URL params change (e.g. user navigates via dashboard links)
   useEffect(() => {
-    setStatusFilter(normalizeStatus(initialStatus));
-    setPage(1);
-  }, [initialStatus]);
-
-  useEffect(() => {
     setSearch(initialSearch ?? "");
     setDebouncedSearch(initialSearch ?? "");
     setPage(1);
@@ -287,15 +165,11 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
 
   const utils = api.useUtils();
 
-  const { data: featureFlags } = api.featureFlag.getAll.useQuery();
-  const paymentApprovalEnabled = featureFlags?.paymentApprovalFlow ?? false;
-
   const { data, isLoading } = api.invoice.list.useQuery({
     type,
     page,
     limit: ITEMS_PER_PAGE,
     search: debouncedSearch || undefined,
-    status: statusFilter !== "all" ? statusFilter : undefined,
     customerId: customerId || undefined,
     senderCompanyId: senderCompanyId || undefined,
     sortBy,
@@ -324,7 +198,6 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
   // Unified filter popover state
   const [customerFilterOpen, setCustomerFilterOpen] = useState(false);
   const [customerFilterSearch, setCustomerFilterSearch] = useState("");
-  const [statusSectionOpen, setStatusSectionOpen] = useState(false);
   const [customerSectionOpen, setCustomerSectionOpen] = useState(false);
   const filteredCustomerOptions = customerList.filter((c) => {
     const q = customerFilterSearch.toLowerCase();
@@ -335,7 +208,7 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
       (c.email ?? "").toLowerCase().includes(q)
     );
   });
-  const activeFilterCount = (customerId ? 1 : 0) + (statusFilter !== "all" ? 1 : 0);
+  const activeFilterCount = customerId ? 1 : 0;
 
   const sendInvoice = api.invoice.send.useMutation({
     onSuccess: () => {
@@ -343,22 +216,6 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
       void utils.invoice.list.invalidate();
     },
     onError: () => toast.error("Failed to send invoice"),
-  });
-
-  const approvePayment = api.invoice.approvePayment.useMutation({
-    onSuccess: () => {
-      toast.success("Payment approved");
-      void utils.invoice.list.invalidate();
-    },
-    onError: () => toast.error("Failed to approve payment"),
-  });
-
-  const rejectPayment = api.invoice.rejectPayment.useMutation({
-    onSuccess: () => {
-      toast.success("Payment rejected");
-      void utils.invoice.list.invalidate();
-    },
-    onError: () => toast.error("Failed to reject payment"),
   });
 
   const [confirmAction, setConfirmAction] = useState<
@@ -389,15 +246,6 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
     onError: () => toast.error("Failed to delete invoices"),
   });
 
-  const bulkMarkPaid = api.invoice.bulkMarkPaid.useMutation({
-    onSuccess: (data) => {
-      toast.success(`${data.count} invoice(s) marked as paid`);
-      setSelectedIds(new Set());
-      void utils.invoice.list.invalidate();
-    },
-    onError: () => toast.error("Failed to mark invoices as paid"),
-  });
-
   const handleSearchChange = (value: string) => {
     setSearch(value);
     setPage(1);
@@ -407,17 +255,12 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
     return () => clearTimeout(timeout);
   };
 
-  const handleStatusChange = (value: StatusOption) => {
-    setStatusFilter(value);
-    setPage(1);
-  };
-
   const invoices = data?.invoices ?? [];
   const totalCount = data?.totalCount ?? 0;
   const totalPages = data?.totalPages ?? 1;
   const totalsByCurrency = data?.totalsByCurrency ?? [];
 
-  const columnCount = 9;
+  const columnCount = 8;
 
   // Selection helpers
   const toggleSelect = (id: string) => {
@@ -447,10 +290,7 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
 
   // Determine which bulk actions apply based on the current selection.
   // For sender-side actions (send/delete), also require active send access.
-  const canBulkSend = sendingAllowed && type === "sent" && selectedInvoices.length > 0 && selectedInvoices.every((i) => i.invoiceStatus === "DRAFT");
-  const canBulkApprove = paymentApprovalEnabled && type === "sent" && selectedInvoices.length > 0 && selectedInvoices.every((i) => i.invoiceStatus === "PENDING_APPROVAL");
-  const canBulkReject = canBulkApprove;
-  const canBulkMarkPaid = paymentApprovalEnabled && type === "received" && selectedInvoices.length > 0 && selectedInvoices.every((i) => i.invoiceStatus === "SENT" || i.invoiceStatus === "OVERDUE");
+  const canBulkSend = sendingAllowed && type === "sent" && selectedInvoices.length > 0 && selectedInvoices.every((i) => !i.sentAt);
   const canBulkDelete = sendingAllowed && type === "sent" && selectedInvoices.length > 0;
 
   const handleBulkDelete = () => {
@@ -463,20 +303,11 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
     );
   };
 
-  const handleBulkMarkPaid = () => {
-    askConfirm(
-      "Mark selected as paid?",
-      `Submits ${selectedIds.size} invoice(s) for sender approval.`,
-      "Mark Paid",
-      () => bulkMarkPaid.mutate({ ids: Array.from(selectedIds) }),
-    );
-  };
-
   const handleBulkSend = () => {
     const ids = Array.from(selectedIds);
     askConfirm(
       "Send selected invoices?",
-      `${ids.length} draft invoice(s) will be marked as sent and recipients notified.`,
+      `${ids.length} invoice(s) will be marked as sent and recipients notified.`,
       "Send",
       async () => {
         for (const id of ids) {
@@ -484,37 +315,6 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
         }
         setSelectedIds(new Set());
       },
-    );
-  };
-
-  const handleBulkApprove = () => {
-    const ids = Array.from(selectedIds);
-    askConfirm(
-      "Approve selected payments?",
-      `${ids.length} invoice(s) will be marked as paid.`,
-      "Approve",
-      async () => {
-        for (const id of ids) {
-          try { await approvePayment.mutateAsync({ id }); } catch {}
-        }
-        setSelectedIds(new Set());
-      },
-    );
-  };
-
-  const handleBulkReject = () => {
-    const ids = Array.from(selectedIds);
-    askConfirm(
-      "Reject selected payments?",
-      `${ids.length} invoice(s) will be sent back to SENT.`,
-      "Reject",
-      async () => {
-        for (const id of ids) {
-          try { await rejectPayment.mutateAsync({ id }); } catch {}
-        }
-        setSelectedIds(new Set());
-      },
-      true,
     );
   };
 
@@ -531,28 +331,6 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
               {canBulkSend && (
                 <Button size="sm" className="shrink-0" onClick={handleBulkSend} disabled={sendInvoice.isPending}>
                   <Send className="mr-1.5 h-3.5 w-3.5" /> Send
-                </Button>
-              )}
-              {canBulkApprove && (
-                <Button size="sm" className="shrink-0 bg-green-600 hover:bg-green-700" onClick={handleBulkApprove} disabled={approvePayment.isPending}>
-                  <CheckCircle className="mr-1.5 h-3.5 w-3.5" /> Approve
-                </Button>
-              )}
-              {canBulkReject && (
-                <Button size="sm" variant="destructive" className="shrink-0" onClick={handleBulkReject} disabled={rejectPayment.isPending}>
-                  Reject
-                </Button>
-              )}
-              {canBulkMarkPaid && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleBulkMarkPaid}
-                  disabled={bulkMarkPaid.isPending}
-                  className="shrink-0 border-green-300 text-green-700 hover:bg-green-50"
-                >
-                  <CreditCard className="mr-1.5 h-3.5 w-3.5" />
-                  {bulkMarkPaid.isPending ? "Processing..." : "Mark Paid"}
                 </Button>
               )}
               {canBulkDelete && (
@@ -613,17 +391,6 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
                   <X className="h-3 w-3" />
                 </button>
               )}
-              {statusFilter !== "all" && (
-                <button
-                  type="button"
-                  onClick={() => handleStatusChange("all")}
-                  className="hidden shrink-0 items-center gap-1 rounded-full border border-blue-300 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 md:inline-flex"
-                >
-                  <span>{invoiceStatusConfig[statusFilter]?.label ?? statusFilter}</span>
-                  <X className="h-3 w-3" />
-                </button>
-              )}
-
               {/* Unified Filter button */}
               <Popover open={customerFilterOpen} onOpenChange={setCustomerFilterOpen}>
                 <PopoverTrigger asChild>
@@ -645,53 +412,12 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
                         type="button"
                         onClick={() => {
                           setCustomerId(undefined);
-                          handleStatusChange("all");
                           setCustomerFilterSearch("");
                         }}
                         className="text-xs font-medium text-blue-600 hover:underline"
                       >
                         Clear all
                       </button>
-                    )}
-                  </div>
-
-                  {/* Status — collapsible */}
-                  <div className="border-b">
-                    <button
-                      type="button"
-                      onClick={() => setStatusSectionOpen((v) => !v)}
-                      className="flex w-full items-center justify-between px-3 py-2.5 text-sm font-medium hover:bg-gray-50"
-                    >
-                      <span className="flex items-center gap-2">
-                        Status
-                        {statusFilter !== "all" && (
-                          <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
-                            {invoiceStatusConfig[statusFilter]?.label ?? statusFilter}
-                          </span>
-                        )}
-                      </span>
-                      <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${statusSectionOpen ? "rotate-180" : ""}`} />
-                    </button>
-                    {statusSectionOpen && (
-                      <div className="space-y-0.5 px-2 pb-2">
-                        {[
-                          { value: "all" as StatusOption, label: "All Statuses" },
-                          { value: "DRAFT" as StatusOption, label: "Draft" },
-                          { value: "SENT" as StatusOption, label: "Received" },
-                          { value: "OVERDUE" as StatusOption, label: "Overdue" },
-                          { value: "CANCELLED" as StatusOption, label: "Cancelled" },
-                        ].map((opt) => (
-                          <button
-                            key={opt.value}
-                            type="button"
-                            onClick={() => handleStatusChange(opt.value)}
-                            className={`flex w-full items-center justify-between rounded-sm px-2 py-1.5 text-left text-sm hover:bg-gray-100 ${statusFilter === opt.value ? "bg-blue-50 font-medium" : ""}`}
-                          >
-                            <span>{opt.label}</span>
-                            {statusFilter === opt.value && <CheckIcon className="h-3.5 w-3.5 text-blue-600" />}
-                          </button>
-                        ))}
-                      </div>
                     )}
                   </div>
 
@@ -787,7 +513,7 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
             : [];
           const displayTotals = showingSelected ? selectedTotals : totalsByCurrency;
           const displayCount = showingSelected ? selectedInvoices.length : totalCount;
-          const filtersActive = statusFilter !== "all" || customerId || debouncedSearch;
+          const filtersActive = customerId || debouncedSearch;
           if (displayTotals.length === 0) return null;
           return (
             <div
@@ -873,7 +599,6 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
               <SelectItem value="sentAt">{type === "sent" ? "Date Sent" : "Date Received"}</SelectItem>
               <SelectItem value="dueDate">Due Date</SelectItem>
               <SelectItem value="amount">Amount</SelectItem>
-              <SelectItem value="invoiceStatus">Status</SelectItem>
             </SelectContent>
           </Select>
           <Button
@@ -913,7 +638,7 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
               <p className="text-sm">
                 {type === "sent" && !sendingAllowed
                   ? "Start your free trial to send invoices"
-                  : search || statusFilter !== "all"
+                  : search || customerId
                     ? "Try adjusting your search or filters"
                     : `No ${type} invoices yet`}
               </p>
@@ -921,27 +646,15 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
           ) : (
             invoices.map((invoice) => {
               const isSelected = selectedIds.has(invoice.id);
-              const isUnpaid = !["PAID", "CANCELLED", "DRAFT"].includes(invoice.invoiceStatus);
-              const rowUrgency = isUnpaid ? getRowUrgency(invoice.dueDate) : "normal";
-              const daysOverdue = rowUrgency === "overdue" ? Math.abs(dayjs(invoice.dueDate).diff(dayjs(), "day")) : 0;
 
               return (
                 <div
                   key={invoice.id}
                   onClick={() => toggleSelect(invoice.id)}
                   className={`relative cursor-pointer select-none overflow-hidden rounded-lg border bg-white p-3 transition-colors ${
-                    isSelected
-                      ? "border-blue-300 bg-blue-50"
-                      : rowUrgency === "overdue"
-                        ? "border-red-400 bg-red-50 ring-1 ring-red-300"
-                        : rowUrgency === "due-soon"
-                          ? "border-amber-300 bg-amber-50/60"
-                          : ""
+                    isSelected ? "border-blue-300 bg-blue-50" : ""
                   }`}
                 >
-                  {rowUrgency === "overdue" && (
-                    <div className="absolute inset-y-0 left-0 w-1 bg-red-500" />
-                  )}
                   <div className="flex items-start gap-3">
                     <Checkbox
                       checked={isSelected}
@@ -954,11 +667,11 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
                         <Link
                           href={`/invoices/${invoice.id}`}
                           onClick={(e) => e.stopPropagation()}
-                          className={`font-semibold hover:underline ${rowUrgency === "overdue" ? "text-red-700" : "text-blue-600"}`}
+                          className="font-semibold text-blue-600 hover:underline"
                         >
                           {invoice.invoiceNumber}
                         </Link>
-                        <span className={`text-sm font-medium tabular-nums ${rowUrgency === "overdue" ? "text-red-700" : ""}`}>
+                        <span className="text-sm font-medium tabular-nums">
                           {formatCurrency(invoice.amount, invoice.currency)}
                         </span>
                       </div>
@@ -969,27 +682,9 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
                         {invoice.reference ? ` · ${invoice.reference}` : ""}
                       </p>
                       <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                        {(() => {
-                          const pill = statusPill(invoice, type);
-                          return (
-                            <Badge variant="outline" className={`text-xs ${pill.className}`}>
-                              {pill.label}
-                            </Badge>
-                          );
-                        })()}
                         <span className="text-xs text-muted-foreground">
                           {dayjs(invoice.invoicedDate).format("MMM D, YYYY")}
                         </span>
-                        {rowUrgency === "overdue" && (
-                          <span className="inline-flex items-center gap-1 rounded-full border border-red-500 bg-red-600 px-2 py-0.5 text-xs font-semibold text-white">
-                            <AlertTriangle className="h-3 w-3" /> Overdue {daysOverdue}d
-                          </span>
-                        )}
-                        {rowUrgency === "due-soon" && (
-                          <span className="flex items-center gap-0.5 text-xs font-medium text-amber-700">
-                            <Clock className="h-3 w-3" /> Due Soon
-                          </span>
-                        )}
                       </div>
                     </div>
                   </div>
@@ -1018,7 +713,6 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
                 <SortableHead field="sentAt" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>{type === "sent" ? "Date Sent" : "Date Received"}</SortableHead>
                 <SortableHead field="dueDate" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>Due Date</SortableHead>
                 <SortableHead field="amount" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} align="right">Amount</SortableHead>
-                <SortableHead field="invoiceStatus" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>Status</SortableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -1039,7 +733,7 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
                       <p className="text-sm">
                         {type === "sent" && !sendingAllowed
                           ? "Start your free trial to send invoices"
-                          : search || statusFilter !== "all"
+                          : search || customerId
                             ? "Try adjusting your search or filters"
                             : `No ${type} invoices yet`}
                       </p>
@@ -1048,19 +742,11 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
                 </TableRow>
               ) : (
                 invoices.map((invoice) => {
-                  const isUnpaid = !["PAID", "CANCELLED", "DRAFT"].includes(invoice.invoiceStatus);
-                  const rowUrgency = isUnpaid ? getRowUrgency(invoice.dueDate) : "normal";
-                  const daysOverdue = rowUrgency === "overdue" ? Math.abs(dayjs(invoice.dueDate).diff(dayjs(), "day")) : 0;
-
                   const isSelected = selectedIds.has(invoice.id);
 
                   const rowClassName = isSelected
                     ? "bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/30"
-                    : rowUrgency === "overdue"
-                      ? "border-l-4 border-l-red-500 bg-red-50 text-red-900 hover:bg-red-100 dark:bg-red-950/40 dark:text-red-200 dark:hover:bg-red-950/60"
-                      : rowUrgency === "due-soon"
-                        ? "bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/20 dark:hover:bg-amber-950/40"
-                        : "";
+                    : "";
 
                   return (
                     <TableRow
@@ -1113,42 +799,12 @@ export function InvoiceTable({ type, initialStatus, initialSearch, initialCustom
 
                       {/* Due Date */}
                       <TableCell>
-                        <div className="flex items-center gap-1.5">
-                          <DueDateCell dueDate={invoice.dueDate} type={type} />
-                          {rowUrgency === "overdue" && (
-                            <AlertTriangle className="h-4 w-4 text-red-600" />
-                          )}
-                          {rowUrgency === "due-soon" && (
-                            <Clock className="h-4 w-4 text-amber-500" />
-                          )}
-                        </div>
-                        {rowUrgency === "overdue" && (
-                          <span className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 text-xs font-semibold text-white">
-                            <AlertTriangle className="h-3 w-3" /> OVERDUE {daysOverdue}d
-                          </span>
-                        )}
-                        {rowUrgency === "due-soon" && (
-                          <span className="text-xs font-medium text-amber-700 dark:text-amber-400">
-                            Due Soon
-                          </span>
-                        )}
+                        {dayjs(invoice.dueDate).format("MMM D, YYYY")}
                       </TableCell>
 
                       {/* Amount */}
                       <TableCell className="text-right font-medium tabular-nums">
                         {formatCurrency(invoice.amount, invoice.currency)}
-                      </TableCell>
-
-                      {/* Invoice Status */}
-                      <TableCell>
-                        {(() => {
-                          const pill = statusPill(invoice, type);
-                          return (
-                            <Badge variant="outline" className={pill.className}>
-                              {pill.label}
-                            </Badge>
-                          );
-                        })()}
                       </TableCell>
 
                     </TableRow>

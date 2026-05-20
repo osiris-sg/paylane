@@ -56,7 +56,6 @@ import { SendAccessGuard } from "~/components/subscription/send-access-guard";
 
 type InvoiceStatus = "extracting" | "ready" | "error" | "saving" | "saved" | "sent";
 type UploadResult = "created" | "duplicate" | "updated";
-type ExistingInvoiceStatus = "DRAFT" | "SENT" | "PENDING_APPROVAL" | "PAID" | "CANCELLED";
 
 interface UploadedInvoice {
   id: string;
@@ -66,7 +65,6 @@ interface UploadedInvoice {
   file?: File;
   status: InvoiceStatus;
   uploadResult?: UploadResult;
-  existingStatus?: ExistingInvoiceStatus | null;
   error?: string;
   invoiceNumber: string;
   customerName: string;
@@ -210,33 +208,16 @@ function CustomerPicker({
   );
 }
 
-function existingStatusClasses(status: ExistingInvoiceStatus): string {
-  switch (status) {
-    case "DRAFT":
-      return "bg-gray-100 text-gray-700 border-l border-gray-300";
-    case "SENT":
-      return "bg-blue-100 text-blue-800 border-l border-blue-300";
-    case "PENDING_APPROVAL":
-      return "bg-orange-100 text-orange-800 border-l border-orange-300";
-    case "PAID":
-      return "bg-green-100 text-green-800 border-l border-green-300";
-    case "CANCELLED":
-      return "bg-red-100 text-red-800 border-l border-red-300";
-  }
-}
-
 // ─── Status Badge ─────────────────────────────────────────────────────────────
 
 function StatusBadge({
   status,
   hasDbId,
   uploadResult,
-  existingStatus,
 }: {
   status: InvoiceStatus;
   hasDbId?: boolean;
   uploadResult?: UploadResult;
-  existingStatus?: ExistingInvoiceStatus | null;
 }) {
   // When auto-saved and the server detected a duplicate, show a compound badge
   // with the duplicate marker + the invoice's current canonical status.
@@ -247,11 +228,6 @@ function StatusBadge({
           <Copy className="h-3 w-3" />
           DUPLICATE
         </span>
-        {existingStatus && (
-          <span className={`px-2 py-1 font-semibold ${existingStatusClasses(existingStatus)}`}>
-            {existingStatus.replace("_", " ")}
-          </span>
-        )}
       </div>
     );
   }
@@ -262,11 +238,6 @@ function StatusBadge({
           <RefreshCw className="h-3 w-3" />
           UPDATED
         </span>
-        {existingStatus && (
-          <span className={`px-2 py-1 font-semibold ${existingStatusClasses(existingStatus)}`}>
-            {existingStatus.replace("_", " ")}
-          </span>
-        )}
       </div>
     );
   }
@@ -475,7 +446,6 @@ function UploadInvoicePageInner() {
                   ...x,
                   dbId: result.invoice.id,
                   uploadResult: result.status,
-                  existingStatus: result.existingStatus as ExistingInvoiceStatus | null,
                   // For duplicates/overrides, hydrate local state from the saved invoice
                   // so the read-only row reflects what's actually in the DB.
                   customerId: result.invoice.customerId ?? x.customerId,
@@ -484,8 +454,7 @@ function UploadInvoicePageInner() {
           ),
         );
         if (result.status === "duplicate") {
-          const label = result.existingStatus ? ` (${result.existingStatus})` : "";
-          toast.info(`${invoiceNumber} already exists${label}`);
+          toast.info(`${invoiceNumber} already exists`);
         } else if (result.status === "updated") {
           const raw = (result as { diffFields?: { field: string }[] }).diffFields ?? [];
           const labelMap: Record<string, string> = {
@@ -660,7 +629,7 @@ function UploadInvoicePageInner() {
           setInvoices((prev) =>
             prev.map((x) =>
               x.id === entry.id
-                ? { ...x, dbId: result.invoice.id, uploadResult: result.status, existingStatus: result.existingStatus as ExistingInvoiceStatus | null }
+                ? { ...x, dbId: result.invoice.id, uploadResult: result.status }
                 : x,
             ),
           );
@@ -1098,7 +1067,7 @@ function UploadInvoicePageInner() {
                           )}
                         </TableCell>
                         <TableCell>
-                          <StatusBadge status={inv.status} hasDbId={!!inv.dbId} uploadResult={inv.uploadResult} existingStatus={inv.existingStatus} />
+                          <StatusBadge status={inv.status} hasDbId={!!inv.dbId} uploadResult={inv.uploadResult} />
                         </TableCell>
                         <TableCell>
                           <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-red-500" onClick={() => removeInvoice(inv.id)}>

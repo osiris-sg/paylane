@@ -100,7 +100,6 @@ model Invoice {
   amount         Decimal       @db.Decimal(12, 2)
   currency       String        @default("SGD")
   routingStatus  RoutingStatus @default(PENDING)
-  invoiceStatus  InvoiceStatus @default(DRAFT)
   source         InvoiceSource @default(MANUAL)
   expectedPaymentDate DateTime?  // Receiver's promised payment date
   fromAddress    String?
@@ -139,10 +138,10 @@ model Invoice {
 
   @@unique([invoiceNumber, senderCompanyId])
   // Tenant-scoped lookups: every query filters by sender/receiver company.
-  // Composite indexes cover the dashboard summary (status + dueDate),
-  // the invoice list, and the monthly/aging charts (invoicedDate).
-  @@index([senderCompanyId, invoiceStatus, dueDate])
-  @@index([receiverCompanyId, invoiceStatus, dueDate])
+  // Composite indexes cover the dashboard summary + due-date sorts and the
+  // monthly/aging charts (invoicedDate).
+  @@index([senderCompanyId, dueDate])
+  @@index([receiverCompanyId, dueDate])
   @@index([senderCompanyId, invoicedDate])
   @@index([receiverCompanyId, invoicedDate])
   @@index([customerId])
@@ -317,15 +316,6 @@ enum RoutingStatus {
   PENDING
   ACKNOWLEDGED
   FAILED
-}
-
-enum InvoiceStatus {
-  DRAFT
-  SENT
-  PENDING_APPROVAL  // Receiver claims they paid, waiting for sender to confirm
-  PAID
-  OVERDUE
-  CANCELLED
 }
 
 model Invitation {

@@ -40,7 +40,6 @@ export const invoiceRouter = createTRPCRouter({
         page: z.number().min(1).default(1),
         limit: z.number().min(1).max(100).default(20),
         search: z.string().optional(),
-        status: z.enum(["DRAFT", "SENT", "PENDING_APPROVAL", "PAID", "OVERDUE", "CANCELLED"]).optional(),
         customerId: z.string().optional(),
         senderCompanyId: z.string().optional(),
         sortBy: z
@@ -52,7 +51,6 @@ export const invoiceRouter = createTRPCRouter({
             "sentAt",
             "dueDate",
             "amount",
-            "invoiceStatus",
           ])
           .optional(),
         sortDir: z.enum(["asc", "desc"]).optional(),
@@ -67,15 +65,6 @@ export const invoiceRouter = createTRPCRouter({
         where.senderCompanyId = user.companyId;
       } else {
         where.receiverCompanyId = user.companyId;
-      }
-
-      if (input.status === "OVERDUE") {
-        // Overdue = due date passed and not yet paid or cancelled.
-        // Invoices don't get a literal "OVERDUE" status in the DB; derive it.
-        where.dueDate = { lt: new Date() };
-        where.invoiceStatus = { notIn: ["PAID", "CANCELLED", "DRAFT"] };
-      } else if (input.status) {
-        where.invoiceStatus = input.status;
       }
 
       if (input.customerId) {
@@ -108,7 +97,24 @@ export const invoiceRouter = createTRPCRouter({
       const [invoices, totalCount, currencyGroups] = await Promise.all([
         ctx.db.invoice.findMany({
           where,
-          include: { customer: true, senderCompany: true, receiverCompany: true },
+          // Only the columns the table renders. Critically this EXCLUDES
+          // `fileUrl` — a base64 data URI of the uploaded PDF (~hundreds of KB
+          // per row). Selecting it shipped ~8MB for a 10-row page. The detail
+          // view (`getById`) still returns the full record.
+          select: {
+            id: true,
+            invoiceNumber: true,
+            reference: true,
+            invoicedDate: true,
+            dueDate: true,
+            sentAt: true,
+            viewedAt: true,
+            amount: true,
+            currency: true,
+            pinned: true,
+            customer: { select: { id: true, name: true, company: true } },
+            senderCompany: { select: { name: true } },
+          },
           orderBy: sortOrder,
           skip: (input.page - 1) * input.limit,
           take: input.limit,
@@ -163,7 +169,7 @@ export const invoiceRouter = createTRPCRouter({
         where: {
           senderCompanyId: user.companyId,
           viewedAt: null,
-          invoiceStatus: { notIn: ["DRAFT", "CANCELLED"] },
+          sentAt: { not: null },
         },
       }),
       ctx.db.invoice.count({
@@ -263,7 +269,6 @@ export const invoiceRouter = createTRPCRouter({
             receiverCompanyId: input.receiverCompanyId,
             senderCompanyId: user.companyId,
             createdById: user.id,
-            invoiceStatus: "DRAFT",
             routingStatus: "PENDING",
             subtotal,
             taxRate: input.taxRate,
@@ -300,9 +305,8 @@ export const invoiceRouter = createTRPCRouter({
   /**
    * Upload-oriented create:
    * - If (invoiceNumber + senderCompany) already exists and key details match → returns status "duplicate"
-   * - If exists but details differ and the existing invoice is still DRAFT → overrides it, returns "updated"
-   * - If exists and is already SENT/PAID/etc → throws CONFLICT (can't override a sent invoice)
-   * - If it doesn't exist → creates a new DRAFT, returns "created"
+   * - If exists but details differ → overrides the existing invoice's data, returns "updated"
+   * - If it doesn't exist → creates a new invoice, returns "created"
    */
   upsertFromUpload: protectedProcedure
     .input(
@@ -434,7 +438,7 @@ export const invoiceRouter = createTRPCRouter({
           .map(([k, v]) => ({ field: k, db: v.db, uploaded: v.uploaded }));
 
         console.log(
-          `[upsertFromUpload] invoice ${input.invoiceNumber} (${existing.invoiceStatus}) — ${isSame ? "DUPLICATE" : "WILL OVERRIDE"}`,
+          `[upsertFromUpload] invoice ${input.invoiceNumber} — ${isSame ? "DUPLICATE" : "WILL OVERRIDE"}`,
         );
         if (diffFields.length > 0) {
           console.log("[upsertFromUpload] differing fields:", JSON.stringify(diffFields, null, 2));
@@ -444,15 +448,13 @@ export const invoiceRouter = createTRPCRouter({
           return {
             status: "duplicate" as const,
             invoice: existing,
-            existingStatus: existing.invoiceStatus,
           };
         }
 
         // Details differ — override the existing invoice's data fields.
-        // We intentionally do NOT touch invoiceStatus / routingStatus / receiver
-        // so a SENT/PAID invoice stays SENT/PAID but its content is refreshed.
-        // Also preserve fields that the AI couldn't reliably re-extract
-        // (customerId, reference, notes) when the upload didn't supply them.
+        // We intentionally do NOT touch routingStatus / receiver, and preserve
+        // fields the AI couldn't reliably re-extract (customerId, reference,
+        // notes) when the upload didn't supply them.
         await ctx.db.$executeRaw`DELETE FROM "InvoiceItem" WHERE "invoiceId" = ${existing.id}`;
 
         const updated = await ctx.db.invoice.update({
@@ -489,7 +491,6 @@ export const invoiceRouter = createTRPCRouter({
         return {
           status: "updated" as const,
           invoice: updated,
-          existingStatus: existing.invoiceStatus,
           diffFields,
         };
       }
@@ -507,7 +508,6 @@ export const invoiceRouter = createTRPCRouter({
           customerId: input.customerId,
           senderCompanyId: user.companyId,
           createdById: user.id,
-          invoiceStatus: "DRAFT",
           routingStatus: "PENDING",
           subtotal,
           taxRate: input.taxRate,
@@ -532,7 +532,6 @@ export const invoiceRouter = createTRPCRouter({
       return {
         status: "created" as const,
         invoice: created,
-        existingStatus: null,
       };
     }),
 
@@ -647,61 +646,6 @@ export const invoiceRouter = createTRPCRouter({
       return { success: true, count: input.ids.length };
     }),
 
-  bulkMarkPaid: protectedProcedure
-    .input(z.object({ ids: z.array(z.string()).min(1) }))
-    .mutation(async ({ ctx, input }) => {
-      await assertFeatureEnabled(ctx.db as unknown as PrismaClient, "paymentApprovalFlow");
-      // Move to PENDING_APPROVAL (receiver claiming payment)
-      await ctx.db.invoice.updateMany({
-        where: { id: { in: input.ids } },
-        data: { invoiceStatus: "PENDING_APPROVAL" },
-      });
-
-      const invoices = await ctx.db.invoice.findMany({
-        where: { id: { in: input.ids } },
-        select: { id: true, invoiceNumber: true, senderCompanyId: true },
-      });
-
-      // Fetch all sender users for the affected companies in one query,
-      // then batch the timeline + notification writes — avoids the previous
-      // 3-queries-per-invoice loop.
-      const senderCompanyIds = Array.from(
-        new Set(invoices.map((i) => i.senderCompanyId)),
-      );
-      const senderUsers = await ctx.db.user.findMany({
-        where: { companyId: { in: senderCompanyIds } },
-        select: { id: true, companyId: true },
-      });
-      const usersByCompany = new Map<string, string[]>();
-      for (const u of senderUsers) {
-        usersByCompany.set(u.companyId, [
-          ...(usersByCompany.get(u.companyId) ?? []),
-          u.id,
-        ]);
-      }
-
-      await ctx.db.timelineItem.createMany({
-        data: invoices.map((inv) => ({
-          invoiceId: inv.id,
-          message: "Payment submitted — pending sender approval",
-        })),
-      });
-
-      const notifications = invoices.flatMap((inv) =>
-        (usersByCompany.get(inv.senderCompanyId) ?? []).map((userId) => ({
-          message: `Invoice ${inv.invoiceNumber}: payment submitted, awaiting your approval`,
-          type: "INVOICE_PAID" as const,
-          userId,
-          invoiceId: inv.id,
-        })),
-      );
-      if (notifications.length > 0) {
-        await ctx.db.notification.createMany({ data: notifications });
-      }
-
-      return { success: true, count: input.ids.length };
-    }),
-
   send: protectedProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
@@ -755,7 +699,6 @@ export const invoiceRouter = createTRPCRouter({
       const invoice = await ctx.db.invoice.update({
         where: { id: input.id },
         data: {
-          invoiceStatus: "SENT",
           routingStatus: receiverCompanyId ? "PENDING" : "PENDING",
           receiverCompanyId,
           sentAt: existing.sentAt ?? new Date(),
@@ -1003,149 +946,4 @@ export const invoiceRouter = createTRPCRouter({
       return invoice;
     }),
 
-  /** Receiver claims payment — moves to PENDING_APPROVAL */
-  markPaid: protectedProcedure
-    .input(z.object({ id: z.string() }))
-    .mutation(async ({ ctx, input }) => {
-      await assertFeatureEnabled(ctx.db as unknown as PrismaClient, "paymentApprovalFlow");
-      const invoice = await ctx.db.invoice.update({
-        where: { id: input.id },
-        data: {
-          invoiceStatus: "PENDING_APPROVAL",
-          timelineItems: {
-            create: { message: "Payment submitted — pending sender approval" },
-          },
-        },
-      });
-
-      // Notify sender that receiver claims payment
-      if (invoice.senderCompanyId) {
-        const senderUsers = await ctx.db.user.findMany({
-          where: { companyId: invoice.senderCompanyId },
-        });
-
-        await ctx.db.notification.createMany({
-          data: senderUsers.map((u) => ({
-            message: `Invoice ${invoice.invoiceNumber}: payment submitted, awaiting your approval`,
-            type: "INVOICE_PAID" as const,
-            userId: u.id,
-            invoiceId: invoice.id,
-          })),
-        });
-
-        void sendPushToCompany(invoice.senderCompanyId, {
-          title: "Payment Submitted",
-          body: `Invoice ${invoice.invoiceNumber} — awaiting your approval`,
-          url: `/invoices/${invoice.id}`,
-          tag: `payment-${invoice.id}`,
-        });
-
-        const receiverCompany = invoice.receiverCompanyId
-          ? await ctx.db.company.findUnique({
-              where: { id: invoice.receiverCompanyId },
-              select: { name: true },
-            })
-          : null;
-        await sendWhatsAppToCompany(invoice.senderCompanyId, {
-          template: "payment_submitted",
-          contentVariables: {
-            receiverName: receiverCompany?.name ?? "A customer",
-            invoiceNumber: invoice.invoiceNumber,
-            amount: `${invoice.currency} ${Number(invoice.amount).toFixed(2)}`,
-          },
-        });
-      }
-
-      return invoice;
-    }),
-
-  /** Sender approves the payment — moves to PAID */
-  approvePayment: protectedProcedure
-    .input(z.object({ id: z.string() }))
-    .mutation(async ({ ctx, input }) => {
-      await assertFeatureEnabled(ctx.db as unknown as PrismaClient, "paymentApprovalFlow");
-      const invoice = await ctx.db.invoice.update({
-        where: { id: input.id },
-        data: {
-          invoiceStatus: "PAID",
-          timelineItems: {
-            create: { message: "Payment approved" },
-          },
-        },
-      });
-
-      // Notify receiver that payment was approved
-      if (invoice.receiverCompanyId) {
-        const receiverUsers = await ctx.db.user.findMany({
-          where: { companyId: invoice.receiverCompanyId },
-        });
-
-        await ctx.db.notification.createMany({
-          data: receiverUsers.map((u) => ({
-            message: `Invoice ${invoice.invoiceNumber}: payment approved`,
-            type: "INVOICE_PAID" as const,
-            userId: u.id,
-            invoiceId: invoice.id,
-          })),
-        });
-
-        void sendPushToCompany(invoice.receiverCompanyId, {
-          title: "Payment Approved",
-          body: `Invoice ${invoice.invoiceNumber} — payment confirmed`,
-          url: `/invoices/${invoice.id}`,
-          tag: `payment-${invoice.id}`,
-        });
-
-        await sendWhatsAppToCompany(invoice.receiverCompanyId, {
-          template: "payment_approved",
-          contentVariables: {
-            invoiceNumber: invoice.invoiceNumber,
-            amount: `${invoice.currency} ${Number(invoice.amount).toFixed(2)}`,
-          },
-        });
-      }
-
-      return invoice;
-    }),
-
-  /** Sender rejects the payment claim — moves back to SENT */
-  rejectPayment: protectedProcedure
-    .input(z.object({ id: z.string() }))
-    .mutation(async ({ ctx, input }) => {
-      await assertFeatureEnabled(ctx.db as unknown as PrismaClient, "paymentApprovalFlow");
-      const invoice = await ctx.db.invoice.update({
-        where: { id: input.id },
-        data: {
-          invoiceStatus: "SENT",
-          timelineItems: {
-            create: { message: "Payment rejected by sender" },
-          },
-        },
-      });
-
-      // Notify receiver that payment was rejected
-      if (invoice.receiverCompanyId) {
-        const receiverUsers = await ctx.db.user.findMany({
-          where: { companyId: invoice.receiverCompanyId },
-        });
-
-        await ctx.db.notification.createMany({
-          data: receiverUsers.map((u) => ({
-            message: `Invoice ${invoice.invoiceNumber}: payment was rejected`,
-            type: "GENERAL" as const,
-            userId: u.id,
-            invoiceId: invoice.id,
-          })),
-        });
-
-        void sendPushToCompany(invoice.receiverCompanyId, {
-          title: "Payment Rejected",
-          body: `Invoice ${invoice.invoiceNumber} — payment was not accepted`,
-          url: `/invoices/${invoice.id}`,
-          tag: `payment-${invoice.id}`,
-        });
-      }
-
-      return invoice;
-    }),
 });
