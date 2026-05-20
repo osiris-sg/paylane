@@ -15,9 +15,7 @@ export const customerRouter = createTRPCRouter({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const user = await ctx.db.user.findUniqueOrThrow({
-        where: { clerkId: ctx.auth.userId },
-      });
+      const user = ctx.user;
 
       const where: Record<string, unknown> = {
         companyId: user.companyId,
@@ -82,9 +80,7 @@ export const customerRouter = createTRPCRouter({
   getById: protectedProcedure
     .input(z.object({ id: z.string() }))
     .query(async ({ ctx, input }) => {
-      const user = await ctx.db.user.findUniqueOrThrow({
-        where: { clerkId: ctx.auth.userId },
-      });
+      const user = ctx.user;
 
       const customer = await ctx.db.customer.findUniqueOrThrow({
         where: { id: input.id, companyId: user.companyId },
@@ -102,9 +98,7 @@ export const customerRouter = createTRPCRouter({
   getAgingData: protectedProcedure
     .input(z.object({ customerId: z.string() }))
     .query(async ({ ctx, input }) => {
-      const user = await ctx.db.user.findUniqueOrThrow({
-        where: { clerkId: ctx.auth.userId },
-      });
+      const user = ctx.user;
 
       // Confirm ownership of the customer record.
       await ctx.db.customer.findUniqueOrThrow({
@@ -157,9 +151,7 @@ export const customerRouter = createTRPCRouter({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const user = await ctx.db.user.findUniqueOrThrow({
-        where: { clerkId: ctx.auth.userId },
-      });
+      const user = ctx.user;
 
       // Confirm the customer belongs to the caller's company.
       await ctx.db.customer.findUniqueOrThrow({
@@ -205,9 +197,7 @@ export const customerRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const user = await ctx.db.user.findUniqueOrThrow({
-        where: { clerkId: ctx.auth.userId },
-      });
+      const user = ctx.user;
       await requireSendAccess(ctx.db, user.companyId);
 
       // The DB still requires `name` (legacy column). Fall back to company name when
@@ -235,9 +225,7 @@ export const customerRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const user = await ctx.db.user.findUniqueOrThrow({
-        where: { clerkId: ctx.auth.userId },
-      });
+      const user = ctx.user;
       await requireSendAccess(ctx.db, user.companyId);
 
       const { id, ...data } = input;
@@ -278,9 +266,7 @@ export const customerRouter = createTRPCRouter({
   delete: protectedProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      const user = await ctx.db.user.findUniqueOrThrow({
-        where: { clerkId: ctx.auth.userId },
-      });
+      const user = ctx.user;
       await requireSendAccess(ctx.db, user.companyId);
 
       await ctx.db.customer.delete({
@@ -308,9 +294,7 @@ export const customerRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const user = await ctx.db.user.findUniqueOrThrow({
-        where: { clerkId: ctx.auth.userId },
-      });
+      const user = ctx.user;
       await requireSendAccess(ctx.db, user.companyId);
 
       const result = await ctx.db.customer.createMany({

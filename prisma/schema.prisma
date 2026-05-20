@@ -69,6 +69,8 @@ model Customer {
 
   invoices  Invoice[]
   statement Statement?
+
+  @@index([companyId])
 }
 
 model Supplier {
@@ -136,6 +138,14 @@ model Invoice {
   notes          String?
 
   @@unique([invoiceNumber, senderCompanyId])
+  // Tenant-scoped lookups: every query filters by sender/receiver company.
+  // Composite indexes cover the dashboard summary (status + dueDate),
+  // the invoice list, and the monthly/aging charts (invoicedDate).
+  @@index([senderCompanyId, invoiceStatus, dueDate])
+  @@index([receiverCompanyId, invoiceStatus, dueDate])
+  @@index([senderCompanyId, invoicedDate])
+  @@index([receiverCompanyId, invoicedDate])
+  @@index([customerId])
 }
 
 model EmailIntegration {
@@ -221,6 +231,8 @@ model InvoiceItem {
   sortOrder   Int      @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  @@index([invoiceId])
 }
 
 model Notification {
@@ -235,6 +247,8 @@ model Notification {
   statementId String?
   statement   Statement?     @relation(fields: [statementId], references: [id], onDelete: SetNull)
   createdAt DateTime         @default(now())
+
+  @@index([userId, read])
 }
 
 model TimelineItem {
@@ -243,6 +257,8 @@ model TimelineItem {
   invoiceId String
   invoice   Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
+
+  @@index([invoiceId])
 }
 
 model Statement {

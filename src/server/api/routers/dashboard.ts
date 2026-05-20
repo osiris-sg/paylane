@@ -23,9 +23,7 @@ function resolveRange(input: { from?: Date; to?: Date } | undefined): {
 
 export const dashboardRouter = createTRPCRouter({
   getSummary: protectedProcedure.query(async ({ ctx }) => {
-    const user = await ctx.db.user.findUniqueOrThrow({
-      where: { clerkId: ctx.auth.userId },
-    });
+    const user = ctx.user;
 
     const companyId = user.companyId;
     const now = new Date();
@@ -99,9 +97,7 @@ export const dashboardRouter = createTRPCRouter({
   getAgingData: protectedProcedure
     .input(rangeInput)
     .query(async ({ ctx, input }) => {
-    const user = await ctx.db.user.findUniqueOrThrow({
-      where: { clerkId: ctx.auth.userId },
-    });
+    const user = ctx.user;
 
     const companyId = user.companyId;
     const range = resolveRange(input);
@@ -156,9 +152,7 @@ export const dashboardRouter = createTRPCRouter({
   getMonthlyTotals: protectedProcedure
     .input(rangeInput)
     .query(async ({ ctx, input }) => {
-      const user = await ctx.db.user.findUniqueOrThrow({
-        where: { clerkId: ctx.auth.userId },
-      });
+      const user = ctx.user;
 
       const companyId = user.companyId;
       const { from, to } = resolveRange(input);

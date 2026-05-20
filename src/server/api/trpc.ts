@@ -1,5 +1,6 @@
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { initTRPC, TRPCError } from "@trpc/server";
+import type { User } from "@prisma/client";
 import superjson from "superjson";
 import { ZodError } from "zod";
 
@@ -11,7 +12,7 @@ import { syncCustomerReceivers } from "~/server/api/lib/customer-routing";
  * This avoids the need for a separate webhook to seed the database.
  */
 // Prevent concurrent ensureUser calls from creating duplicate companies
-const pendingUsers = new Map<string, Promise<{ id: string; clerkId: string; email: string; companyId: string }>>();
+const pendingUsers = new Map<string, Promise<User>>();
 
 async function ensureUser(clerkUserId: string) {
   const existing = await db.user.findUnique({

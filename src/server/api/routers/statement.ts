@@ -144,9 +144,7 @@ export const statementRouter = createTRPCRouter({
   sendToCustomer: protectedProcedure
     .input(sendInput)
     .mutation(async ({ ctx, input }) => {
-      const user = await ctx.db.user.findUniqueOrThrow({
-        where: { clerkId: ctx.auth.userId },
-      });
+      const user = ctx.user;
       await requireSendAccess(ctx.db, user.companyId);
 
       return persistAndDispatch({
@@ -168,9 +166,7 @@ export const statementRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const user = await ctx.db.user.findUniqueOrThrow({
-        where: { clerkId: ctx.auth.userId },
-      });
+      const user = ctx.user;
       await requireSendAccess(ctx.db, user.companyId);
 
       const results: Array<
@@ -205,9 +201,7 @@ export const statementRouter = createTRPCRouter({
   getForCustomer: protectedProcedure
     .input(z.object({ customerId: z.string() }))
     .query(async ({ ctx, input }) => {
-      const user = await ctx.db.user.findUniqueOrThrow({
-        where: { clerkId: ctx.auth.userId },
-      });
+      const user = ctx.user;
       await ctx.db.customer.findUniqueOrThrow({
         where: { id: input.customerId, companyId: user.companyId },
         select: { id: true },
@@ -221,9 +215,7 @@ export const statementRouter = createTRPCRouter({
   getFromSupplierCompany: protectedProcedure
     .input(z.object({ senderCompanyId: z.string() }))
     .query(async ({ ctx, input }) => {
-      const user = await ctx.db.user.findUniqueOrThrow({
-        where: { clerkId: ctx.auth.userId },
-      });
+      const user = ctx.user;
       return ctx.db.statement.findFirst({
         where: {
           receiverCompanyId: user.companyId,
@@ -236,9 +228,7 @@ export const statementRouter = createTRPCRouter({
 
   /** Badge counts for the CUSTOMER + SUPPLIER tabs on /statements. */
   getTabCounts: protectedProcedure.query(async ({ ctx }) => {
-    const user = await ctx.db.user.findUniqueOrThrow({
-      where: { clerkId: ctx.auth.userId },
-    });
+    const user = ctx.user;
     const [unviewedByRecipient, unviewedByMe] = await Promise.all([
       ctx.db.statement.count({
         where: { senderCompanyId: user.companyId, viewedAt: null },
@@ -252,9 +242,7 @@ export const statementRouter = createTRPCRouter({
 
   /** Sender: list every statement they've sent (one per customer). */
   listSent: protectedProcedure.query(async ({ ctx }) => {
-    const user = await ctx.db.user.findUniqueOrThrow({
-      where: { clerkId: ctx.auth.userId },
-    });
+    const user = ctx.user;
     return ctx.db.statement.findMany({
       where: { senderCompanyId: user.companyId },
       orderBy: { sentAt: "desc" },
@@ -269,9 +257,7 @@ export const statementRouter = createTRPCRouter({
 
   /** Receiver: list every incoming statement (one per supplier). */
   listIncoming: protectedProcedure.query(async ({ ctx }) => {
-    const user = await ctx.db.user.findUniqueOrThrow({
-      where: { clerkId: ctx.auth.userId },
-    });
+    const user = ctx.user;
     return ctx.db.statement.findMany({
       where: { receiverCompanyId: user.companyId },
       orderBy: { sentAt: "desc" },
@@ -282,9 +268,7 @@ export const statementRouter = createTRPCRouter({
   getById: protectedProcedure
     .input(z.object({ id: z.string() }))
     .query(async ({ ctx, input }) => {
-      const user = await ctx.db.user.findUniqueOrThrow({
-        where: { clerkId: ctx.auth.userId },
-      });
+      const user = ctx.user;
       const stmt = await ctx.db.statement.findUnique({
         where: { id: input.id },
         include: {
@@ -305,9 +289,7 @@ export const statementRouter = createTRPCRouter({
   markViewed: protectedProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      const user = await ctx.db.user.findUniqueOrThrow({
-        where: { clerkId: ctx.auth.userId },
-      });
+      const user = ctx.user;
       const stmt = await ctx.db.statement.findUnique({
         where: { id: input.id },
         select: { id: true, receiverCompanyId: true, viewedAt: true },

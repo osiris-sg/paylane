@@ -59,9 +59,7 @@ export const supplierRouter = createTRPCRouter({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const user = await ctx.db.user.findUniqueOrThrow({
-        where: { clerkId: ctx.auth.userId },
-      });
+      const user = ctx.user;
 
       await syncSuppliersFromInvoices(ctx.db as unknown as PrismaClient, user.companyId);
 
@@ -132,9 +130,7 @@ export const supplierRouter = createTRPCRouter({
   getById: protectedProcedure
     .input(z.object({ id: z.string() }))
     .query(async ({ ctx, input }) => {
-      const user = await ctx.db.user.findUniqueOrThrow({
-        where: { clerkId: ctx.auth.userId },
-      });
+      const user = ctx.user;
 
       const supplier = await ctx.db.supplier.findUniqueOrThrow({
         where: { id: input.id, companyId: user.companyId },
@@ -162,9 +158,7 @@ export const supplierRouter = createTRPCRouter({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const user = await ctx.db.user.findUniqueOrThrow({
-        where: { clerkId: ctx.auth.userId },
-      });
+      const user = ctx.user;
 
       const supplier = await ctx.db.supplier.findUniqueOrThrow({
         where: { id: input.supplierId, companyId: user.companyId },
@@ -213,9 +207,7 @@ export const supplierRouter = createTRPCRouter({
   getByLinkedCompanyId: protectedProcedure
     .input(z.object({ linkedCompanyId: z.string() }))
     .query(async ({ ctx, input }) => {
-      const user = await ctx.db.user.findUniqueOrThrow({
-        where: { clerkId: ctx.auth.userId },
-      });
+      const user = ctx.user;
 
       return ctx.db.supplier.findFirst({
         where: {
@@ -237,9 +229,7 @@ export const supplierRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const user = await ctx.db.user.findUniqueOrThrow({
-        where: { clerkId: ctx.auth.userId },
-      });
+      const user = ctx.user;
 
       return ctx.db.supplier.create({
         data: {
@@ -265,9 +255,7 @@ export const supplierRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const user = await ctx.db.user.findUniqueOrThrow({
-        where: { clerkId: ctx.auth.userId },
-      });
+      const user = ctx.user;
 
       const { id, ...data } = input;
 
@@ -280,9 +268,7 @@ export const supplierRouter = createTRPCRouter({
   delete: protectedProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      const user = await ctx.db.user.findUniqueOrThrow({
-        where: { clerkId: ctx.auth.userId },
-      });
+      const user = ctx.user;
 
       await ctx.db.supplier.delete({
         where: { id: input.id, companyId: user.companyId },
@@ -309,9 +295,7 @@ export const supplierRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const user = await ctx.db.user.findUniqueOrThrow({
-        where: { clerkId: ctx.auth.userId },
-      });
+      const user = ctx.user;
 
       const result = await ctx.db.supplier.createMany({
         data: input.suppliers.map((s) => ({

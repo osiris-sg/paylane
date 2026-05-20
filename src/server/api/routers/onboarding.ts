@@ -99,9 +99,7 @@ export const onboardingRouter = createTRPCRouter({
   setModule: protectedProcedure
     .input(z.object({ module: z.enum(["RECEIVE", "SEND"]) }))
     .mutation(async ({ ctx, input }) => {
-      const user = await ctx.db.user.findUniqueOrThrow({
-        where: { clerkId: ctx.auth.userId },
-      });
+      const user = ctx.user;
 
       return ctx.db.company.update({
         where: { id: user.companyId },
@@ -120,9 +118,7 @@ export const onboardingRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const user = await ctx.db.user.findUniqueOrThrow({
-        where: { clerkId: ctx.auth.userId },
-      });
+      const user = ctx.user;
 
       return ctx.db.company.update({
         where: { id: user.companyId },
@@ -144,9 +140,7 @@ export const onboardingRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const user = await ctx.db.user.findUniqueOrThrow({
-        where: { clerkId: ctx.auth.userId },
-      });
+      const user = ctx.user;
 
       const results: { email: string; status: "created" | "linked" | "exists" }[] = [];
 
@@ -221,9 +215,7 @@ export const onboardingRouter = createTRPCRouter({
 
   /** Mark onboarding as complete */
   complete: protectedProcedure.mutation(async ({ ctx }) => {
-    const user = await ctx.db.user.findUniqueOrThrow({
-      where: { clerkId: ctx.auth.userId },
-    });
+    const user = ctx.user;
 
     return ctx.db.company.update({
       where: { id: user.companyId },
@@ -233,9 +225,7 @@ export const onboardingRouter = createTRPCRouter({
 
   /** Get pending invitations sent by this company */
   getInvitations: protectedProcedure.query(async ({ ctx }) => {
-    const user = await ctx.db.user.findUniqueOrThrow({
-      where: { clerkId: ctx.auth.userId },
-    });
+    const user = ctx.user;
 
     return ctx.db.invitation.findMany({
       where: { senderCompanyId: user.companyId },

@@ -14,9 +14,7 @@ export const notificationRouter = createTRPCRouter({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const user = await ctx.db.user.findUniqueOrThrow({
-        where: { clerkId: ctx.auth.userId },
-      });
+      const user = ctx.user;
 
       const [notifications, totalCount] = await Promise.all([
         ctx.db.notification.findMany({
@@ -38,9 +36,7 @@ export const notificationRouter = createTRPCRouter({
     }),
 
   getUnreadCount: protectedProcedure.query(async ({ ctx }) => {
-    const user = await ctx.db.user.findUniqueOrThrow({
-      where: { clerkId: ctx.auth.userId },
-    });
+    const user = ctx.user;
 
     const count = await ctx.db.notification.count({
       where: { userId: user.id, read: false },
@@ -52,9 +48,7 @@ export const notificationRouter = createTRPCRouter({
   markRead: protectedProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      const user = await ctx.db.user.findUniqueOrThrow({
-        where: { clerkId: ctx.auth.userId },
-      });
+      const user = ctx.user;
 
       const notification = await ctx.db.notification.update({
         where: { id: input.id, userId: user.id },
@@ -65,9 +59,7 @@ export const notificationRouter = createTRPCRouter({
     }),
 
   markAllRead: protectedProcedure.mutation(async ({ ctx }) => {
-    const user = await ctx.db.user.findUniqueOrThrow({
-      where: { clerkId: ctx.auth.userId },
-    });
+    const user = ctx.user;
 
     await ctx.db.notification.updateMany({
       where: { userId: user.id, read: false },
@@ -77,12 +69,11 @@ export const notificationRouter = createTRPCRouter({
     return { success: true };
   }),
 
-  getWhatsAppPreferences: protectedProcedure.query(async ({ ctx }) => {
-    const user = await ctx.db.user.findUniqueOrThrow({
-      where: { clerkId: ctx.auth.userId },
-      select: { whatsappNumber: true, whatsappOptIn: true },
-    });
-    return user;
+  getWhatsAppPreferences: protectedProcedure.query(({ ctx }) => {
+    return {
+      whatsappNumber: ctx.user.whatsappNumber,
+      whatsappOptIn: ctx.user.whatsappOptIn,
+    };
   }),
 
   updateWhatsAppPreferences: protectedProcedure
@@ -117,10 +108,7 @@ export const notificationRouter = createTRPCRouter({
     }),
 
   sendTestWhatsApp: protectedProcedure.mutation(async ({ ctx }) => {
-    const user = await ctx.db.user.findUniqueOrThrow({
-      where: { clerkId: ctx.auth.userId },
-      select: { whatsappNumber: true, whatsappOptIn: true },
-    });
+    const user = ctx.user;
     if (!user.whatsappOptIn || !user.whatsappNumber) {
       throw new TRPCError({
         code: "BAD_REQUEST",

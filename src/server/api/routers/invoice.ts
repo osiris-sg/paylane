@@ -59,9 +59,7 @@ export const invoiceRouter = createTRPCRouter({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const user = await ctx.db.user.findUniqueOrThrow({
-        where: { clerkId: ctx.auth.userId },
-      });
+      const user = ctx.user;
 
       const where: Record<string, unknown> = {};
 
@@ -159,9 +157,7 @@ export const invoiceRouter = createTRPCRouter({
 
   /** Badge counts for the CUSTOMER + SUPPLIER tabs on /invoices. */
   getTabCounts: protectedProcedure.query(async ({ ctx }) => {
-    const user = await ctx.db.user.findUniqueOrThrow({
-      where: { clerkId: ctx.auth.userId },
-    });
+    const user = ctx.user;
     const [unviewedByRecipient, newReceived] = await Promise.all([
       ctx.db.invoice.count({
         where: {
@@ -184,9 +180,7 @@ export const invoiceRouter = createTRPCRouter({
   markViewed: protectedProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      const user = await ctx.db.user.findUniqueOrThrow({
-        where: { clerkId: ctx.auth.userId },
-      });
+      const user = ctx.user;
       const inv = await ctx.db.invoice.findUnique({
         where: { id: input.id },
         select: { id: true, receiverCompanyId: true, viewedAt: true },
@@ -204,9 +198,7 @@ export const invoiceRouter = createTRPCRouter({
   checkNumber: protectedProcedure
     .input(z.object({ invoiceNumber: z.string() }))
     .query(async ({ ctx, input }) => {
-      const user = await ctx.db.user.findUniqueOrThrow({
-        where: { clerkId: ctx.auth.userId },
-      });
+      const user = ctx.user;
       const existing = await ctx.db.invoice.findUnique({
         where: {
           invoiceNumber_senderCompanyId: {
@@ -242,9 +234,7 @@ export const invoiceRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const user = await ctx.db.user.findUniqueOrThrow({
-        where: { clerkId: ctx.auth.userId },
-      });
+      const user = ctx.user;
       await requireSendAccess(ctx.db, user.companyId);
 
       const dueDate = new Date(input.invoicedDate);
@@ -334,9 +324,7 @@ export const invoiceRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const user = await ctx.db.user.findUniqueOrThrow({
-        where: { clerkId: ctx.auth.userId },
-      });
+      const user = ctx.user;
       await requireSendAccess(ctx.db, user.companyId);
 
       const dueDate = new Date(input.invoicedDate);
@@ -572,9 +560,7 @@ export const invoiceRouter = createTRPCRouter({
       const { id, items: newItems, ...data } = input;
       const existing = await ctx.db.invoice.findUniqueOrThrow({ where: { id } });
 
-      const user = await ctx.db.user.findUniqueOrThrow({
-        where: { clerkId: ctx.auth.userId },
-      });
+      const user = ctx.user;
       if (existing.senderCompanyId === user.companyId) {
         await requireSendAccess(ctx.db, user.companyId);
       }
@@ -635,9 +621,7 @@ export const invoiceRouter = createTRPCRouter({
   delete: protectedProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      const user = await ctx.db.user.findUniqueOrThrow({
-        where: { clerkId: ctx.auth.userId },
-      });
+      const user = ctx.user;
       const existing = await ctx.db.invoice.findUniqueOrThrow({
         where: { id: input.id },
         select: { senderCompanyId: true },
@@ -652,9 +636,7 @@ export const invoiceRouter = createTRPCRouter({
   bulkDelete: protectedProcedure
     .input(z.object({ ids: z.array(z.string()).min(1) }))
     .mutation(async ({ ctx, input }) => {
-      const user = await ctx.db.user.findUniqueOrThrow({
-        where: { clerkId: ctx.auth.userId },
-      });
+      const user = ctx.user;
       const ownsSent = await ctx.db.invoice.count({
         where: { id: { in: input.ids }, senderCompanyId: user.companyId },
       });
@@ -675,31 +657,46 @@ export const invoiceRouter = createTRPCRouter({
         data: { invoiceStatus: "PENDING_APPROVAL" },
       });
 
-      // Add timeline entries for each
       const invoices = await ctx.db.invoice.findMany({
         where: { id: { in: input.ids } },
         select: { id: true, invoiceNumber: true, senderCompanyId: true },
       });
 
-      for (const inv of invoices) {
-        await ctx.db.timelineItem.create({
-          data: { invoiceId: inv.id, message: "Payment submitted — pending sender approval" },
-        });
+      // Fetch all sender users for the affected companies in one query,
+      // then batch the timeline + notification writes — avoids the previous
+      // 3-queries-per-invoice loop.
+      const senderCompanyIds = Array.from(
+        new Set(invoices.map((i) => i.senderCompanyId)),
+      );
+      const senderUsers = await ctx.db.user.findMany({
+        where: { companyId: { in: senderCompanyIds } },
+        select: { id: true, companyId: true },
+      });
+      const usersByCompany = new Map<string, string[]>();
+      for (const u of senderUsers) {
+        usersByCompany.set(u.companyId, [
+          ...(usersByCompany.get(u.companyId) ?? []),
+          u.id,
+        ]);
+      }
 
-        // Notify sender
-        const senderUsers = await ctx.db.user.findMany({
-          where: { companyId: inv.senderCompanyId },
-        });
-        if (senderUsers.length > 0) {
-          await ctx.db.notification.createMany({
-            data: senderUsers.map((u) => ({
-              message: `Invoice ${inv.invoiceNumber}: payment submitted, awaiting your approval`,
-              type: "INVOICE_PAID" as const,
-              userId: u.id,
-              invoiceId: inv.id,
-            })),
-          });
-        }
+      await ctx.db.timelineItem.createMany({
+        data: invoices.map((inv) => ({
+          invoiceId: inv.id,
+          message: "Payment submitted — pending sender approval",
+        })),
+      });
+
+      const notifications = invoices.flatMap((inv) =>
+        (usersByCompany.get(inv.senderCompanyId) ?? []).map((userId) => ({
+          message: `Invoice ${inv.invoiceNumber}: payment submitted, awaiting your approval`,
+          type: "INVOICE_PAID" as const,
+          userId,
+          invoiceId: inv.id,
+        })),
+      );
+      if (notifications.length > 0) {
+        await ctx.db.notification.createMany({ data: notifications });
       }
 
       return { success: true, count: input.ids.length };
@@ -708,9 +705,7 @@ export const invoiceRouter = createTRPCRouter({
   send: protectedProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      const user = await ctx.db.user.findUniqueOrThrow({
-        where: { clerkId: ctx.auth.userId },
-      });
+      const user = ctx.user;
       await requireSendAccess(ctx.db, user.companyId);
 
       // Fetch invoice with customer to check for email-based linking
