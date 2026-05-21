@@ -7,6 +7,7 @@ import {
   type SupportedMediaType,
 } from "~/lib/extract-invoice";
 import { sendPushToCompany } from "~/lib/push-notifications";
+import { buildKey, putObject } from "~/lib/storage";
 
 // CloudMailin payloads can include multi-MB PDF attachments. Increase the body size limit
 // and run on Node (not Edge) so we have access to the Anthropic SDK and Prisma.
@@ -353,9 +354,12 @@ async function createInvoiceFromExtraction(args: {
     new Date(invoicedDate.getTime() + (extracted.paymentTerms ?? 30) * 24 * 60 * 60 * 1000);
   const totalAmount = extracted.totalAmount ?? extracted.subtotal ?? 0;
 
-  // Inline data URL for the file so the receiver can view it in-app.
-  // Matches the existing Invoice.fileUrl convention (data URL or external URL).
-  const fileUrl = `data:${attachment.mediaType};base64,${attachment.buffer.toString("base64")}`;
+  // Upload the attachment to S3 and store its object key in Invoice.fileUrl.
+  // The owning company is the receiver (integration) company, matching
+  // receiverCompanyId below. resolveFileUrl() turns the key into a presigned
+  // GET URL when the receiver views it in-app.
+  const fileKey = buildKey("invoices", integrationCompanyId, attachment.mediaType);
+  await putObject(fileKey, attachment.buffer, attachment.mediaType);
 
   const invoiceNumber =
     extracted.invoiceNumber?.trim() || `EMAIL-${Date.now().toString(36).toUpperCase()}`;
@@ -376,7 +380,7 @@ async function createInvoiceFromExtraction(args: {
       source: "EMAIL_FORWARD",
       fromAddress: vendorEmail || null,
       description: extracted.notes,
-      fileUrl,
+      fileUrl: fileKey,
       senderCompanyId,
       receiverCompanyId: integrationCompanyId,
       items: {

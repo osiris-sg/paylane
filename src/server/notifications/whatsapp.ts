@@ -95,7 +95,7 @@ export async function sendWhatsAppTemplate(input: {
   message: WhatsAppTemplate;
   /**
    * Optional dynamic URL button slug. When the Meta template has a URL button
-   * configured as a dynamic URL (https://paylane.ai/invoices/{{1}}), pass the
+   * configured as a dynamic URL (https://e-statementnow.com/invoices/{{1}}), pass the
    * tail slug here (e.g. the invoice id) and it gets substituted server-side
    * by Meta. If the template has no URL button, this is silently ignored.
    */

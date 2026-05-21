@@ -15,6 +15,7 @@ import { Button } from "~/components/ui/button";
 import { Label } from "~/components/ui/label";
 import { Textarea } from "~/components/ui/textarea";
 import { api } from "~/trpc/react";
+import { uploadViaPresignedPut } from "~/lib/upload-file";
 
 const ACCEPTED_TYPES = [
   "application/pdf",
@@ -23,15 +24,6 @@ const ACCEPTED_TYPES = [
   "image/webp",
 ];
 const MAX_BYTES = 8 * 1024 * 1024; // 8 MB — same as a typical invoice upload
-
-function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(reader.error);
-    reader.onload = () => resolve(reader.result as string);
-    reader.readAsDataURL(file);
-  });
-}
 
 export function SendStatementDialog({
   open,
@@ -49,6 +41,7 @@ export function SendStatementDialog({
   onSent?: () => void;
 }) {
   const utils = api.useUtils();
+  const createUploadUrl = api.storage.createUploadUrl.useMutation();
   const [file, setFile] = useState<File | null>(null);
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -95,16 +88,18 @@ export function SendStatementDialog({
       return;
     }
     try {
-      const dataUrl = await fileToDataUrl(file);
+      const fileKey = await uploadViaPresignedPut(file, "statements", (input) =>
+        createUploadUrl.mutateAsync(input),
+      );
       send.mutate({
         customerId,
-        fileDataUrl: dataUrl,
+        fileDataUrl: fileKey,
         fileName: file.name,
         fileType: file.type,
         notes: notes.trim() || undefined,
       });
     } catch {
-      setError("Couldn't read that file.");
+      setError("Couldn't upload that file.");
     }
   };
 

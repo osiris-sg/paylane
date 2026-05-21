@@ -26,13 +26,14 @@ import {
 import { api } from "~/trpc/react";
 import { SendAccessGuard } from "~/components/subscription/send-access-guard";
 import { cn } from "~/lib/utils";
+import { uploadViaPresignedPut } from "~/lib/upload-file";
 
 type Row = {
   id: string;
   file: File;
   fileName: string;
   fileType: string;
-  fileDataUrl: string | null;
+  fileKey: string | null;
   status:
     | "queued"
     | "extracting"
@@ -57,15 +58,6 @@ const MAX_BYTES = 8 * 1024 * 1024;
 
 function newRowId() {
   return Math.random().toString(36).slice(2, 11);
-}
-
-function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(reader.error);
-    reader.onload = () => resolve(reader.result as string);
-    reader.readAsDataURL(file);
-  });
 }
 
 /** Best-match a customer using a fuzzy alphanumeric overlap heuristic. */
@@ -126,6 +118,7 @@ function BulkInner() {
   );
 
   const bulkSend = api.statement.bulkSend.useMutation();
+  const createUploadUrl = api.storage.createUploadUrl.useMutation();
 
   const updateRow = (id: string, patch: Partial<Row>) =>
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
@@ -148,7 +141,7 @@ function BulkInner() {
       file: f,
       fileName: f.name,
       fileType: f.type,
-      fileDataUrl: null,
+      fileKey: null,
       status: "extracting",
       extractedName: null,
       confidence: null,
@@ -160,8 +153,10 @@ function BulkInner() {
     await Promise.all(
       newRows.map(async (row) => {
         try {
-          const dataUrl = await fileToDataUrl(row.file);
-          updateRow(row.id, { fileDataUrl: dataUrl });
+          const fileKey = await uploadViaPresignedPut(row.file, "statements", (input) =>
+            createUploadUrl.mutateAsync(input),
+          );
+          updateRow(row.id, { fileKey });
 
           const fd = new FormData();
           fd.append("file", row.file);
@@ -205,14 +200,14 @@ function BulkInner() {
   };
 
   const readyRows = rows.filter(
-    (r) => r.fileDataUrl && r.customerId && r.status !== "sent",
+    (r) => r.fileKey && r.customerId && r.status !== "sent",
   );
   const allMatched = rows.length > 0 && rows.every((r) => r.customerId);
 
   const handleSendAll = async () => {
     const items = readyRows.map((r) => ({
       customerId: r.customerId!,
-      fileDataUrl: r.fileDataUrl!,
+      fileDataUrl: r.fileKey!,
       fileName: r.fileName,
       fileType: r.fileType,
     }));

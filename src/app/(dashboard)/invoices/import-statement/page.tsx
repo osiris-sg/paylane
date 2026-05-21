@@ -7,6 +7,8 @@ import { ArrowLeft, FileSpreadsheet, Loader2, Upload } from "lucide-react";
 
 import { Button } from "~/components/ui/button";
 import { SendAccessGuard } from "~/components/subscription/send-access-guard";
+import { api } from "~/trpc/react";
+import { uploadViaPresignedPut } from "~/lib/upload-file";
 
 interface StatementInvoice {
   invoiceNumber: string;
@@ -51,6 +53,7 @@ export default function ImportStatementPage() {
 
 function ImportStatementPageInner() {
   const router = useRouter();
+  const createUploadUrl = api.storage.createUploadUrl.useMutation();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
   const [extracting, setExtracting] = useState(false);
@@ -72,12 +75,6 @@ function ImportStatementPageInner() {
       setExtracting(true);
 
       try {
-        const fileDataUrl = await new Promise<string>((resolve) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.readAsDataURL(file);
-        });
-
         const formData = new FormData();
         formData.append("file", file);
         const res = await fetch("/api/extract-statement", { method: "POST", body: formData });
@@ -93,9 +90,14 @@ function ImportStatementPageInner() {
           return;
         }
 
+        // Upload the original file to S3; the upload page persists this key.
+        const fileKey = await uploadViaPresignedPut(file, "invoices", (input) =>
+          createUploadUrl.mutateAsync(input),
+        );
+
         const payload: PendingStatementPayload = {
           extraction: data,
-          fileDataUrl,
+          fileDataUrl: fileKey,
           fileName: file.name,
         };
         sessionStorage.setItem(STORAGE_KEY, JSON.stringify(payload));

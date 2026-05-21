@@ -51,6 +51,7 @@ import {
 import { Label } from "~/components/ui/label";
 import { UserPlus } from "lucide-react";
 import { SendAccessGuard } from "~/components/subscription/send-access-guard";
+import { uploadViaPresignedPut } from "~/lib/upload-file";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -81,7 +82,7 @@ interface UploadedInvoice {
   notes: string;
   items: { description: string; quantity: number; unitPrice: number; amount: number }[];
   customerId: string;
-  fileDataUrl: string | null;
+  fileKey: string | null;
 }
 
 import { formatCurrency } from "~/lib/currency";
@@ -298,6 +299,7 @@ function UploadInvoicePageInner() {
   const updateInvoiceMut = api.invoice.update.useMutation({ onSuccess: invalidateInvoices });
   const deleteInvoice = api.invoice.delete.useMutation({ onSuccess: invalidateInvoices });
   const sendInvoice = api.invoice.send.useMutation({ onSuccess: invalidateInvoices });
+  const createUploadUrl = api.storage.createUploadUrl.useMutation();
   const createCustomer = api.customer.create.useMutation();
 
   // Add-customer dialog state
@@ -344,12 +346,6 @@ function UploadInvoicePageInner() {
   // ─── Add Files & Extract Immediately ─────────────────────────────────
 
   const processFile = async (id: string, file: File) => {
-    const fileDataUrl = await new Promise<string>((resolve) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.readAsDataURL(file);
-    });
-
     try {
       const formData = new FormData();
       formData.append("file", file);
@@ -359,6 +355,11 @@ function UploadInvoicePageInner() {
         throw new Error(err.error || "Extraction failed");
       }
       const { data } = await res.json();
+
+      // Upload the raw file to S3 and persist the returned object key as fileUrl.
+      const fileKey = await uploadViaPresignedPut(file, "invoices", (input) =>
+        createUploadUrl.mutateAsync(input),
+      );
 
       let matchedCustomerId = "";
       if (data.customerName || data.customerEmail) {
@@ -386,7 +387,7 @@ function UploadInvoicePageInner() {
             ? {
                 ...x,
                 status: "ready" as const,
-                fileDataUrl,
+                fileKey,
                 invoiceNumber,
                 customerName: data.customerName ?? "",
                 customerEmail: data.customerEmail ?? "",
@@ -421,7 +422,7 @@ function UploadInvoicePageInner() {
           extractedCustomerName: data.customerName || undefined,
           taxRate,
           notes: data.notes || undefined,
-          fileUrl: fileDataUrl,
+          fileUrl: fileKey,
           items: (data.items ?? []).filter((i: { description?: string }) => i.description).map((item: { description: string; quantity: number; unitPrice: number; amount: number }, idx: number) => ({
             description: item.description,
             quantity: item.quantity,
@@ -485,7 +486,7 @@ function UploadInvoicePageInner() {
       }
     } catch (error) {
       setInvoices((prev) =>
-        prev.map((x) => (x.id === id ? { ...x, status: "error" as const, error: String(error), fileDataUrl } : x)),
+        prev.map((x) => (x.id === id ? { ...x, status: "error" as const, error: String(error) } : x)),
       );
     }
   };
@@ -589,7 +590,7 @@ function UploadInvoicePageInner() {
           },
         ],
         customerId,
-        fileDataUrl,
+        fileKey: fileDataUrl,
       };
     });
 
@@ -614,7 +615,7 @@ function UploadInvoicePageInner() {
             extractedCustomerName: extraction.customer.company || undefined,
             taxRate: entry.taxRate,
             notes: entry.notes || undefined,
-            fileUrl: entry.fileDataUrl ?? undefined,
+            fileUrl: entry.fileKey ?? undefined,
             items: entry.items.map((item, i) => ({
               description: item.description,
               quantity: item.quantity,
@@ -694,7 +695,7 @@ function UploadInvoicePageInner() {
         notes: "",
         items: [],
         customerId: "",
-        fileDataUrl: null,
+        fileKey: null,
       };
 
       setInvoices((prev) => [...prev, entry]);
@@ -755,7 +756,7 @@ function UploadInvoicePageInner() {
     customerId: inv.customerId || undefined,
     taxRate: inv.taxRate,
     notes: inv.notes || undefined,
-    fileUrl: inv.fileDataUrl ?? undefined,
+    fileUrl: inv.fileKey ?? undefined,
     items: inv.items.filter((i) => i.description).map((item, idx) => ({
       description: item.description, quantity: item.quantity, unitPrice: item.unitPrice, amount: item.amount, sortOrder: idx,
     })),
@@ -781,7 +782,7 @@ function UploadInvoicePageInner() {
       customerId: inv.customerId || undefined,
       taxRate: inv.taxRate,
       notes: inv.notes || undefined,
-      fileUrl: inv.fileDataUrl ?? undefined,
+      fileUrl: inv.fileKey ?? undefined,
       items: inv.items.filter((i) => i.description).map((item, idx) => ({
         description: item.description, quantity: item.quantity, unitPrice: item.unitPrice, amount: item.amount, sortOrder: idx,
       })),

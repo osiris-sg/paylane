@@ -9,6 +9,7 @@ import { FEATURE_FLAGS, type FeatureFlagKey } from "~/lib/feature-flags";
 import { signInviteToken, verifyInviteToken } from "~/lib/invoice-invite";
 import { requireSendAccess } from "~/server/api/lib/sending-access";
 import { syncCustomerReceivers } from "~/server/api/lib/customer-routing";
+import { resolveFileUrl } from "~/lib/storage";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const FROM_EMAIL = process.env.EMAIL_FROM ?? "E-StatementNow <onboarding@resend.dev>";
@@ -158,7 +159,9 @@ export const invoiceRouter = createTRPCRouter({
         },
       });
 
-      return invoice;
+      // Resolve the stored file: S3 key → short-lived presigned GET URL;
+      // legacy inline data: URIs pass through unchanged.
+      return { ...invoice, fileUrl: await resolveFileUrl(invoice.fileUrl) };
     }),
 
   /** Badge counts for the CUSTOMER + SUPPLIER tabs on /invoices. */

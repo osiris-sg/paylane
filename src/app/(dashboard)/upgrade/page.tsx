@@ -144,7 +144,7 @@ export default function UpgradePage() {
                   asChild
                   onClick={() => setContactSubmitted(true)}
                 >
-                  <a href="mailto:hello@paylane.app?subject=E-StatementNow%20Pro%20upgrade">
+                  <a href="mailto:hello@e-statementnow.com?subject=E-StatementNow%20Pro%20upgrade">
                     Email us to upgrade
                   </a>
                 </Button>

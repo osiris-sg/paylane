@@ -592,7 +592,8 @@ export default function InvoiceDetailPage() {
                 <CardDescription>Original uploaded document</CardDescription>
               </CardHeader>
               <CardContent>
-                {invoice.fileUrl.startsWith("data:application/pdf") ? (
+                {(invoice.fileUrl.startsWith("data:application/pdf") ||
+                  invoice.fileUrl.split("?")[0].toLowerCase().endsWith(".pdf")) ? (
                   <iframe src={invoice.fileUrl} className="h-[600px] w-full rounded border" title="Invoice PDF" />
                 ) : (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -782,7 +783,8 @@ export default function InvoiceDetailPage() {
             <Button variant="ghost" size="sm" onClick={() => setShowDocument(false)}>Close</Button>
           </div>
           <div className="flex-1 overflow-auto p-2">
-            {invoice.fileUrl.startsWith("data:application/pdf") ? (
+            {(invoice.fileUrl.startsWith("data:application/pdf") ||
+              invoice.fileUrl.split("?")[0].toLowerCase().endsWith(".pdf")) ? (
               <iframe src={invoice.fileUrl} className="h-full w-full" title="Invoice PDF" />
             ) : (
               // eslint-disable-next-line @next/next/no-img-element

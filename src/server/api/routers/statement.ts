@@ -6,6 +6,7 @@ import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
 import { requireSendAccess } from "~/server/api/lib/sending-access";
 import { sendPushToCompany } from "~/lib/push-notifications";
 import { sendWhatsAppToCompany } from "~/server/notifications/dispatch";
+import { resolveFileUrl } from "~/lib/storage";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const FROM_EMAIL = process.env.EMAIL_FROM ?? "E-StatementNow <onboarding@resend.dev>";
@@ -206,9 +207,12 @@ export const statementRouter = createTRPCRouter({
         where: { id: input.customerId, companyId: user.companyId },
         select: { id: true },
       });
-      return ctx.db.statement.findUnique({
+      const stmt = await ctx.db.statement.findUnique({
         where: { customerId: input.customerId },
       });
+      return stmt
+        ? { ...stmt, fileUrl: await resolveFileUrl(stmt.fileUrl) }
+        : null;
     }),
 
   /** Receiver: latest statement received from a specific supplier company. */
@@ -216,7 +220,7 @@ export const statementRouter = createTRPCRouter({
     .input(z.object({ senderCompanyId: z.string() }))
     .query(async ({ ctx, input }) => {
       const user = ctx.user;
-      return ctx.db.statement.findFirst({
+      const stmt = await ctx.db.statement.findFirst({
         where: {
           receiverCompanyId: user.companyId,
           senderCompanyId: input.senderCompanyId,
@@ -224,6 +228,9 @@ export const statementRouter = createTRPCRouter({
         orderBy: { sentAt: "desc" },
         include: { senderCompany: { select: { name: true } } },
       });
+      return stmt
+        ? { ...stmt, fileUrl: await resolveFileUrl(stmt.fileUrl) }
+        : null;
     }),
 
   /** Badge counts for the CUSTOMER + SUPPLIER tabs on /statements. */
@@ -243,7 +250,7 @@ export const statementRouter = createTRPCRouter({
   /** Sender: list every statement they've sent (one per customer). */
   listSent: protectedProcedure.query(async ({ ctx }) => {
     const user = ctx.user;
-    return ctx.db.statement.findMany({
+    const rows = await ctx.db.statement.findMany({
       where: { senderCompanyId: user.companyId },
       orderBy: { sentAt: "desc" },
       include: {
@@ -253,16 +260,22 @@ export const statementRouter = createTRPCRouter({
         receiverCompany: { select: { id: true, name: true } },
       },
     });
+    return Promise.all(
+      rows.map(async (s) => ({ ...s, fileUrl: await resolveFileUrl(s.fileUrl) })),
+    );
   }),
 
   /** Receiver: list every incoming statement (one per supplier). */
   listIncoming: protectedProcedure.query(async ({ ctx }) => {
     const user = ctx.user;
-    return ctx.db.statement.findMany({
+    const rows = await ctx.db.statement.findMany({
       where: { receiverCompanyId: user.companyId },
       orderBy: { sentAt: "desc" },
       include: { senderCompany: { select: { id: true, name: true } } },
     });
+    return Promise.all(
+      rows.map(async (s) => ({ ...s, fileUrl: await resolveFileUrl(s.fileUrl) })),
+    );
   }),
 
   getById: protectedProcedure
@@ -283,7 +296,7 @@ export const statementRouter = createTRPCRouter({
       ) {
         throw new TRPCError({ code: "NOT_FOUND" });
       }
-      return stmt;
+      return { ...stmt, fileUrl: await resolveFileUrl(stmt.fileUrl) };
     }),
 
   markViewed: protectedProcedure

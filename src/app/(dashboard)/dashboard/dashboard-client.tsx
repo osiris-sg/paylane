@@ -268,7 +268,11 @@ function DashboardSummary({
         </div>
       )}
 
-      <div className="hidden space-y-6 md:block md:space-y-8">
+      <div
+        className={`hidden md:grid md:gap-8 ${
+          canSend && canReceive ? "md:grid-cols-2" : "md:grid-cols-1"
+        }`}
+      >
         {customerSection}
         {supplierSection}
       </div>

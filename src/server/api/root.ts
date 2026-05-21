@@ -10,6 +10,7 @@ import { featureFlagRouter } from "./routers/featureFlag";
 import { subscriptionRouter } from "./routers/subscription";
 import { statementRouter } from "./routers/statement";
 import { emailIntegrationRouter } from "./routers/emailIntegration";
+import { storageRouter } from "./routers/storage";
 
 export const appRouter = createTRPCRouter({
   invoice: invoiceRouter,
@@ -23,6 +24,7 @@ export const appRouter = createTRPCRouter({
   subscription: subscriptionRouter,
   statement: statementRouter,
   emailIntegration: emailIntegrationRouter,
+  storage: storageRouter,
 });
 
 export type AppRouter = typeof appRouter;
