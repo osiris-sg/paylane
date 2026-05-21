@@ -185,7 +185,7 @@ export default function SupplierDetailPage() {
         ) : (
           <Card>
             <CardContent className="p-6 text-center text-sm text-muted-foreground">
-              This supplier isn&apos;t on PayLane yet, so there are no invoices to show.
+              This supplier isn&apos;t on E-StatementNow yet, so there are no invoices to show.
             </CardContent>
           </Card>
         )}

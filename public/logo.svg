@@ -1,0 +1,18 @@
+<svg width="260" height="48" viewBox="0 0 260 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="g" x1="4" y1="4" x2="44" y2="44" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#3B82F6" />
+      <stop offset="1" stop-color="#2563EB" />
+    </linearGradient>
+  </defs>
+  <!-- mark -->
+  <rect y="4" width="40" height="40" rx="10" fill="url(#g)" />
+  <rect x="13" y="13" width="14" height="22" rx="3" fill="#fff" />
+  <rect x="16" y="18" width="8" height="2.2" rx="1.1" fill="#2563EB" />
+  <rect x="16" y="22.5" width="8" height="2.2" rx="1.1" fill="#93C5FD" />
+  <rect x="16" y="27" width="5" height="2.2" rx="1.1" fill="#93C5FD" />
+  <!-- wordmark -->
+  <text x="52" y="31" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="22" font-weight="700" letter-spacing="-0.4">
+    <tspan fill="#0F172A">E-Statement</tspan><tspan fill="#2563EB">Now</tspan>
+  </text>
+</svg>

@@ -1,6 +1,6 @@
 {
-  "name": "PayLane - Invoice Management",
-  "short_name": "PayLane",
+  "name": "E-StatementNow - Invoice Management",
+  "short_name": "E-StatementNow",
   "description": "Send, receive, and manage invoices faster",
   "start_url": "/dashboard",
   "display": "standalone",

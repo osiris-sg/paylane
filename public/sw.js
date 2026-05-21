@@ -1,4 +1,4 @@
-// PayLane service worker — minimal passive SW so Chrome on Android recognises
+// E-StatementNow service worker — minimal passive SW so Chrome on Android recognises
 // the app as installable ("Install app" instead of "Add shortcut"). We don't
 // cache anything: previous caching attempts caused stale HTML issues. The
 // fetch handler is required for installability but just passes through.

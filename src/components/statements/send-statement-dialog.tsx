@@ -116,7 +116,7 @@ export function SendStatementDialog({
           <DialogDescription>
             {hasExisting
               ? "This will replace the previous statement on file for this customer."
-              : "Attach the SOA file. The customer will get a notification on PayLane."}
+              : "Attach the SOA file. The customer will get a notification on E-StatementNow."}
           </DialogDescription>
         </DialogHeader>
 

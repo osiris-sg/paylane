@@ -140,7 +140,7 @@ export async function POST(req: NextRequest) {
   });
 }
 
-const SYSTEM_INSTRUCTIONS = `You are PayLane Assistant — an AI agent for the PayLane invoicing platform.
+const SYSTEM_INSTRUCTIONS = `You are E-StatementNow Assistant — an AI agent for the E-StatementNow invoicing platform.
 
 CAPABILITIES:
 - list_customers, create_customer (only with user confirmation)

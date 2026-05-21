@@ -11,7 +11,7 @@ import { requireSendAccess } from "~/server/api/lib/sending-access";
 import { syncCustomerReceivers } from "~/server/api/lib/customer-routing";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
-const FROM_EMAIL = process.env.EMAIL_FROM ?? "PayLane <onboarding@resend.dev>";
+const FROM_EMAIL = process.env.EMAIL_FROM ?? "E-StatementNow <onboarding@resend.dev>";
 
 async function assertFeatureEnabled(db: PrismaClient, key: FeatureFlagKey) {
   const row = await db.featureFlag.findUnique({ where: { key } });
@@ -706,7 +706,7 @@ export const invoiceRouter = createTRPCRouter({
             create: {
               message: receiverCompanyId
                 ? "Invoice sent to customer"
-                : "Invoice sent (customer not yet on PayLane)",
+                : "Invoice sent (customer not yet on E-StatementNow)",
             },
           },
         },
@@ -754,7 +754,7 @@ export const invoiceRouter = createTRPCRouter({
         );
       }
 
-      // If customer is NOT on PayLane, send them an invite email
+      // If customer is NOT on E-StatementNow, send them an invite email
       if (!receiverCompanyId && existing.customer?.email) {
         const senderCompany = await ctx.db.company.findUniqueOrThrow({
           where: { id: invoice.senderCompanyId },
@@ -771,11 +771,11 @@ export const invoiceRouter = createTRPCRouter({
           const result = await resend.emails.send({
             from: FROM_EMAIL,
             to: existing.customer.email,
-            subject: `${senderCompany.name} sent you an invoice on PayLane`,
+            subject: `${senderCompany.name} sent you an invoice on E-StatementNow`,
             html: `
               <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 40px 20px;">
                 <div style="text-align: center; margin-bottom: 32px;">
-                  <h1 style="font-size: 24px; font-weight: 700; color: #2563eb; margin: 0;">PayLane</h1>
+                  <h1 style="font-size: 24px; font-weight: 700; color: #2563eb; margin: 0;">E-StatementNow</h1>
                 </div>
                 <div style="background: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 32px;">
                   <h2 style="font-size: 20px; font-weight: 600; color: #111827; margin: 0 0 8px;">
@@ -787,7 +787,7 @@ export const invoiceRouter = createTRPCRouter({
                     <strong style="color: #111827;">${invoice.currency} ${Number(invoice.amount).toFixed(2)}</strong>.
                   </p>
                   <p style="color: #6b7280; font-size: 15px; line-height: 1.6; margin: 0 0 24px;">
-                    Sign up on PayLane to view, manage, and pay your invoices faster.
+                    Sign up on E-StatementNow to view, manage, and pay your invoices faster.
                   </p>
                   <div style="text-align: center; margin: 32px 0;">
                     <a href="${signupUrl}" style="display: inline-block; background: #2563eb; color: #ffffff; font-size: 15px; font-weight: 600; text-decoration: none; padding: 12px 32px; border-radius: 8px;">
@@ -796,7 +796,7 @@ export const invoiceRouter = createTRPCRouter({
                   </div>
                 </div>
                 <div style="text-align: center; margin-top: 24px;">
-                  <p style="color: #9ca3af; font-size: 12px; margin: 0;">PayLane — Get paid faster.</p>
+                  <p style="color: #9ca3af; font-size: 12px; margin: 0;">E-StatementNow — Get paid faster.</p>
                 </div>
               </div>
             `,

@@ -8,6 +8,7 @@ import { Button } from "~/components/ui/button";
 import { Badge } from "~/components/ui/badge";
 import { api } from "~/trpc/react";
 import { MobileSidebar } from "~/components/layout/sidebar";
+import { Logo } from "~/components/brand/logo";
 
 export function Header() {
   const { data } = api.notification.getUnreadCount.useQuery();
@@ -23,8 +24,8 @@ export function Header() {
     <header className="flex h-14 items-center justify-between border-b bg-white px-4 md:px-6">
       <div className="flex items-center gap-2">
         <MobileSidebar />
-        <Link href="/dashboard" className="text-lg font-bold text-blue-600 md:hidden">
-          PayLane
+        <Link href="/dashboard" className="md:hidden">
+          <Logo className="text-lg" iconClassName="h-6 w-6" />
         </Link>
       </div>
       <div className="flex items-center gap-2">

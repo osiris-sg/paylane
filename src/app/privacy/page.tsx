@@ -1,8 +1,8 @@
 import Link from "next/link";
 
 export const metadata = {
-  title: "Privacy Policy — PayLane",
-  description: "How PayLane collects, uses, and protects your data.",
+  title: "Privacy Policy — E-StatementNow",
+  description: "How E-StatementNow collects, uses, and protects your data.",
 };
 
 const lastUpdated = "11 May 2026";
@@ -11,7 +11,7 @@ export default function PrivacyPage() {
   return (
     <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-16">
       <Link href="/dashboard" className="text-sm text-blue-600 hover:underline">
-        ← Back to PayLane
+        ← Back to E-StatementNow
       </Link>
       <h1 className="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">
         Privacy Policy
@@ -22,7 +22,7 @@ export default function PrivacyPage() {
 
       <div className="prose prose-slate mt-8 max-w-none">
         <Section title="Who we are">
-          PayLane is a B2B invoice management platform operated by Osiris SG
+          E-StatementNow is a B2B invoice management platform operated by Osiris SG
           (UEN 202410096C). Contact:{" "}
           <a href="mailto:admin@osiris.sg" className="text-blue-600 hover:underline">
             admin@osiris.sg
@@ -76,7 +76,7 @@ export default function PrivacyPage() {
         </Section>
 
         <Section title="Third-party processors">
-          PayLane uses the following services to operate. They only receive the
+          E-StatementNow uses the following services to operate. They only receive the
           data necessary for their role:
           <ul className="list-disc pl-5 mt-2 space-y-1">
             <li><strong>Clerk</strong> — authentication and identity</li>
@@ -129,7 +129,7 @@ export default function PrivacyPage() {
         </Section>
 
         <Section title="Children">
-          PayLane is a B2B product intended for businesses and is not directed
+          E-StatementNow is a B2B product intended for businesses and is not directed
           to anyone under 18. We do not knowingly collect data from children.
         </Section>
 

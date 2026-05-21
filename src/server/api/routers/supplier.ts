@@ -96,7 +96,7 @@ export const supplierRouter = createTRPCRouter({
         : [];
       const countById = new Map(counts.map((c) => [c.senderCompanyId, c._count._all]));
 
-      // Suppliers linked to a PayLane company can receive WhatsApp alerts
+      // Suppliers linked to a E-StatementNow company can receive WhatsApp alerts
       // if at least one user there has opted in with a number on file.
       const whatsappEnabledIds = linkedIds.length
         ? new Set(

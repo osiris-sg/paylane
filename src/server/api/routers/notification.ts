@@ -120,7 +120,7 @@ export const notificationRouter = createTRPCRouter({
       message: {
         template: "invoice_received",
         contentVariables: {
-          senderName: "PayLane",
+          senderName: "E-StatementNow",
           invoiceNumber: "TEST-0001",
           amount: "SGD 1.00",
         },

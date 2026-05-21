@@ -8,7 +8,7 @@ export async function POST() {
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const result = await sendPushNotification(userId, {
-      title: "PayLane",
+      title: "E-StatementNow",
       body: "Push notifications are working! You'll receive alerts for invoices and payments.",
       url: "/dashboard",
       tag: "test-notification",

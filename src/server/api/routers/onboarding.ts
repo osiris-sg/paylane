@@ -4,7 +4,7 @@ import { Resend } from "resend";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-const FROM_EMAIL = process.env.EMAIL_FROM ?? "PayLane <onboarding@resend.dev>";
+const FROM_EMAIL = process.env.EMAIL_FROM ?? "E-StatementNow <onboarding@resend.dev>";
 
 async function sendInviteEmail({
   to,
@@ -21,18 +21,18 @@ async function sendInviteEmail({
     await resend.emails.send({
       from: FROM_EMAIL,
       to,
-      subject: `${senderCompanyName} invited you to PayLane`,
+      subject: `${senderCompanyName} invited you to E-StatementNow`,
       html: `
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 40px 20px;">
           <div style="text-align: center; margin-bottom: 32px;">
-            <h1 style="font-size: 24px; font-weight: 700; color: #2563eb; margin: 0;">PayLane</h1>
+            <h1 style="font-size: 24px; font-weight: 700; color: #2563eb; margin: 0;">E-StatementNow</h1>
           </div>
           <div style="background: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 32px;">
             <h2 style="font-size: 20px; font-weight: 600; color: #111827; margin: 0 0 8px;">
               You've been invited!
             </h2>
             <p style="color: #6b7280; font-size: 15px; line-height: 1.6; margin: 0 0 24px;">
-              <strong style="color: #111827;">${senderCompanyName}</strong> wants to pay you faster using PayLane.
+              <strong style="color: #111827;">${senderCompanyName}</strong> wants to pay you faster using E-StatementNow.
               Sign up to send and manage invoices to ${senderCompanyName}.
             </p>
             <div style="text-align: center; margin: 32px 0;">
@@ -48,7 +48,7 @@ async function sendInviteEmail({
           </div>
           <div style="text-align: center; margin-top: 24px;">
             <p style="color: #9ca3af; font-size: 12px; margin: 0;">
-              PayLane — Get paid faster.
+              E-StatementNow — Get paid faster.
             </p>
           </div>
         </div>

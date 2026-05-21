@@ -334,7 +334,7 @@ export default function OnboardingPage() {
     onSuccess: () => {
       console.log("[Onboarding] complete mutation success");
       justCompletedRef.current = true;
-      toast.success("Welcome to PayLane!");
+      toast.success("Welcome to E-StatementNow!");
       // Update the cache synchronously so the destination page's
       // OnboardingGuard sees onboarded:true without a refetch race.
       if (status) {
@@ -454,9 +454,9 @@ export default function OnboardingPage() {
             <Sparkles className="h-8 w-8 text-white" />
           </div>
           <div className="space-y-2">
-            <h1 className="text-2xl font-bold tracking-tight">Install PayLane first</h1>
+            <h1 className="text-2xl font-bold tracking-tight">Install E-StatementNow first</h1>
             <p className="text-sm text-muted-foreground">
-              On your phone, PayLane runs as an app. Install it to your home screen, then open
+              On your phone, E-StatementNow runs as an app. Install it to your home screen, then open
               it from there to finish setting up your company.
             </p>
           </div>
@@ -466,7 +466,7 @@ export default function OnboardingPage() {
                 Show me how
               </Button>
               <p className="text-center text-xs text-muted-foreground">
-                After you tap <strong>Add to Home Screen</strong>, open PayLane from the new
+                After you tap <strong>Add to Home Screen</strong>, open E-StatementNow from the new
                 icon — this page will continue automatically.
               </p>
             </CardContent>
@@ -632,7 +632,7 @@ export default function OnboardingPage() {
               </div>
               <CardTitle className="text-2xl">Invite your suppliers</CardTitle>
               <CardDescription>
-                Add the companies that send you invoices. We&apos;ll email them to join PayLane
+                Add the companies that send you invoices. We&apos;ll email them to join E-StatementNow
                 so they can get paid faster.
               </CardDescription>
             </CardHeader>
@@ -724,7 +724,7 @@ export default function OnboardingPage() {
               <CardTitle className="text-2xl">You&apos;re all set!</CardTitle>
               <CardDescription>
                 {inviteResults.length > 0
-                  ? `We've sent invite emails to ${inviteResults.filter((r) => r.status === "created").length} supplier(s). They'll be notified to join PayLane.`
+                  ? `We've sent invite emails to ${inviteResults.filter((r) => r.status === "created").length} supplier(s). They'll be notified to join E-StatementNow.`
                   : showSupplierStep
                     ? "Your company is set up. You can add suppliers anytime from the Customers page."
                     : "Your company is set up. You can start sending invoices to your customers."}
@@ -750,7 +750,7 @@ export default function OnboardingPage() {
                         }
                       >
                         {result.status === "linked"
-                          ? "Already on PayLane"
+                          ? "Already on E-StatementNow"
                           : result.status === "created"
                             ? "Invite Sent"
                             : "Already Added"}
@@ -766,7 +766,7 @@ export default function OnboardingPage() {
                 {isMobile ? (
                   <>
                     <Button size="lg" onClick={() => setPwaGuideOpen(true)}>
-                      Add PayLane to Home Screen
+                      Add E-StatementNow to Home Screen
                       <ArrowRight className="ml-2 h-4 w-4" />
                     </Button>
                     <Button variant="link" size="sm" className="text-muted-foreground" onClick={handleFinish} disabled={completeOnboarding.isPending}>

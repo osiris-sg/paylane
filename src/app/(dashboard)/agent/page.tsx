@@ -114,7 +114,7 @@ export default function AgentPage() {
     <SendAccessGuard
       title="AI Assistant"
       lockedTitle="The AI Assistant is locked"
-      lockedBody="Start your free 14-day trial to chat with the PayLane AI assistant — send invoices, look up customers, and more."
+      lockedBody="Start your free 14-day trial to chat with the E-StatementNow AI assistant — send invoices, look up customers, and more."
       expiredMessage="Your free trial has ended. Upgrade to keep using the AI Assistant."
     >
       <AgentInner />

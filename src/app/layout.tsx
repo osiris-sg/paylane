@@ -7,13 +7,13 @@ import { ServiceWorkerRegister } from "~/components/service-worker-register";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "PayLane",
+  title: "E-StatementNow",
   description: "Send, receive, and manage invoices faster",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "PayLane",
+    title: "E-StatementNow",
   },
 };
 

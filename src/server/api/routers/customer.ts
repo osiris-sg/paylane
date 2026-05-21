@@ -44,7 +44,7 @@ export const customerRouter = createTRPCRouter({
         ctx.db.customer.count({ where }),
       ]);
 
-      // Customers linked to a PayLane company can receive WhatsApp alerts
+      // Customers linked to a E-StatementNow company can receive WhatsApp alerts
       // if at least one user there has opted in with a number on file.
       const linkedIds = customers
         .map((c) => c.linkedCompanyId)

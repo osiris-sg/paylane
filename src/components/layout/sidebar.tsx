@@ -17,6 +17,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { cn } from "~/lib/utils";
+import { Logo } from "~/components/brand/logo";
 import { useState, useEffect } from "react";
 import { Button } from "~/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "~/components/ui/sheet";
@@ -107,8 +108,8 @@ export function Sidebar() {
     >
       <div className="flex h-14 items-center justify-between border-b px-4">
         {!collapsed && (
-          <Link href="/dashboard" className="text-xl font-bold text-blue-600">
-            PayLane
+          <Link href="/dashboard" aria-label="E-StatementNow">
+            <Logo className="text-xl" />
           </Link>
         )}
         <Button variant="ghost" size="icon" onClick={() => setCollapsed(!collapsed)} className="h-8 w-8">
@@ -152,8 +153,8 @@ export function MobileSidebar() {
       </SheetTrigger>
       <SheetContent side="left" className="w-72 p-0">
         <div className="flex h-14 items-center border-b px-4">
-          <Link href="/dashboard" className="text-xl font-bold text-blue-600" onClick={() => setOpen(false)}>
-            PayLane
+          <Link href="/dashboard" aria-label="E-StatementNow" onClick={() => setOpen(false)}>
+            <Logo className="text-xl" />
           </Link>
         </div>
 

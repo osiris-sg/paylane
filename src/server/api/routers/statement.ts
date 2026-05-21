@@ -8,7 +8,7 @@ import { sendPushToCompany } from "~/lib/push-notifications";
 import { sendWhatsAppToCompany } from "~/server/notifications/dispatch";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
-const FROM_EMAIL = process.env.EMAIL_FROM ?? "PayLane <onboarding@resend.dev>";
+const FROM_EMAIL = process.env.EMAIL_FROM ?? "E-StatementNow <onboarding@resend.dev>";
 
 const sendInput = z.object({
   customerId: z.string(),
@@ -123,10 +123,10 @@ async function persistAndDispatch({
                 <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 40px 20px;">
                   <h1 style="font-size: 22px; color: #111827; margin: 0 0 16px;">New statement of account</h1>
                   <p style="color: #4b5563; font-size: 15px; line-height: 1.6;">
-                    <strong>${senderCompany.name}</strong> just sent you a statement of account on PayLane.
+                    <strong>${senderCompany.name}</strong> just sent you a statement of account on E-StatementNow.
                   </p>
                   <p style="color: #4b5563; font-size: 15px; line-height: 1.6;">
-                    Open PayLane to view the file.
+                    Open E-StatementNow to view the file.
                   </p>
                 </div>
               `,

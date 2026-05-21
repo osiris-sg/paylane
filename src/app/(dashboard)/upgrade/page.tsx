@@ -36,7 +36,7 @@ export default function UpgradePage() {
         <h1 className="text-3xl font-bold tracking-tight">Upgrade your plan</h1>
         <p className="text-muted-foreground">
           Send unlimited invoices, add unlimited customers, and unlock the full
-          PayLane sender suite.
+          E-StatementNow sender suite.
         </p>
       </div>
 
@@ -144,7 +144,7 @@ export default function UpgradePage() {
                   asChild
                   onClick={() => setContactSubmitted(true)}
                 >
-                  <a href="mailto:hello@paylane.app?subject=PayLane%20Pro%20upgrade">
+                  <a href="mailto:hello@paylane.app?subject=E-StatementNow%20Pro%20upgrade">
                     Email us to upgrade
                   </a>
                 </Button>

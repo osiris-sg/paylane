@@ -36,7 +36,7 @@ export function OpenInAppBanner() {
 
   const tryOpen = () => {
     // On Android Chrome, navigating to the same URL after PWA install can
-    // surface the "Open with PayLane" intent picker. On iOS this is a no-op
+    // surface the "Open with E-StatementNow" intent picker. On iOS this is a no-op
     // but reloads to the same page.
     window.location.href = window.location.href;
   };
@@ -47,11 +47,11 @@ export function OpenInAppBanner() {
         <Smartphone className="h-5 w-5 shrink-0 text-blue-600" />
         <div className="min-w-0">
           <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
-            Open in the PayLane app
+            Open in the E-StatementNow app
           </p>
           <p className="truncate text-xs text-blue-700 dark:text-blue-300">
             {isIOS
-              ? "Tap your PayLane icon on the home screen for the full experience."
+              ? "Tap your E-StatementNow icon on the home screen for the full experience."
               : "Better performance and push notifications inside the app."}
           </p>
         </div>

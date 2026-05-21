@@ -11,6 +11,7 @@ import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Card, CardContent, CardHeader } from "~/components/ui/card";
 import { Separator } from "~/components/ui/separator";
+import { Logo } from "~/components/brand/logo";
 
 function SignUpForm() {
   const { signUp, setActive, isLoaded } = useSignUp();
@@ -153,7 +154,7 @@ function SignUpForm() {
       <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-blue-50 to-gray-100 px-4">
         <div className="w-full max-w-md">
           <div className="mb-8 text-center">
-            <h1 className="text-3xl font-bold text-blue-600">PayLane</h1>
+            <Logo className="text-3xl" iconClassName="h-9 w-9" />
           </div>
 
           <Card className="shadow-lg">
@@ -205,7 +206,7 @@ function SignUpForm() {
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-blue-50 to-gray-100 px-4">
       <div className="w-full max-w-md">
         <div className="mb-8 text-center">
-          <h1 className="text-3xl font-bold text-blue-600">PayLane</h1>
+          <Logo className="text-3xl" iconClassName="h-9 w-9" />
           <p className="mt-1 text-sm text-muted-foreground">Invoice management made simple</p>
         </div>
 
@@ -215,7 +216,7 @@ function SignUpForm() {
             <p className="text-sm text-muted-foreground">
               {isEmailLocked
                 ? "Complete your signup to start managing invoices"
-                : "Get started with PayLane"}
+                : "Get started with E-StatementNow"}
             </p>
           </CardHeader>
           <CardContent>
@@ -319,7 +320,7 @@ function SignUpForm() {
         </Card>
 
         <p className="mt-6 text-center text-xs text-muted-foreground">
-          PayLane - Get paid faster
+          E-StatementNow - Get paid faster
         </p>
       </div>
     </div>

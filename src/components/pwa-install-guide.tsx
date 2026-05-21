@@ -102,7 +102,7 @@ function getSteps(browser: BrowserType): Step[] {
         {
           icon: <Plus className="h-6 w-6" />,
           title: "Tap \"Add\"",
-          description: "PayLane will appear as an app icon on your home screen",
+          description: "E-StatementNow will appear as an app icon on your home screen",
         },
       ];
 
@@ -121,7 +121,7 @@ function getSteps(browser: BrowserType): Step[] {
         {
           icon: <Plus className="h-6 w-6" />,
           title: "Tap \"Add\"",
-          description: "PayLane will appear as an app icon on your home screen",
+          description: "E-StatementNow will appear as an app icon on your home screen",
         },
       ];
 
@@ -140,7 +140,7 @@ function getSteps(browser: BrowserType): Step[] {
         {
           icon: <Smartphone className="h-6 w-6" />,
           title: "Tap \"Install\"",
-          description: "PayLane will appear in your app drawer and home screen",
+          description: "E-StatementNow will appear in your app drawer and home screen",
         },
       ];
 
@@ -154,12 +154,12 @@ function getSteps(browser: BrowserType): Step[] {
         {
           icon: <Plus className="h-6 w-6" />,
           title: "Tap \"Add page to\" then \"Home screen\"",
-          description: "This adds PayLane as a shortcut",
+          description: "This adds E-StatementNow as a shortcut",
         },
         {
           icon: <Smartphone className="h-6 w-6" />,
           title: "Done!",
-          description: "Open PayLane directly from your home screen",
+          description: "Open E-StatementNow directly from your home screen",
         },
       ];
 
@@ -174,12 +174,12 @@ function getSteps(browser: BrowserType): Step[] {
         {
           icon: <Download className="h-6 w-6" />,
           title: "Click \"Install\"",
-          description: "A prompt will ask to install PayLane",
+          description: "A prompt will ask to install E-StatementNow",
         },
         {
           icon: <Smartphone className="h-6 w-6" />,
           title: "Done!",
-          description: "PayLane opens as a standalone app window",
+          description: "E-StatementNow opens as a standalone app window",
         },
       ];
 
@@ -188,7 +188,7 @@ function getSteps(browser: BrowserType): Step[] {
         {
           icon: <MoreVertical className="h-6 w-6" />,
           title: "Firefox doesn't support app installation",
-          description: "For the best experience, open PayLane in Chrome or Safari",
+          description: "For the best experience, open E-StatementNow in Chrome or Safari",
           action: "copy-url",
         },
       ];
@@ -247,7 +247,7 @@ export function PWAInstallGuide({
             </div>
             <DialogTitle className="text-xl">Already Installed!</DialogTitle>
             <DialogDescription>
-              PayLane is already installed as an app on your device.
+              E-StatementNow is already installed as an app on your device.
             </DialogDescription>
           </DialogHeader>
           <div className="flex justify-center pt-2">
@@ -265,7 +265,7 @@ export function PWAInstallGuide({
           <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-blue-100">
             <Smartphone className="h-7 w-7 text-blue-600" />
           </div>
-          <DialogTitle className="text-xl">Add PayLane to Home Screen</DialogTitle>
+          <DialogTitle className="text-xl">Add E-StatementNow to Home Screen</DialogTitle>
           <DialogDescription>
             Get the full app experience — instant access and push notifications.
             <br />
@@ -301,7 +301,7 @@ export function PWAInstallGuide({
                     className="gap-2"
                   >
                     {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                    {copied ? "Copied!" : "Copy PayLane URL"}
+                    {copied ? "Copied!" : "Copy E-StatementNow URL"}
                   </Button>
                 </div>
               )}
@@ -344,7 +344,7 @@ export function PWAInstallBanner() {
         <div className="flex items-center gap-3">
           <Smartphone className="h-5 w-5 text-blue-600" />
           <div>
-            <p className="text-sm font-medium text-blue-900">Install PayLane as an app</p>
+            <p className="text-sm font-medium text-blue-900">Install E-StatementNow as an app</p>
             <p className="text-xs text-blue-700">Get push notifications and quick access from your home screen</p>
           </div>
         </div>

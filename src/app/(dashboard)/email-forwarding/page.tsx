@@ -55,7 +55,7 @@ export default function EmailForwardingPage() {
       <div>
         <h1 className="text-2xl font-bold">Email forwarding</h1>
         <p className="text-sm text-gray-600">
-          Auto-import invoices by forwarding them to your unique paylane address.
+          Auto-import invoices by forwarding them to your unique E-StatementNow address.
         </p>
       </div>
 
@@ -170,7 +170,7 @@ export default function EmailForwardingPage() {
               <em>Forwarding and POP/IMAP</em>.
             </li>
             <li>
-              Click <strong>Add a forwarding address</strong> and paste your paylane address from
+              Click <strong>Add a forwarding address</strong> and paste your E-StatementNow address from
               above. Gmail will send a confirmation code to that address.
             </li>
             <li>
@@ -190,12 +190,12 @@ export default function EmailForwardingPage() {
             </li>
             <li>
               Click <strong>Create filter</strong> → tick <em>Forward it to</em> and select your
-              paylane address.
+              E-StatementNow address.
             </li>
           </ol>
           <p className="text-xs text-gray-500">
             Outlook works the same way — set up a forwarding rule that matches on subject and
-            forwards to your paylane address.
+            forwards to your E-StatementNow address.
           </p>
         </CardContent>
       </Card>
