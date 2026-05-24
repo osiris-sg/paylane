@@ -12,8 +12,6 @@ import {
   ExternalLink,
   MailCheck,
   Inbox,
-  Eye,
-  EyeOff,
 } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Badge } from "~/components/ui/badge";
@@ -177,17 +175,6 @@ function SentStatementsTable() {
               >
                 {s.customer.company || s.customer.name}
               </Link>
-              {s.viewedAt ? (
-                <Badge variant="outline" className="shrink-0 gap-1 border-emerald-200 bg-emerald-50 text-emerald-700">
-                  <Eye className="h-3 w-3" />
-                  Viewed
-                </Badge>
-              ) : (
-                <Badge variant="outline" className="shrink-0 gap-1 border-gray-200 bg-gray-50 text-muted-foreground">
-                  <EyeOff className="h-3 w-3" />
-                  Not yet
-                </Badge>
-              )}
             </div>
             <div className="mt-1.5 flex items-center gap-2 text-sm">
               <FileText className="h-3.5 w-3.5 shrink-0 text-blue-600" />
@@ -232,7 +219,6 @@ function SentStatementsTable() {
                   <TableHead>Customer</TableHead>
                   <TableHead>File</TableHead>
                   <TableHead>Last updated</TableHead>
-                  <TableHead>Viewed</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -268,25 +254,6 @@ function SentStatementsTable() {
                       <div className="text-xs text-muted-foreground">
                         {dayjs(s.sentAt).format("D MMM YYYY, HH:mm")}
                       </div>
-                    </TableCell>
-                    <TableCell>
-                      {s.viewedAt ? (
-                        <Badge
-                          variant="outline"
-                          className="gap-1 border-emerald-200 bg-emerald-50 text-emerald-700"
-                        >
-                          <Eye className="h-3 w-3" />
-                          {dayjs(s.viewedAt).fromNow()}
-                        </Badge>
-                      ) : (
-                        <Badge
-                          variant="outline"
-                          className="gap-1 border-gray-200 bg-gray-50 text-muted-foreground"
-                        >
-                          <EyeOff className="h-3 w-3" />
-                          Not yet
-                        </Badge>
-                      )}
                     </TableCell>
                     <TableCell>
                       <div className="flex justify-end gap-1">

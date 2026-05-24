@@ -43,6 +43,30 @@ import { useSendAccess } from "~/lib/use-send-access";
 import { LockedSendingCTA } from "~/components/subscription/locked-sending-cta";
 import { ExpiredBanner } from "~/components/subscription/expired-banner";
 
+/** Shows when a customer's statement was last updated; recent ones stand out. */
+function StatementBadge({ sentAt }: { sentAt: string | Date }) {
+  const days = Math.floor(
+    (Date.now() - new Date(sentAt).getTime()) / 86_400_000,
+  );
+  const recent = days <= 7;
+  const label =
+    days <= 0 ? "today" : days === 1 ? "yesterday" : `${days} days ago`;
+  return (
+    <Badge
+      variant="outline"
+      className={
+        recent
+          ? "gap-1 border-blue-300 bg-blue-50 font-semibold text-blue-700"
+          : "gap-1 border-gray-200 bg-gray-50 text-muted-foreground"
+      }
+      title="Latest statement update"
+    >
+      <FileText className="h-3 w-3" />
+      Statement {label}
+    </Badge>
+  );
+}
+
 interface CustomerFormData {
   name: string;
   email: string;
@@ -357,6 +381,9 @@ export default function CustomersPage() {
                           <MessageCircle className="h-3 w-3" />
                           WhatsApp
                         </Badge>
+                      )}
+                      {customer.statement && (
+                        <StatementBadge sentAt={customer.statement.sentAt} />
                       )}
                     </div>
                     <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>

@@ -39,6 +39,7 @@ export const customerRouter = createTRPCRouter({
             _count: {
               select: { invoices: true },
             },
+            statement: { select: { sentAt: true } },
           },
         }),
         ctx.db.customer.count({ where }),
