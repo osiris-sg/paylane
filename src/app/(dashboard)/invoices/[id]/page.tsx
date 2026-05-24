@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import dayjs from "dayjs";
 import { toast } from "sonner";
 import {
@@ -62,6 +63,14 @@ import {
 } from "~/components/ui/select";
 
 import { formatCurrency } from "~/lib/currency";
+
+// PDF/image viewer is client-only (pdf.js touches browser APIs) — load lazily.
+const DocumentView = dynamic(() => import("~/components/document-view"), {
+  ssr: false,
+  loading: () => (
+    <div className="p-8 text-center text-sm text-muted-foreground">Loading…</div>
+  ),
+});
 
 function DetailRow({
   icon: Icon,
@@ -592,13 +601,9 @@ export default function InvoiceDetailPage() {
                 <CardDescription>Original uploaded document</CardDescription>
               </CardHeader>
               <CardContent>
-                {(invoice.fileUrl.startsWith("data:application/pdf") ||
-                  invoice.fileUrl.split("?")[0].toLowerCase().endsWith(".pdf")) ? (
-                  <iframe src={invoice.fileUrl} className="h-[600px] w-full rounded border" title="Invoice PDF" />
-                ) : (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={invoice.fileUrl} alt="Uploaded invoice" className="w-full rounded border" />
-                )}
+                <div className="max-h-[70vh] overflow-auto">
+                  <DocumentView url={invoice.fileUrl} />
+                </div>
               </CardContent>
             </Card>
           )}
@@ -783,13 +788,7 @@ export default function InvoiceDetailPage() {
             <Button variant="ghost" size="sm" onClick={() => setShowDocument(false)}>Close</Button>
           </div>
           <div className="flex-1 overflow-auto p-2">
-            {(invoice.fileUrl.startsWith("data:application/pdf") ||
-              invoice.fileUrl.split("?")[0].toLowerCase().endsWith(".pdf")) ? (
-              <iframe src={invoice.fileUrl} className="h-full w-full" title="Invoice PDF" />
-            ) : (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={invoice.fileUrl} alt="Invoice" className="w-full" />
-            )}
+            <DocumentView url={invoice.fileUrl} />
           </div>
         </div>
       )}
