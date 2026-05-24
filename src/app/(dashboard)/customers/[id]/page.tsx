@@ -100,32 +100,9 @@ export default function CustomerDetailPage() {
         </div>
         <Button onClick={() => setStmtOpen(true)} disabled={!sendAccess.canSend}>
           <Send className="mr-2 h-4 w-4" />
-          {statement.data ? "Replace statement" : "Send statement"}
+          {statement.data ? "Update statement" : "Send statement"}
         </Button>
       </div>
-
-      <Card>
-        <CardContent className="grid gap-3 p-4 text-sm sm:grid-cols-3">
-          {c.email && (
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Mail className="h-4 w-4 shrink-0" />
-              <span className="truncate">{c.email}</span>
-            </div>
-          )}
-          {c.phone && (
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Phone className="h-4 w-4 shrink-0" />
-              <span>{c.phone}</span>
-            </div>
-          )}
-          {c.address && (
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <MapPin className="h-4 w-4 shrink-0" />
-              <span className="truncate">{c.address}</span>
-            </div>
-          )}
-        </CardContent>
-      </Card>
 
       {statement.data && (
         <Card>
@@ -221,6 +198,29 @@ export default function CustomerDetailPage() {
         <h2 className="mb-3 text-lg font-semibold">Invoices</h2>
         <InvoiceTable type="sent" initialCustomerId={customerId} />
       </div>
+
+      <Card>
+        <CardContent className="grid gap-3 p-4 text-sm sm:grid-cols-3">
+          {c.email && (
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Mail className="h-4 w-4 shrink-0" />
+              <span className="truncate">{c.email}</span>
+            </div>
+          )}
+          {c.phone && (
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Phone className="h-4 w-4 shrink-0" />
+              <span>{c.phone}</span>
+            </div>
+          )}
+          {c.address && (
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <MapPin className="h-4 w-4 shrink-0" />
+              <span className="truncate">{c.address}</span>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <SendStatementDialog
         open={stmtOpen}

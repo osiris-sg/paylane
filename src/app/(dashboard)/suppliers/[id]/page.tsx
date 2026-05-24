@@ -104,29 +104,6 @@ export default function SupplierDetailPage() {
         )}
       </div>
 
-      <Card>
-        <CardContent className="grid gap-3 p-4 text-sm sm:grid-cols-3">
-          {s.email && (
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Mail className="h-4 w-4 shrink-0" />
-              <span className="truncate">{s.email}</span>
-            </div>
-          )}
-          {s.phone && (
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Phone className="h-4 w-4 shrink-0" />
-              <span>{s.phone}</span>
-            </div>
-          )}
-          {s.address && (
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <MapPin className="h-4 w-4 shrink-0" />
-              <span className="truncate">{s.address}</span>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
       {incoming.data && (
         <Card>
           <CardContent className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -190,6 +167,29 @@ export default function SupplierDetailPage() {
           </Card>
         )}
       </div>
+
+      <Card>
+        <CardContent className="grid gap-3 p-4 text-sm sm:grid-cols-3">
+          {s.email && (
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Mail className="h-4 w-4 shrink-0" />
+              <span className="truncate">{s.email}</span>
+            </div>
+          )}
+          {s.phone && (
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Phone className="h-4 w-4 shrink-0" />
+              <span>{s.phone}</span>
+            </div>
+          )}
+          {s.address && (
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <MapPin className="h-4 w-4 shrink-0" />
+              <span className="truncate">{s.address}</span>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
