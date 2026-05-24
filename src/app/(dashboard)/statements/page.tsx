@@ -14,7 +14,6 @@ import {
   Inbox,
 } from "lucide-react";
 import { Button } from "~/components/ui/button";
-import { Badge } from "~/components/ui/badge";
 import { Card, CardContent } from "~/components/ui/card";
 import {
   Tabs,
@@ -332,13 +331,6 @@ function ReceivedStatementsTable() {
           <div key={s.id} className="rounded-lg border bg-white p-3">
             <div className="flex items-start justify-between gap-2">
               <p className="min-w-0 font-semibold">{s.senderCompany.name}</p>
-              {s.viewedAt ? (
-                <Badge variant="outline" className="shrink-0 gap-1 border-gray-200 bg-gray-50 text-muted-foreground">
-                  Viewed
-                </Badge>
-              ) : (
-                <Badge className="shrink-0 gap-1 bg-blue-600 hover:bg-blue-700">New</Badge>
-              )}
             </div>
             <div className="mt-1.5 flex items-center gap-2 text-sm">
               <FileText className="h-3.5 w-3.5 shrink-0 text-purple-600" />
@@ -382,7 +374,6 @@ function ReceivedStatementsTable() {
                 <TableHead>Supplier</TableHead>
                 <TableHead>File</TableHead>
                 <TableHead>Last updated</TableHead>
-                <TableHead>Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -408,20 +399,6 @@ function ReceivedStatementsTable() {
                     <div className="text-xs text-muted-foreground">
                       {dayjs(s.sentAt).format("D MMM YYYY, HH:mm")}
                     </div>
-                  </TableCell>
-                  <TableCell>
-                    {s.viewedAt ? (
-                      <Badge
-                        variant="outline"
-                        className="gap-1 border-gray-200 bg-gray-50 text-muted-foreground"
-                      >
-                        Viewed
-                      </Badge>
-                    ) : (
-                      <Badge className="gap-1 bg-blue-600 hover:bg-blue-700">
-                        New
-                      </Badge>
-                    )}
                   </TableCell>
                   <TableCell>
                     <div className="flex justify-end">
