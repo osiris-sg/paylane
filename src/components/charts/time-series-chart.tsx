@@ -86,22 +86,6 @@ export function TimeSeriesChart({
           </div>
         </div>
         <div className="grid grid-cols-2 items-end gap-3 sm:flex sm:flex-wrap">
-          <div className="grid gap-1 col-span-2 sm:col-auto">
-            <Label className="text-xs">View</Label>
-            <Select
-              value={granularity}
-              onValueChange={(v) => onGranularityChange(v as Granularity)}
-            >
-              <SelectTrigger className="h-8 w-full sm:w-[110px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="daily">Daily</SelectItem>
-                <SelectItem value="weekly">Weekly</SelectItem>
-                <SelectItem value="monthly">Monthly</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
           <div className="grid gap-1">
             <Label className="text-xs">From</Label>
             <Input
@@ -119,6 +103,22 @@ export function TimeSeriesChart({
               onChange={(e) => onToChange(e.target.value)}
               className="h-8 w-full sm:w-[140px]"
             />
+          </div>
+          <div className="grid gap-1 col-span-2 sm:col-auto">
+            <Label className="text-xs">View</Label>
+            <Select
+              value={granularity}
+              onValueChange={(v) => onGranularityChange(v as Granularity)}
+            >
+              <SelectTrigger className="h-8 w-full sm:w-[110px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="daily">Daily</SelectItem>
+                <SelectItem value="weekly">Weekly</SelectItem>
+                <SelectItem value="monthly">Monthly</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
       </CardHeader>
