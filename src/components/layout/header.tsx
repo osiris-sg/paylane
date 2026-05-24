@@ -25,7 +25,7 @@ export function Header() {
       <div className="flex items-center gap-2">
         <MobileSidebar />
         <Link href="/dashboard" className="md:hidden">
-          <Logo className="text-lg" iconClassName="h-6 w-6" />
+          <Logo className="text-lg" />
         </Link>
       </div>
       <div className="flex items-center gap-2">

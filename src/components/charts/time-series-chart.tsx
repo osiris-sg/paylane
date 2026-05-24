@@ -171,9 +171,10 @@ export function TimeSeriesChart({
 
 /** Default to "last 6 calendar months" for the initial chart range. */
 export function defaultRange(): { from: string; to: string } {
+  // Default to the current calendar month.
   const now = new Date();
+  const from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
   const to = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0));
-  const from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 5, 1));
   const fmt = (d: Date) => d.toISOString().slice(0, 10);
   return { from: fmt(from), to: fmt(to) };
 }

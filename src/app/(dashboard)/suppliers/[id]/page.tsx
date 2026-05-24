@@ -30,7 +30,7 @@ export default function SupplierDetailPage() {
   const supplier = api.supplier.getById.useQuery({ id: supplierId });
 
   const initialRange = defaultRange();
-  const [granularity, setGranularity] = useState<Granularity>("monthly");
+  const [granularity, setGranularity] = useState<Granularity>("weekly");
   const [from, setFrom] = useState(initialRange.from);
   const [to, setTo] = useState(initialRange.to);
 

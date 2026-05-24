@@ -43,7 +43,7 @@ export default function CustomerDetailPage() {
   const customer = api.customer.getById.useQuery({ id: customerId });
 
   const initialRange = defaultRange();
-  const [granularity, setGranularity] = useState<Granularity>("monthly");
+  const [granularity, setGranularity] = useState<Granularity>("weekly");
   const [from, setFrom] = useState(initialRange.from);
   const [to, setTo] = useState(initialRange.to);
 

@@ -154,7 +154,7 @@ function SignUpForm() {
       <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-blue-50 to-gray-100 px-4">
         <div className="w-full max-w-md">
           <div className="mb-8 text-center">
-            <Logo className="text-3xl" iconClassName="h-9 w-9" />
+            <Logo className="text-3xl" />
           </div>
 
           <Card className="shadow-lg">
@@ -206,7 +206,7 @@ function SignUpForm() {
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-blue-50 to-gray-100 px-4">
       <div className="w-full max-w-md">
         <div className="mb-8 text-center">
-          <Logo className="text-3xl" iconClassName="h-9 w-9" />
+          <Logo className="text-3xl" />
           <p className="mt-1 text-sm text-muted-foreground">Invoice management made simple</p>
         </div>
 

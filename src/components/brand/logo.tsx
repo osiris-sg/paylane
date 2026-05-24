@@ -36,27 +36,19 @@ export function LogoMark({ className }: { className?: string }) {
 }
 
 /**
- * Full logo — mark + wordmark. The "Now" is accented in brand blue.
- * `iconClassName` sizes the mark; `className` controls the wordmark text size.
+ * Wordmark logo — "E-Statement" with "Now" accented in brand blue. No icon
+ * mark (the badge is reserved for the favicon / PWA app icon). `className`
+ * controls the text size.
  */
-export function Logo({
-  className,
-  iconClassName,
-}: {
-  className?: string;
-  iconClassName?: string;
-}) {
+export function Logo({ className }: { className?: string }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-2 font-bold tracking-tight text-slate-900",
+        "whitespace-nowrap font-bold tracking-tight text-slate-900",
         className,
       )}
     >
-      <LogoMark className={cn("h-7 w-7 shrink-0", iconClassName)} />
-      <span className="whitespace-nowrap">
-        E-Statement<span className="text-blue-600">Now</span>
-      </span>
+      E-Statement<span className="text-blue-600">Now</span>
     </span>
   );
 }
