@@ -208,7 +208,7 @@ function DashboardSummary({
       isLoading={isLoading}
       buildHref={buildHref}
       tab="sent"
-      cols="max-w-xs"
+      cols=""
     />
   ) : null;
 
@@ -219,7 +219,7 @@ function DashboardSummary({
       isLoading={isLoading}
       buildHref={buildHref}
       tab="received"
-      cols="max-w-xs"
+      cols=""
     />
   ) : null;
 

@@ -755,6 +755,51 @@ export const invoiceRouter = createTRPCRouter({
           },
           { buttonUrlSlug: invoice.id },
         );
+
+        // They're on E-StatementNow — email them that a new invoice is waiting.
+        if (existing.customer?.email) {
+          const baseUrl =
+            process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+          const viewUrl = `${baseUrl}/invoices/${invoice.id}`;
+          try {
+            await resend.emails.send({
+              from: FROM_EMAIL,
+              to: existing.customer.email,
+              subject: `${senderCompany?.name ?? "A supplier"} sent you invoice ${invoice.invoiceNumber}`,
+              html: `
+                <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 40px 20px;">
+                  <div style="text-align: center; margin-bottom: 32px;">
+                    <h1 style="font-size: 24px; font-weight: 700; color: #2563eb; margin: 0;">E-StatementNow</h1>
+                  </div>
+                  <div style="background: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 32px;">
+                    <h2 style="font-size: 20px; font-weight: 600; color: #111827; margin: 0 0 8px;">
+                      You have a new invoice
+                    </h2>
+                    <p style="color: #6b7280; font-size: 15px; line-height: 1.6; margin: 0 0 24px;">
+                      <strong style="color: #111827;">${senderCompany?.name ?? "A supplier"}</strong> sent you invoice
+                      <strong style="color: #111827;">${invoice.invoiceNumber}</strong> for
+                      <strong style="color: #111827;">${invoice.currency} ${Number(invoice.amount).toFixed(2)}</strong>.
+                      It's waiting for you in E-StatementNow.
+                    </p>
+                    <div style="text-align: center; margin: 32px 0;">
+                      <a href="${viewUrl}" style="display: inline-block; background: #2563eb; color: #ffffff; font-size: 15px; font-weight: 600; text-decoration: none; padding: 12px 32px; border-radius: 8px;">
+                        View Invoice
+                      </a>
+                    </div>
+                  </div>
+                  <div style="text-align: center; margin-top: 24px;">
+                    <p style="color: #9ca3af; font-size: 12px; margin: 0;">E-StatementNow — Get paid faster.</p>
+                  </div>
+                </div>
+              `,
+            });
+          } catch (error) {
+            console.error(
+              `📧 Failed to send invoice email to ${existing.customer.email}:`,
+              error,
+            );
+          }
+        }
       }
 
       // If customer is NOT on E-StatementNow, send them an invite email

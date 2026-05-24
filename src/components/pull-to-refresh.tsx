@@ -6,6 +6,9 @@ import { cn } from "~/lib/utils";
 
 const PULL_THRESHOLD = 80;
 const MAX_PULL = 120;
+// Dead-zone (px of finger travel) before a pull engages — keeps normal
+// near-top scrolling from being captured as a pull-to-refresh.
+const ACTIVATION = 24;
 
 export function PullToRefresh({
   children,
@@ -47,10 +50,20 @@ export function PullToRefresh({
       const container = containerRef.current;
       if (!container) return;
 
+      // Scrolled away from the top → this is a normal scroll, not a pull.
+      // Abandon so scrolling back up to the top never auto-triggers a refresh.
+      if (container.scrollTop > 0) {
+        isPullingRef.current = false;
+        setPullDistance(0);
+        return;
+      }
+
       const diff = e.touches[0].clientY - startYRef.current;
-      if (diff > 0 && container.scrollTop === 0) {
+      // Only engage past the dead-zone, so small/accidental downward movement
+      // near the top scrolls normally instead of being captured as a pull.
+      if (diff > ACTIVATION) {
         e.preventDefault();
-        setPullDistance(Math.min(diff * 0.5, MAX_PULL));
+        setPullDistance(Math.min((diff - ACTIVATION) * 0.5, MAX_PULL));
       }
     },
     [isRefreshing],
@@ -98,7 +111,7 @@ export function PullToRefresh({
   }, [isMobile, handleTouchStart, handleTouchMove, handleTouchEnd]);
 
   return (
-    <div ref={containerRef} className={cn("relative h-full overflow-auto", className)}>
+    <div ref={containerRef} className={cn("relative h-full overflow-auto overscroll-y-contain", className)}>
       {isMobile && (
         <div
           className="absolute left-0 right-0 flex items-center justify-center transition-transform duration-200 ease-out"
