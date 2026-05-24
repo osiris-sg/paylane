@@ -20,7 +20,6 @@ function InvoicesContent() {
   const companyModule = status?.module;
   const access = useSendAccess();
   const sendDisabled = !access.canSend;
-  const counts = api.invoice.getTabCounts.useQuery();
 
   // Default tab based on module
   const canSend = companyModule === "SEND" || companyModule === "BOTH";
@@ -105,13 +104,11 @@ function InvoicesContent() {
           {canSend && (
             <TabsTrigger value="sent" className="font-bold">
               CUSTOMER
-              <TabBadge count={counts.data?.unviewedByRecipient ?? 0} />
             </TabsTrigger>
           )}
           {canReceive && (
             <TabsTrigger value="received" className="font-bold">
               SUPPLIER
-              <TabBadge count={counts.data?.newReceived ?? 0} />
             </TabsTrigger>
           )}
         </TabsList>
@@ -135,14 +132,5 @@ export function InvoicesClient() {
     <Suspense fallback={<div className="flex items-center justify-center p-12"><div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent" /></div>}>
       <InvoicesContent />
     </Suspense>
-  );
-}
-
-function TabBadge({ count }: { count: number }) {
-  if (count <= 0) return null;
-  return (
-    <span className="ml-1.5 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-blue-600 px-1.5 text-[11px] font-semibold leading-none text-white">
-      {count > 99 ? "99+" : count}
-    </span>
   );
 }

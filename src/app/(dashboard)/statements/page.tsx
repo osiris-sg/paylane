@@ -48,7 +48,6 @@ function StatementsContent() {
   const canSend = companyModule === "SEND" || companyModule === "BOTH";
   const canReceive = companyModule === "RECEIVE" || companyModule === "BOTH";
   const access = useSendAccess();
-  const counts = api.statement.getTabCounts.useQuery();
 
   const defaultTab = canReceive && !canSend ? "received" : "sent";
   const requested = searchParams.get("tab") ?? defaultTab;
@@ -109,13 +108,11 @@ function StatementsContent() {
           {canSend && (
             <TabsTrigger value="sent" className="font-bold">
               CUSTOMER
-              <TabBadge count={counts.data?.unviewedByRecipient ?? 0} />
             </TabsTrigger>
           )}
           {canReceive && (
             <TabsTrigger value="received" className="font-bold">
               SUPPLIER
-              <TabBadge count={counts.data?.unviewedByMe ?? 0} />
             </TabsTrigger>
           )}
         </TabsList>
@@ -169,7 +166,64 @@ function SentStatementsTable() {
 
   return (
     <>
-      <Card>
+      {/* Mobile: card per statement */}
+      <div className="space-y-3 md:hidden">
+        {list.data.map((s) => (
+          <div key={s.id} className="rounded-lg border bg-white p-3">
+            <div className="flex items-start justify-between gap-2">
+              <Link
+                href={`/customers/${s.customer.id}`}
+                className="min-w-0 font-semibold text-blue-600 hover:underline"
+              >
+                {s.customer.company || s.customer.name}
+              </Link>
+              {s.viewedAt ? (
+                <Badge variant="outline" className="shrink-0 gap-1 border-emerald-200 bg-emerald-50 text-emerald-700">
+                  <Eye className="h-3 w-3" />
+                  Viewed
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="shrink-0 gap-1 border-gray-200 bg-gray-50 text-muted-foreground">
+                  <EyeOff className="h-3 w-3" />
+                  Not yet
+                </Badge>
+              )}
+            </div>
+            <div className="mt-1.5 flex items-center gap-2 text-sm">
+              <FileText className="h-3.5 w-3.5 shrink-0 text-blue-600" />
+              <span className="truncate">{s.fileName}</span>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Updated {dayjs(s.sentAt).fromNow()} · {dayjs(s.sentAt).format("D MMM YYYY, HH:mm")}
+            </p>
+            <div className="mt-3 flex gap-2">
+              <Button variant="outline" size="sm" className="flex-1" asChild>
+                <a href={s.fileUrl} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+                  View
+                </a>
+              </Button>
+              <Button
+                size="sm"
+                className="flex-1"
+                disabled={!access.canSend}
+                onClick={() =>
+                  setReplaceFor({
+                    customerId: s.customer.id,
+                    customerLabel: s.customer.company || s.customer.name,
+                  })
+                }
+              >
+                <Send className="mr-1.5 h-3.5 w-3.5" />
+                Replace
+              </Button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Desktop: full table */}
+      <Card className="hidden md:block">
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <Table className="min-w-[760px]">
@@ -304,10 +358,58 @@ function ReceivedStatementsTable() {
   }
 
   return (
-    <Card>
-      <CardContent className="p-0">
-        <div className="overflow-x-auto">
-          <Table className="min-w-[680px]">
+    <>
+      {/* Mobile: card per statement */}
+      <div className="space-y-3 md:hidden">
+        {list.data.map((s) => (
+          <div key={s.id} className="rounded-lg border bg-white p-3">
+            <div className="flex items-start justify-between gap-2">
+              <p className="min-w-0 font-semibold">{s.senderCompany.name}</p>
+              {s.viewedAt ? (
+                <Badge variant="outline" className="shrink-0 gap-1 border-gray-200 bg-gray-50 text-muted-foreground">
+                  Viewed
+                </Badge>
+              ) : (
+                <Badge className="shrink-0 gap-1 bg-blue-600 hover:bg-blue-700">New</Badge>
+              )}
+            </div>
+            <div className="mt-1.5 flex items-center gap-2 text-sm">
+              <FileText className="h-3.5 w-3.5 shrink-0 text-purple-600" />
+              <span className="truncate">{s.fileName}</span>
+            </div>
+            {s.notes && (
+              <p className="mt-0.5 text-xs italic text-muted-foreground">
+                &ldquo;{s.notes}&rdquo;
+              </p>
+            )}
+            <p className="mt-1 text-xs text-muted-foreground">
+              Updated {dayjs(s.sentAt).fromNow()} · {dayjs(s.sentAt).format("D MMM YYYY, HH:mm")}
+            </p>
+            <div className="mt-3">
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full"
+                asChild
+                onClick={() => {
+                  if (!s.viewedAt) markViewed.mutate({ id: s.id });
+                }}
+              >
+                <a href={s.fileUrl} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+                  View
+                </a>
+              </Button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Desktop: full table */}
+      <Card className="hidden md:block">
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <Table className="min-w-[680px]">
             <TableHeader>
               <TableRow>
                 <TableHead>Supplier</TableHead>
@@ -382,6 +484,7 @@ function ReceivedStatementsTable() {
         </div>
       </CardContent>
     </Card>
+    </>
   );
 }
 
@@ -416,14 +519,5 @@ function EmptyState({
         <p className="max-w-md text-sm text-muted-foreground">{body}</p>
       </CardContent>
     </Card>
-  );
-}
-
-function TabBadge({ count }: { count: number }) {
-  if (count <= 0) return null;
-  return (
-    <span className="ml-1.5 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-blue-600 px-1.5 text-[11px] font-semibold leading-none text-white">
-      {count > 99 ? "99+" : count}
-    </span>
   );
 }
