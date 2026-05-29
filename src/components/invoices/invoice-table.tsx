@@ -111,6 +111,21 @@ function SortableHead({
   );
 }
 
+function InvoiceStatusBadge({ sentAt }: { sentAt: Date | string | null }) {
+  const sent = !!sentAt;
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+        sent
+          ? "bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-300"
+          : "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"
+      }`}
+    >
+      {sent ? "Sent" : "Draft"}
+    </span>
+  );
+}
+
 function SkeletonRow({ columns }: { columns: number }) {
   return (
     <TableRow>
@@ -260,7 +275,8 @@ export function InvoiceTable({ type, initialSearch, initialCustomerId, initialSe
   const totalPages = data?.totalPages ?? 1;
   const totalsByCurrency = data?.totalsByCurrency ?? [];
 
-  const columnCount = 8;
+  // Sent tab carries an extra Status column (Draft/Sent).
+  const columnCount = type === "sent" ? 9 : 8;
 
   // Selection helpers
   const toggleSelect = (id: string) => {
@@ -682,6 +698,7 @@ export function InvoiceTable({ type, initialSearch, initialCustomerId, initialSe
                         {invoice.reference ? ` · ${invoice.reference}` : ""}
                       </p>
                       <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                        {type === "sent" && <InvoiceStatusBadge sentAt={invoice.sentAt} />}
                         <span className="text-xs text-muted-foreground">
                           {dayjs(invoice.invoicedDate).format("MMM D, YYYY")}
                         </span>
@@ -712,6 +729,7 @@ export function InvoiceTable({ type, initialSearch, initialCustomerId, initialSe
                 <SortableHead field="invoicedDate" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>Invoice Date</SortableHead>
                 <SortableHead field="sentAt" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>{type === "sent" ? "Date Sent" : "Date Received"}</SortableHead>
                 <SortableHead field="dueDate" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>Due Date</SortableHead>
+                {type === "sent" && <TableHead>Status</TableHead>}
                 <SortableHead field="amount" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} align="right">Amount</SortableHead>
               </TableRow>
             </TableHeader>
@@ -801,6 +819,13 @@ export function InvoiceTable({ type, initialSearch, initialCustomerId, initialSe
                       <TableCell>
                         {dayjs(invoice.dueDate).format("MMM D, YYYY")}
                       </TableCell>
+
+                      {/* Status (sent tab only) */}
+                      {type === "sent" && (
+                        <TableCell>
+                          <InvoiceStatusBadge sentAt={invoice.sentAt} />
+                        </TableCell>
+                      )}
 
                       {/* Amount */}
                       <TableCell className="text-right font-medium tabular-nums">

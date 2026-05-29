@@ -174,6 +174,9 @@ function SentStatementsTable() {
               >
                 {s.customer.company || s.customer.name}
               </Link>
+              <span className="shrink-0 inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-950/40 dark:text-green-300">
+                Sent
+              </span>
             </div>
             <div className="mt-1.5 flex items-center gap-2 text-sm">
               <FileText className="h-3.5 w-3.5 shrink-0 text-blue-600" />
@@ -218,6 +221,7 @@ function SentStatementsTable() {
                   <TableHead>Customer</TableHead>
                   <TableHead>File</TableHead>
                   <TableHead>Last updated</TableHead>
+                  <TableHead>Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -253,6 +257,11 @@ function SentStatementsTable() {
                       <div className="text-xs text-muted-foreground">
                         {dayjs(s.sentAt).format("D MMM YYYY, HH:mm")}
                       </div>
+                    </TableCell>
+                    <TableCell>
+                      <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-950/40 dark:text-green-300">
+                        Sent
+                      </span>
                     </TableCell>
                     <TableCell>
                       <div className="flex justify-end gap-1">

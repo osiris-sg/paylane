@@ -72,6 +72,21 @@ const DocumentView = dynamic(() => import("~/components/document-view"), {
   ),
 });
 
+function InvoiceStatusBadge({ sentAt }: { sentAt: Date | string | null }) {
+  const sent = !!sentAt;
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-sm font-medium ${
+        sent
+          ? "bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-300"
+          : "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"
+      }`}
+    >
+      {sent ? "Sent" : "Draft"}
+    </span>
+  );
+}
+
 function DetailRow({
   icon: Icon,
   label,
@@ -415,7 +430,10 @@ export default function InvoiceDetailPage() {
           <CardContent className="p-4">
             <div className="flex items-start justify-between">
               <div>
-                <p className="text-lg font-bold">{invoice.invoiceNumber}</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-lg font-bold">{invoice.invoiceNumber}</p>
+                  {isSender && <InvoiceStatusBadge sentAt={invoice.sentAt} />}
+                </div>
                 <p className="text-sm text-muted-foreground">
                   {isReceived ? `From ${invoice.senderCompany?.name ?? "Unknown"}` : `To ${invoice.customer?.company || invoice.customer?.name || "Unknown"}`}
                 </p>
@@ -457,6 +475,7 @@ export default function InvoiceDetailPage() {
         <div className="flex flex-col gap-2">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-3xl font-bold tracking-tight">{invoice.invoiceNumber}</h1>
+            {isSender && <InvoiceStatusBadge sentAt={invoice.sentAt} />}
           </div>
           <p className="text-muted-foreground">
             {isReceived ? `From ${invoice.senderCompany?.name ?? "Unknown"}` : `To ${invoice.customer?.company || invoice.customer?.name || "Unknown"}`}
