@@ -343,9 +343,16 @@ export default function OnboardingPage() {
       }
       const inviteToken =
         typeof window !== "undefined" ? localStorage.getItem("paylane:pending-invite-token") : null;
+      // A deep link (e.g. an invoice opened from the WhatsApp invite) stashes
+      // its path here so it survives the sign-up → onboarding detour.
+      const pendingRedirect =
+        typeof window !== "undefined" ? localStorage.getItem("paylane:pending-redirect") : null;
       let target = "/dashboard";
       if (inviteToken) target = "/invoices/accept-invite";
-      else if (status?.firstInvoiceId) target = `/invoices/${status.firstInvoiceId}`;
+      else if (pendingRedirect) {
+        target = pendingRedirect;
+        localStorage.removeItem("paylane:pending-redirect");
+      } else if (status?.firstInvoiceId) target = `/invoices/${status.firstInvoiceId}`;
       console.log("[Onboarding] post-success navigation →", target);
       router.push(target);
     },

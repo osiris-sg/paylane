@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
+import { toast } from "sonner";
 import {
   Send,
   Upload,
@@ -12,9 +13,20 @@ import {
   ExternalLink,
   MailCheck,
   Inbox,
+  Trash2,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent } from "~/components/ui/card";
+import { Checkbox } from "~/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "~/components/ui/dialog";
 import {
   Tabs,
   TabsContent,
@@ -144,11 +156,52 @@ export default function StatementsPage() {
 
 function SentStatementsTable() {
   const access = useSendAccess();
+  const utils = api.useUtils();
   const list = api.statement.listSent.useQuery();
   const [replaceFor, setReplaceFor] = useState<{
     customerId: string;
     customerLabel: string;
   } | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  const statements = list.data ?? [];
+
+  const bulkDelete = api.statement.bulkDelete.useMutation({
+    onSuccess: async (data) => {
+      toast.success(`${data.count} statement(s) deleted`);
+      setSelectedIds(new Set());
+      await utils.statement.listSent.invalidate();
+      void utils.statement.getTabCounts.invalidate();
+    },
+    onError: () => toast.error("Failed to delete statements"),
+  });
+
+  const toggleSelect = (id: string) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const toggleSelectAll = () =>
+    setSelectedIds((prev) =>
+      prev.size === statements.length
+        ? new Set()
+        : new Set(statements.map((s) => s.id)),
+    );
+
+  const isAllSelected =
+    statements.length > 0 && selectedIds.size === statements.length;
+  const isSomeSelected = selectedIds.size > 0;
+  const canDelete = access.canSend && isSomeSelected;
+  // View + Replace act on one statement, so they only appear when exactly one
+  // row is selected (Delete still works for any number).
+  const singleSelected =
+    selectedIds.size === 1
+      ? statements.find((s) => selectedIds.has(s.id)) ?? null
+      : null;
 
   if (list.isLoading) return <TableSkeleton />;
   if (!list.data || list.data.length === 0) {
@@ -163,17 +216,93 @@ function SentStatementsTable() {
 
   return (
     <>
+      {/* Selection action bar */}
+      {isSomeSelected && (
+        <div className="mb-3 flex items-center gap-2 overflow-x-auto whitespace-nowrap rounded-lg border bg-muted/40 px-3 py-2">
+          <span className="shrink-0 text-sm font-medium">
+            {selectedIds.size} selected
+          </span>
+          {singleSelected && (
+            <>
+              <Button size="sm" variant="outline" className="shrink-0" asChild>
+                <a
+                  href={singleSelected.fileUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+                  View
+                </a>
+              </Button>
+              <Button
+                size="sm"
+                className="shrink-0"
+                disabled={!access.canSend}
+                onClick={() =>
+                  setReplaceFor({
+                    customerId: singleSelected.customer.id,
+                    customerLabel:
+                      singleSelected.customer.company ||
+                      singleSelected.customer.name,
+                  })
+                }
+              >
+                <Send className="mr-1.5 h-3.5 w-3.5" />
+                Replace
+              </Button>
+            </>
+          )}
+          {canDelete && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setConfirmOpen(true)}
+              disabled={bulkDelete.isPending}
+              className="shrink-0 border-red-300 text-red-600 hover:bg-red-50"
+            >
+              <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+              {bulkDelete.isPending ? "Deleting..." : "Delete"}
+            </Button>
+          )}
+          <Button
+            size="sm"
+            variant="ghost"
+            className="ml-auto shrink-0"
+            onClick={() => setSelectedIds(new Set())}
+          >
+            Clear
+          </Button>
+        </div>
+      )}
+
+      <CountBanner count={statements.length} label="Total sent" />
+
       {/* Mobile: card per statement */}
       <div className="space-y-3 md:hidden">
-        {list.data.map((s) => (
-          <div key={s.id} className="rounded-lg border bg-white p-3">
+        {list.data.map((s) => {
+          const isSelected = selectedIds.has(s.id);
+          return (
+          <div
+            key={s.id}
+            onClick={() => toggleSelect(s.id)}
+            className={`cursor-pointer select-none rounded-lg border bg-white p-3 transition-colors ${isSelected ? "border-blue-300 bg-blue-50" : ""}`}
+          >
             <div className="flex items-start justify-between gap-2">
-              <Link
-                href={`/customers/${s.customer.id}`}
-                className="min-w-0 font-semibold text-blue-600 hover:underline"
-              >
-                {s.customer.company || s.customer.name}
-              </Link>
+              <div className="flex min-w-0 items-center gap-2">
+                <Checkbox
+                  checked={isSelected}
+                  onClick={(e) => e.stopPropagation()}
+                  onCheckedChange={() => toggleSelect(s.id)}
+                  aria-label="Select statement"
+                />
+                <Link
+                  href={`/customers/${s.customer.id}`}
+                  onClick={(e) => e.stopPropagation()}
+                  className="min-w-0 font-semibold text-blue-600 hover:underline"
+                >
+                  {s.customer.company || s.customer.name}
+                </Link>
+              </div>
               <span className="shrink-0 inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-950/40 dark:text-green-300">
                 Sent
               </span>
@@ -185,30 +314,9 @@ function SentStatementsTable() {
             <p className="mt-1 text-xs text-muted-foreground">
               Updated {dayjs(s.sentAt).fromNow()} · {dayjs(s.sentAt).format("D MMM YYYY, HH:mm")}
             </p>
-            <div className="mt-3 flex gap-2">
-              <Button variant="outline" size="sm" className="flex-1" asChild>
-                <a href={s.fileUrl} target="_blank" rel="noopener noreferrer">
-                  <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
-                  View
-                </a>
-              </Button>
-              <Button
-                size="sm"
-                className="flex-1"
-                disabled={!access.canSend}
-                onClick={() =>
-                  setReplaceFor({
-                    customerId: s.customer.id,
-                    customerLabel: s.customer.company || s.customer.name,
-                  })
-                }
-              >
-                <Send className="mr-1.5 h-3.5 w-3.5" />
-                Replace
-              </Button>
-            </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Desktop: full table */}
@@ -218,19 +326,40 @@ function SentStatementsTable() {
             <Table className="min-w-[760px]">
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-10">
+                    <Checkbox
+                      checked={isAllSelected}
+                      onCheckedChange={toggleSelectAll}
+                      aria-label="Select all"
+                    />
+                  </TableHead>
                   <TableHead>Customer</TableHead>
                   <TableHead>File</TableHead>
                   <TableHead>Last updated</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {list.data.map((s) => (
-                  <TableRow key={s.id}>
+                {list.data.map((s) => {
+                  const isSelected = selectedIds.has(s.id);
+                  return (
+                  <TableRow
+                    key={s.id}
+                    onClick={() => toggleSelect(s.id)}
+                    className={`cursor-pointer select-none ${isSelected ? "bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/30" : ""}`}
+                  >
+                    <TableCell>
+                      <Checkbox
+                        checked={isSelected}
+                        onClick={(e) => e.stopPropagation()}
+                        onCheckedChange={() => toggleSelect(s.id)}
+                        aria-label={`Select statement for ${s.customer.company || s.customer.name}`}
+                      />
+                    </TableCell>
                     <TableCell>
                       <Link
                         href={`/customers/${s.customer.id}`}
+                        onClick={(e) => e.stopPropagation()}
                         className="hover:underline"
                       >
                         <p className="font-medium">
@@ -263,36 +392,9 @@ function SentStatementsTable() {
                         Sent
                       </span>
                     </TableCell>
-                    <TableCell>
-                      <div className="flex justify-end gap-1">
-                        <Button variant="outline" size="sm" asChild>
-                          <a
-                            href={s.fileUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
-                            View
-                          </a>
-                        </Button>
-                        <Button
-                          size="sm"
-                          disabled={!access.canSend}
-                          onClick={() =>
-                            setReplaceFor({
-                              customerId: s.customer.id,
-                              customerLabel:
-                                s.customer.company || s.customer.name,
-                            })
-                          }
-                        >
-                          <Send className="mr-1.5 h-3.5 w-3.5" />
-                          Replace
-                        </Button>
-                      </div>
-                    </TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
@@ -308,6 +410,39 @@ function SentStatementsTable() {
           hasExisting
         />
       )}
+
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-red-100">
+              <AlertTriangle className="h-5 w-5 text-red-600" />
+            </div>
+            <DialogTitle>Delete selected statements?</DialogTitle>
+            <DialogDescription>
+              {selectedIds.size} statement(s) will be permanently deleted for
+              you and the recipient.
+              <span className="mt-2 block font-medium text-red-600">
+                This cannot be undone.
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setConfirmOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={bulkDelete.isPending}
+              onClick={() => {
+                bulkDelete.mutate({ ids: Array.from(selectedIds) });
+                setConfirmOpen(false);
+              }}
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
@@ -334,6 +469,8 @@ function ReceivedStatementsTable() {
 
   return (
     <>
+      <CountBanner count={list.data.length} label="Total received" />
+
       {/* Mobile: card per statement */}
       <div className="space-y-3 md:hidden">
         {list.data.map((s) => (
@@ -438,6 +575,26 @@ function ReceivedStatementsTable() {
       </CardContent>
     </Card>
     </>
+  );
+}
+
+function CountBanner({ count, label }: { count: number; label: string }) {
+  return (
+    <div className="mb-3 overflow-hidden rounded-xl border-2 border-blue-300 bg-gradient-to-br from-blue-50 via-blue-100/70 to-blue-50 px-4 py-3 shadow-sm dark:border-blue-700 dark:from-blue-950/50 dark:via-blue-900/30 dark:to-blue-950/40">
+      <div className="flex items-center gap-2.5">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white shadow-sm">
+          <FileText className="h-4 w-4" />
+        </div>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-blue-800 dark:text-blue-200">
+            {label}
+          </p>
+          <p className="text-xl font-bold tabular-nums tracking-tight text-blue-900 dark:text-blue-100 sm:text-2xl">
+            {count} statement{count === 1 ? "" : "s"}
+          </p>
+        </div>
+      </div>
+    </div>
   );
 }
 

@@ -189,13 +189,20 @@ export const customerRouter = createTRPCRouter({
 
   create: protectedProcedure
     .input(
-      z.object({
-        company: z.string().min(1), // Company name is now required
-        name: z.string().optional(), // Contact name is optional
-        email: z.string().email().optional(),
-        phone: z.string().optional(),
-        address: z.string().optional(),
-      }),
+      z
+        .object({
+          company: z.string().min(1), // Company name is now required
+          name: z.string().optional(), // Contact name is optional
+          email: z.string().email().optional(),
+          phone: z.string().optional(),
+          address: z.string().optional(),
+        })
+        // At least one contact channel is required: an off-platform customer
+        // can only be reached by email or by WhatsApp (phone).
+        .refine((d) => !!(d.email?.trim() || d.phone?.trim()), {
+          message: "Add an email or phone so the customer can be reached",
+          path: ["email"],
+        }),
     )
     .mutation(async ({ ctx, input }) => {
       const user = ctx.user;
@@ -282,13 +289,20 @@ export const customerRouter = createTRPCRouter({
       z.object({
         customers: z
           .array(
-            z.object({
-              company: z.string().min(1),
-              name: z.string().optional(),
-              email: z.string().optional(),
-              phone: z.string().optional(),
-              address: z.string().optional(),
-            }),
+            z
+              .object({
+                company: z.string().min(1),
+                name: z.string().optional(),
+                email: z.string().optional(),
+                phone: z.string().optional(),
+                address: z.string().optional(),
+              })
+              // Same reachability rule as single create — every imported
+              // customer needs an email or phone.
+              .refine((c) => !!(c.email?.trim() || c.phone?.trim()), {
+                message: "Each customer needs an email or phone",
+                path: ["email"],
+              }),
           )
           .min(1)
           .max(500),

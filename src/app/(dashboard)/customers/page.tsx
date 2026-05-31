@@ -188,6 +188,10 @@ export default function CustomersPage() {
       toast.error("Company name is required");
       return;
     }
+    if (!editingId && !formData.email.trim() && !formData.phone.trim()) {
+      toast.error("Add an email or phone so the customer can be reached");
+      return;
+    }
 
     const payload = {
       company: formData.company.trim(),
@@ -490,6 +494,13 @@ export default function CustomersPage() {
                   }
                 />
               </div>
+              {!editingId && (
+                <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                  Add an <strong>email or phone</strong> — at least one is required
+                  so we can reach this customer (e.g. via WhatsApp) when they&apos;re
+                  not on PayLane.
+                </p>
+              )}
               <div className="grid gap-2">
                 <Label htmlFor="email">Email</Label>
                 <Input

@@ -316,4 +316,20 @@ export const statementRouter = createTRPCRouter({
         data: { viewedAt: new Date() },
       });
     }),
+
+  /**
+   * Sender: bulk-delete statements they've sent. Scoped to the caller's own
+   * sent rows (senderCompanyId), so a caller can never delete a statement they
+   * only received. Gated by send access like the other sender-side mutations.
+   */
+  bulkDelete: protectedProcedure
+    .input(z.object({ ids: z.array(z.string()).min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      const user = ctx.user;
+      await requireSendAccess(ctx.db, user.companyId);
+      const { count } = await ctx.db.statement.deleteMany({
+        where: { id: { in: input.ids }, senderCompanyId: user.companyId },
+      });
+      return { success: true, count };
+    }),
 });

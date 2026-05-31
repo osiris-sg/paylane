@@ -5,6 +5,7 @@ import { z } from "zod";
 import { Resend } from "resend";
 import { sendPushToCompany } from "~/lib/push-notifications";
 import { sendWhatsAppToCompany } from "~/server/notifications/dispatch";
+import { sendWhatsAppTemplate } from "~/server/notifications/whatsapp";
 import { FEATURE_FLAGS, type FeatureFlagKey } from "~/lib/feature-flags";
 import { signInviteToken, verifyInviteToken } from "~/lib/invoice-invite";
 import { requireSendAccess } from "~/server/api/lib/sending-access";
@@ -77,11 +78,17 @@ export const invoiceRouter = createTRPCRouter({
       }
 
       if (input.search) {
+        // Match the columns the table actually shows. The customer cell renders
+        // `company || name`, so search both — many customers are stored with the
+        // business name in `company` and a contact person in `name`. The received
+        // tab shows the sender company's name, so cover that too.
         where.OR = [
           { invoiceNumber: { contains: input.search, mode: "insensitive" } },
           { reference: { contains: input.search, mode: "insensitive" } },
           { description: { contains: input.search, mode: "insensitive" } },
           { customer: { name: { contains: input.search, mode: "insensitive" } } },
+          { customer: { company: { contains: input.search, mode: "insensitive" } } },
+          { senderCompany: { name: { contains: input.search, mode: "insensitive" } } },
         ];
       }
 
@@ -855,6 +862,37 @@ export const invoiceRouter = createTRPCRouter({
         }
       }
 
+      // Off-platform customer with NO email but a phone on file → reach them via
+      // WhatsApp (our business number). Email always takes priority above; this
+      // only runs when there's no email to use.
+      if (!receiverCompanyId && !existing.customer?.email && existing.customer?.phone) {
+        const senderCompany = await ctx.db.company.findUnique({
+          where: { id: invoice.senderCompanyId },
+          select: { name: true },
+        });
+        try {
+          const result = await sendWhatsAppTemplate({
+            to: existing.customer.phone,
+            message: {
+              template: "invoice_received",
+              contentVariables: {
+                senderName: senderCompany?.name ?? "A supplier",
+                invoiceNumber: invoice.invoiceNumber,
+                amount: `${invoice.currency} ${Number(invoice.amount).toFixed(2)}`,
+              },
+            },
+            buttonUrlSlug: invoice.id,
+          });
+          if (result.ok) {
+            console.log(`📱 Invoice WhatsApp sent to ${existing.customer.phone}`);
+          } else {
+            console.error(`📱 Failed to send invoice WhatsApp to ${existing.customer.phone}:`, result.error);
+          }
+        } catch (error) {
+          console.error(`📱 Failed to send invoice WhatsApp to ${existing.customer.phone}:`, error);
+        }
+      }
+
       return invoice;
     }),
 
@@ -938,6 +976,72 @@ export const invoiceRouter = createTRPCRouter({
       }
 
       return { invoiceId: invoice.id };
+    }),
+
+  /**
+   * Bearer-link claim: link an UNLINKED invoice to the caller's company.
+   * Used when a customer who isn't on PayLane opens an invoice deep link (e.g.
+   * the WhatsApp invite) and signs up — there's no invite token in that flow,
+   * so the unguessable invoice id acts as the bearer credential. Only ever
+   * links an invoice with no receiver yet: it never takes over one already
+   * owned by another company, and never claims the sender's own invoice.
+   */
+  claimUnlinked: protectedProcedure
+    .input(z.object({ invoiceId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const user = ctx.user;
+      const invoice = await ctx.db.invoice.findUnique({
+        where: { id: input.invoiceId },
+        include: { customer: true },
+      });
+      if (!invoice) throw new TRPCError({ code: "NOT_FOUND" });
+
+      // Already the receiver → nothing to do.
+      if (invoice.receiverCompanyId === user.companyId) {
+        return { invoiceId: invoice.id, status: "already" as const };
+      }
+      // The sender opening their own (still unlinked) invoice → never claim.
+      if (invoice.senderCompanyId === user.companyId) {
+        return { invoiceId: invoice.id, status: "owner" as const };
+      }
+      // Already linked to a different company → refuse (no takeover via link).
+      if (invoice.receiverCompanyId) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "This invoice is already linked to a different account",
+        });
+      }
+
+      // Link the invoice to this company, mirror the customer link on the
+      // sender's side, and flip module to BOTH (receiving shouldn't lock a
+      // company out of sending). Mirrors invoice.acceptInvite's unlinked path.
+      await ctx.db.invoice.update({
+        where: { id: invoice.id },
+        data: {
+          receiverCompanyId: user.companyId,
+          timelineItems: { create: { message: "Receiver linked via shared invoice link" } },
+        },
+      });
+
+      if (invoice.customer && !invoice.customer.linkedCompanyId) {
+        await ctx.db.customer.update({
+          where: { id: invoice.customer.id },
+          data: { linkedCompanyId: user.companyId },
+        });
+      }
+
+      const company = await ctx.db.company.findUnique({
+        where: { id: user.companyId },
+        select: { module: true },
+      });
+      if (company && company.module !== "BOTH") {
+        await ctx.db.company.update({
+          where: { id: user.companyId },
+          data: { module: "BOTH" },
+        });
+      }
+
+      return { invoiceId: invoice.id, status: "linked" as const };
     }),
 
   togglePin: protectedProcedure

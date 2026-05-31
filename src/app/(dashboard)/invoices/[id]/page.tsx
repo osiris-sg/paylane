@@ -212,6 +212,30 @@ export default function InvoiceDetailPage() {
   const { data: onboardingStatus } = api.onboarding.getStatus.useQuery();
   const myCompanyId = onboardingStatus?.companyId;
 
+  // Bearer-link claim: a customer who arrived via a shared invoice link (e.g.
+  // the WhatsApp invite) and just signed up lands here on an invoice that has
+  // no receiver yet. Link it to their company so it shows up under their
+  // received invoices. The server no-ops for the sender / already-linked rows.
+  const claimUnlinked = api.invoice.claimUnlinked.useMutation({
+    onSuccess: (res) => {
+      if (res.status === "linked") {
+        toast.success("Invoice added to your received invoices");
+        void utils.invoice.getById.invalidate({ id: params.id });
+        void utils.invoice.list.invalidate();
+        void utils.invoice.getTabCounts.invalidate();
+      }
+    },
+  });
+
+  useEffect(() => {
+    if (!invoice || !myCompanyId) return;
+    if (invoice.receiverCompanyId) return; // already linked to someone
+    if (invoice.senderCompanyId === myCompanyId) return; // sender's own invoice
+    if (claimUnlinked.isPending || claimUnlinked.isSuccess) return;
+    claimUnlinked.mutate({ invoiceId: invoice.id });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invoice?.id, invoice?.receiverCompanyId, invoice?.senderCompanyId, myCompanyId]);
+
   const markViewed = api.invoice.markViewed.useMutation({
     onSuccess: () => {
       void utils.invoice.getById.invalidate({ id: params.id });

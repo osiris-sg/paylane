@@ -114,6 +114,17 @@ function formatFileSize(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+// Normalise a company/customer name for fuzzy matching — strip legal suffixes
+// and punctuation so "PT. ASIANFAST MARINE INDUSTRIES" ≈ "Asianfast Marine
+// Industries Pte Ltd". Shared by the single-file matcher and the statement importer.
+function normaliseCompany(raw: string) {
+  return raw
+    .toLowerCase()
+    .replace(/\b(pt\.?|pte\.?|ltd\.?|limited|corp\.?|corporation|inc\.?|llc|co\.?|company|gmbh|sdn|bhd|private)\b/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
 // ─── Customer Picker ──────────────────────────────────────────────────────────
 
 function CustomerPicker({
@@ -308,6 +319,63 @@ function UploadInvoicePageInner() {
 
   const resetNewCust = () => setNewCust({ name: "", email: "", phone: "", company: "", address: "" });
 
+  // Confirm-new-customer prompt: queue of AI-recognised customers not in the DB.
+  // The dialog walks the queue one at a time; `handledCustomerKeys` stops a name
+  // from re-queuing once the user has saved or skipped it.
+  const [newCustomerQueue, setNewCustomerQueue] = useState<
+    { company: string; name: string; email: string }[]
+  >([]);
+  const [confirmForm, setConfirmForm] = useState({ company: "", name: "", email: "", phone: "", address: "" });
+  const handledCustomerKeys = useRef<Set<string>>(new Set());
+
+  // Prefill the form whenever the head of the queue changes.
+  useEffect(() => {
+    const head = newCustomerQueue[0];
+    if (head) {
+      setConfirmForm({ company: head.company, name: head.name, email: head.email, phone: "", address: "" });
+    }
+  }, [newCustomerQueue]);
+
+  const handleConfirmNewCustomer = async () => {
+    const head = newCustomerQueue[0];
+    if (!head) return;
+    if (!confirmForm.company.trim()) { toast.error("Company name is required"); return; }
+    if (!confirmForm.email.trim() && !confirmForm.phone.trim()) {
+      toast.error("Add an email or phone so the customer can be reached");
+      return;
+    }
+    const key = normaliseCompany(head.company);
+    try {
+      const created = await createCustomer.mutateAsync({
+        company: confirmForm.company.trim(),
+        name: confirmForm.name.trim() || undefined,
+        email: confirmForm.email.trim() || undefined,
+        phone: confirmForm.phone.trim() || undefined,
+        address: confirmForm.address.trim() || undefined,
+      });
+      await refetchCustomers();
+      handledCustomerKeys.current.add(key);
+      // Assign the new customer to every unassigned row the AI read as this name.
+      setInvoices((prev) =>
+        prev.map((inv) =>
+          !inv.customerId && normaliseCompany(inv.customerName) === key
+            ? { ...inv, customerId: created.id }
+            : inv,
+        ),
+      );
+      toast.success(`Customer "${created.company || created.name}" saved & assigned`);
+      setNewCustomerQueue((prev) => prev.slice(1));
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to add customer");
+    }
+  };
+
+  const handleSkipNewCustomer = () => {
+    const head = newCustomerQueue[0];
+    if (head) handledCustomerKeys.current.add(normaliseCompany(head.company));
+    setNewCustomerQueue((prev) => prev.slice(1));
+  };
+
   const openAddCustomer = (forId: string, prefill?: { name?: string; email?: string }) => {
     resetNewCust();
     if (prefill) {
@@ -319,6 +387,10 @@ function UploadInvoicePageInner() {
 
   const handleCreateCustomer = async () => {
     if (!newCust.company.trim()) { toast.error("Company name is required"); return; }
+    if (!newCust.email.trim() && !newCust.phone.trim()) {
+      toast.error("Add an email or phone so the customer can be reached");
+      return;
+    }
     try {
       const created = await createCustomer.mutateAsync({
         company: newCust.company.trim(),
@@ -363,12 +435,36 @@ function UploadInvoicePageInner() {
 
       let matchedCustomerId = "";
       if (data.customerName || data.customerEmail) {
-        const match = customers.find(
-          (c) =>
-            (data.customerName && c.name.toLowerCase().includes(data.customerName.toLowerCase())) ||
-            (data.customerEmail && c.email?.toLowerCase() === data.customerEmail.toLowerCase()),
-        );
+        const needle = normaliseCompany(data.customerName ?? "");
+        const email = data.customerEmail?.toLowerCase();
+        const match = customers.find((c) => {
+          if (email && c.email?.toLowerCase() === email) return true;
+          if (!needle) return false;
+          // Match against BOTH company and contact name — most customers store
+          // the business name in `company`, so name-only matching missed them.
+          const company = normaliseCompany(c.company ?? "");
+          const name = normaliseCompany(c.name);
+          return (
+            (company && (company === needle || company.includes(needle) || needle.includes(company))) ||
+            (name && (name === needle || name.includes(needle) || needle.includes(name)))
+          );
+        });
         if (match) matchedCustomerId = match.id;
+      }
+
+      // The AI recognised a customer that isn't in the DB yet → queue a prompt
+      // so the user can confirm-create it, instead of silently leaving the row
+      // unassigned. Deduped by normalised name across the batch, and skipped for
+      // names the user has already created or dismissed this session.
+      if (!matchedCustomerId && data.customerName) {
+        const key = normaliseCompany(data.customerName);
+        if (key && !handledCustomerKeys.current.has(key)) {
+          setNewCustomerQueue((prev) =>
+            prev.some((q) => normaliseCompany(q.company) === key)
+              ? prev
+              : [...prev, { company: data.customerName as string, name: "", email: (data.customerEmail as string) ?? "" }],
+          );
+        }
       }
 
       const sub = (data.items ?? []).reduce((s: number, i: { amount: number }) => s + (i.amount || 0), 0);
@@ -508,15 +604,7 @@ function UploadInvoicePageInner() {
     const { extraction, fileDataUrl, fileName } = payload;
 
     // Match or create the customer once so every staged invoice shares it.
-    // Normalise aggressively so "PT. ASIANFAST MARINE INDUSTRIES" matches
-    // "Asianfast Marine Industries Pte Ltd" etc.
-    const normaliseCompany = (raw: string) =>
-      raw
-        .toLowerCase()
-        .replace(/\b(pt\.?|pte\.?|ltd\.?|limited|corp\.?|corporation|inc\.?|llc|co\.?|company|gmbh|sdn|bhd|private)\b/g, " ")
-        .replace(/[^a-z0-9]+/g, " ")
-        .trim();
-
+    // (Uses the shared module-level `normaliseCompany`.)
     let customerId = "";
     const needleRaw = extraction.customer.company.trim();
     const needle = normaliseCompany(needleRaw);
@@ -1106,6 +1194,11 @@ function UploadInvoicePageInner() {
               <Label htmlFor="cust-name">Contact Name</Label>
               <Input id="cust-name" value={newCust.name} onChange={(e) => setNewCust({ ...newCust, name: e.target.value })} placeholder="John Doe" />
             </div>
+            <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-700">
+              Add an <strong>email or phone</strong> — at least one is required so
+              we can reach this customer (e.g. via WhatsApp) when they&apos;re not
+              on PayLane.
+            </p>
             <div className="grid gap-1.5">
               <Label htmlFor="cust-email">Email</Label>
               <Input id="cust-email" type="email" value={newCust.email} onChange={(e) => setNewCust({ ...newCust, email: e.target.value })} placeholder="john@acme.com" />
@@ -1121,8 +1214,81 @@ function UploadInvoicePageInner() {
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => { setAddCustomerFor(null); resetNewCust(); }}>Cancel</Button>
-            <Button onClick={handleCreateCustomer} disabled={createCustomer.isPending || !newCust.company.trim()}>
+            <Button
+              onClick={handleCreateCustomer}
+              disabled={
+                createCustomer.isPending ||
+                !newCust.company.trim() ||
+                (!newCust.email.trim() && !newCust.phone.trim())
+              }
+            >
               {createCustomer.isPending ? "Saving..." : "Add Customer"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirm-create AI-recognised customer */}
+      <Dialog
+        open={newCustomerQueue.length > 0}
+        onOpenChange={(open) => { if (!open) handleSkipNewCustomer(); }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-blue-100">
+              <UserPlus className="h-5 w-5 text-blue-600" />
+            </div>
+            <DialogTitle>Save this customer?</DialogTitle>
+            <DialogDescription>
+              The AI read{" "}
+              <strong className="text-foreground">{newCustomerQueue[0]?.company}</strong>{" "}
+              on the uploaded invoice, but it isn&apos;t in your customers yet. Save
+              it to assign automatically
+              {newCustomerQueue.length > 1 ? ` — ${newCustomerQueue.length - 1} more to review after this` : ""}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid gap-1.5">
+              <Label htmlFor="confirm-company">
+                Company <span className="text-red-600">*</span>
+              </Label>
+              <Input id="confirm-company" value={confirmForm.company} onChange={(e) => setConfirmForm({ ...confirmForm, company: e.target.value })} placeholder="Acme Pte Ltd" />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="confirm-name">Contact Name</Label>
+              <Input id="confirm-name" value={confirmForm.name} onChange={(e) => setConfirmForm({ ...confirmForm, name: e.target.value })} placeholder="John Doe" />
+            </div>
+            <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-700">
+              Add an <strong>email or phone</strong> — at least one is required so
+              we can reach this customer (e.g. via WhatsApp) when they&apos;re not
+              on PayLane.
+            </p>
+            <div className="grid gap-1.5">
+              <Label htmlFor="confirm-email">Email</Label>
+              <Input id="confirm-email" type="email" value={confirmForm.email} onChange={(e) => setConfirmForm({ ...confirmForm, email: e.target.value })} placeholder="john@acme.com" />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="confirm-phone">Phone</Label>
+              <Input id="confirm-phone" value={confirmForm.phone} onChange={(e) => setConfirmForm({ ...confirmForm, phone: e.target.value })} placeholder="+65 1234 5678" />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="confirm-address">Address</Label>
+              <Input id="confirm-address" value={confirmForm.address} onChange={(e) => setConfirmForm({ ...confirmForm, address: e.target.value })} placeholder="123 Example St, Singapore" />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={handleSkipNewCustomer} disabled={createCustomer.isPending}>
+              Skip
+            </Button>
+            <Button
+              onClick={handleConfirmNewCustomer}
+              disabled={
+                createCustomer.isPending ||
+                !confirmForm.company.trim() ||
+                (!confirmForm.email.trim() && !confirmForm.phone.trim())
+              }
+            >
+              {createCustomer.isPending ? "Saving..." : "Save & assign"}
             </Button>
           </DialogFooter>
         </DialogContent>

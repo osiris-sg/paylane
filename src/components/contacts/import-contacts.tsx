@@ -193,6 +193,18 @@ export function ImportContacts({ kind }: Props) {
       return;
     }
 
+    // Customers must be reachable — an off-platform customer can only be
+    // reached by email or WhatsApp (phone). (Suppliers are exempt.)
+    if (kind === "customers") {
+      const unreachable = targets.filter((d) => !d.email.trim() && !d.phone.trim());
+      if (unreachable.length > 0) {
+        toast.error(
+          `${unreachable.length} customer(s) need an email or phone before importing`,
+        );
+        return;
+      }
+    }
+
     const payload = targets.map((d) => ({
       company: d.company.trim(),
       name: d.name.trim() || undefined,

@@ -50,6 +50,14 @@ function SignUpForm() {
     }
   }, [inviteToken]);
 
+  // Stash a plain redirect target (e.g. an invoice deep link from WhatsApp) the
+  // same way, so it also survives onboarding and lands the user back on it.
+  useEffect(() => {
+    if (safeRedirectUrl && !inviteToken && typeof window !== "undefined") {
+      localStorage.setItem("paylane:pending-redirect", safeRedirectUrl);
+    }
+  }, [safeRedirectUrl, inviteToken]);
+
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState(prefilledEmail);
