@@ -17,7 +17,7 @@ model Company {
   module    CompanyModule?
   onboarded Boolean  @default(false)
   isStub    Boolean  @default(false)  // Auto-created placeholder for vendors discovered via email ingestion; not user-facing
-  deliveryOrdersEnabled Boolean @default(false)  // Per-company gate for the Delivery Orders feature (sending/uploading DOs)
+  deliveryOrdersEnabled Boolean @default(true)  // Per-company gate for Delivery Orders. Default ON for now (rollout to all); flip to false to return to opt-in.
   sendingPlan    SendingPlan @default(LOCKED)
   trialStartedAt DateTime?
   trialEndsAt    DateTime?
