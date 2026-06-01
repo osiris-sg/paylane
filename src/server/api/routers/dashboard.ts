@@ -44,61 +44,6 @@ export const dashboardRouter = createTRPCRouter({
     };
   }),
 
-  getAgingData: protectedProcedure
-    .input(rangeInput)
-    .query(async ({ ctx, input }) => {
-    const user = ctx.user;
-
-    const companyId = user.companyId;
-    const range = resolveRange(input);
-
-    const receivedInvoices = await ctx.db.invoice.findMany({
-      where: {
-        receiverCompanyId: companyId,
-        invoicedDate: { gte: range.from, lte: range.to },
-      },
-      select: {
-        id: true,
-        amount: true,
-        invoicedDate: true,
-      },
-    });
-
-    const now = new Date();
-    const buckets = [
-      { label: "0-1", minMonths: 0, maxMonths: 0, count: 0, amount: 0 },
-      { label: "1-2", minMonths: 1, maxMonths: 1, count: 0, amount: 0 },
-      { label: "2-3", minMonths: 2, maxMonths: 2, count: 0, amount: 0 },
-      { label: "3+", minMonths: 3, maxMonths: Infinity, count: 0, amount: 0 },
-    ];
-
-    for (const invoice of receivedInvoices) {
-      const inv = new Date(invoice.invoicedDate);
-      // Full calendar months elapsed between invoicedDate and now.
-      const monthsSinceInvoiced =
-        (now.getFullYear() - inv.getFullYear()) * 12 +
-        (now.getMonth() - inv.getMonth()) -
-        (now.getDate() < inv.getDate() ? 1 : 0);
-
-      const bucket = buckets.find(
-        (b) =>
-          monthsSinceInvoiced >= b.minMonths &&
-          monthsSinceInvoiced <= b.maxMonths,
-      );
-
-      if (bucket) {
-        bucket.count += 1;
-        bucket.amount += Number(invoice.amount);
-      }
-    }
-
-    return buckets.map(({ label, count, amount }) => ({
-      label,
-      count,
-      amount,
-    }));
-  }),
-
   getMonthlyTotals: protectedProcedure
     .input(rangeInput)
     .query(async ({ ctx, input }) => {

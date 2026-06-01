@@ -14,18 +14,9 @@ import {
   Send,
   ExternalLink,
 } from "lucide-react";
-import {
-  BarChart,
-  Bar,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 import { api } from "~/trpc/react";
 import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
+import { Card, CardContent } from "~/components/ui/card";
 import { InvoiceTable } from "~/components/invoices/invoice-table";
 import {
   TimeSeriesChart,
@@ -34,7 +25,6 @@ import {
 } from "~/components/charts/time-series-chart";
 import { SendStatementDialog } from "~/components/statements/send-statement-dialog";
 import { useSendAccess } from "~/lib/use-send-access";
-import { formatCurrency } from "~/lib/currency";
 
 export default function CustomerDetailPage() {
   const params = useParams<{ id: string }>();
@@ -53,7 +43,6 @@ export default function CustomerDetailPage() {
     from: new Date(from),
     to: new Date(to),
   });
-  const aging = api.customer.getAgingData.useQuery({ customerId });
   const statement = api.statement.getForCustomer.useQuery({ customerId });
   const sendAccess = useSendAccess();
   const [stmtOpen, setStmtOpen] = useState(false);
@@ -147,66 +136,6 @@ export default function CustomerDetailPage() {
         isLoading={series.isLoading}
       />
 
-      {aging.data && aging.data.some((b) => b.amount > 0) && (
-        <Card className="shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-base font-semibold">Invoice Aging</CardTitle>
-            <p className="text-xs text-muted-foreground">
-              Outstanding invoices to {c.company || c.name} by months since invoiced
-            </p>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={240}>
-              <BarChart
-                data={aging.data}
-                margin={{ top: 8, right: 8, bottom: 24, left: 16 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
-                <XAxis
-                  dataKey="label"
-                  tickLine={false}
-                  axisLine={false}
-                  fontSize={12}
-                  tickFormatter={(v: string) => `${v} mo`}
-                  label={{
-                    value: "Months since invoiced",
-                    position: "insideBottom",
-                    offset: -12,
-                    style: { fontSize: 11, fill: "#6b7280" },
-                  }}
-                />
-                <YAxis
-                  tickLine={false}
-                  axisLine={false}
-                  fontSize={12}
-                  width={56}
-                  label={{
-                    value: "Outstanding (SGD)",
-                    angle: -90,
-                    position: "insideLeft",
-                    style: { fontSize: 11, fill: "#6b7280", textAnchor: "middle" },
-                  }}
-                />
-                <Tooltip
-                  formatter={(value) => [formatCurrency(value as number, "SGD"), "Amount"]}
-                  labelFormatter={(label) => `${label} months outstanding`}
-                  contentStyle={{
-                    borderRadius: "8px",
-                    border: "1px solid #e5e7eb",
-                    fontSize: "13px",
-                  }}
-                />
-                <Bar
-                  dataKey="amount"
-                  fill="#3b82f6"
-                  radius={[4, 4, 0, 0]}
-                  maxBarSize={60}
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-      )}
 
       <div>
         <h2 className="mb-3 text-lg font-semibold">Invoices</h2>
