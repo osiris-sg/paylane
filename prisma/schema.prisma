@@ -17,6 +17,7 @@ model Company {
   module    CompanyModule?
   onboarded Boolean  @default(false)
   isStub    Boolean  @default(false)  // Auto-created placeholder for vendors discovered via email ingestion; not user-facing
+  deliveryOrdersEnabled Boolean @default(false)  // Per-company gate for the Delivery Orders feature (sending/uploading DOs)
   sendingPlan    SendingPlan @default(LOCKED)
   trialStartedAt DateTime?
   trialEndsAt    DateTime?
@@ -33,6 +34,8 @@ model Company {
   sentInvitations Invitation[]
   sentStatements     Statement[] @relation("SentStatements")
   receivedStatements Statement[] @relation("ReceivedStatements")
+  sentDeliveryOrders     DeliveryOrder[] @relation("SentDeliveryOrders")
+  receivedDeliveryOrders DeliveryOrder[] @relation("ReceivedDeliveryOrders")
   emailIntegration   EmailIntegration?
 }
 
@@ -50,6 +53,7 @@ model User {
   updatedAt DateTime @updatedAt
 
   createdInvoices Invoice[]
+  createdDeliveryOrders DeliveryOrder[]
   notifications   Notification[]
 }
 
@@ -69,6 +73,7 @@ model Customer {
 
   invoices  Invoice[]
   statement Statement?
+  deliveryOrders DeliveryOrder[]
 
   @@index([companyId])
 }
@@ -245,6 +250,8 @@ model Notification {
   invoice   Invoice?         @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
   statementId String?
   statement   Statement?     @relation(fields: [statementId], references: [id], onDelete: SetNull)
+  deliveryOrderId String?
+  deliveryOrder   DeliveryOrder? @relation(fields: [deliveryOrderId], references: [id], onDelete: SetNull)
   createdAt DateTime         @default(now())
 
   @@index([userId, read])
@@ -280,6 +287,37 @@ model Statement {
   @@unique([customerId])               // latest-only — a new SOA replaces the previous one
   @@index([senderCompanyId])
   @@index([receiverCompanyId])
+}
+
+// Delivery Order — gated feature. A sender (deliveryOrdersEnabled) uploads a DO
+// document, the AI extracts the DO number + customer, and it's sent to the
+// customer by email/WhatsApp. Unlike Statement (one-per-customer), a customer
+// can have many DOs. Receiver-side companies can view but never send.
+model DeliveryOrder {
+  id                String    @id @default(cuid())
+  doNumber          String
+  senderCompanyId   String
+  senderCompany     Company   @relation("SentDeliveryOrders", fields: [senderCompanyId], references: [id])
+  customerId        String?
+  customer          Customer? @relation(fields: [customerId], references: [id])
+  receiverCompanyId String?
+  receiverCompany   Company?  @relation("ReceivedDeliveryOrders", fields: [receiverCompanyId], references: [id])
+  fileUrl           String    @db.Text   // S3 object key (or legacy data URI) — same convention as Invoice.fileUrl
+  fileName          String
+  fileType          String
+  notes             String?
+  createdById       String?
+  createdBy         User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  sentAt            DateTime?
+  viewedAt          DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  notifications     Notification[]
+
+  @@index([senderCompanyId, createdAt])
+  @@index([receiverCompanyId, createdAt])
+  @@index([customerId])
 }
 
 model PushSubscription {
@@ -345,6 +383,7 @@ enum NotificationType {
   INVOICE_PAID
   INVOICE_ACKNOWLEDGED
   STATEMENT_RECEIVED
+  DELIVERY_ORDER_RECEIVED
 }
 
 model FeatureFlag {

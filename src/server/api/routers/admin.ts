@@ -69,6 +69,19 @@ export const adminRouter = createTRPCRouter({
       });
     }),
 
+  /** Toggle the Delivery Orders feature for a specific company. */
+  setDeliveryOrders: protectedProcedure
+    .input(z.object({ companyId: z.string(), enabled: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      if (!(await isAdmin(ctx.auth.userId))) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Admin access required" });
+      }
+      return ctx.db.company.update({
+        where: { id: input.companyId },
+        data: { deliveryOrdersEnabled: input.enabled },
+      });
+    }),
+
   /** Override sending plan (LOCKED / TRIAL / PAID / EXPIRED) for a company */
   setSendingPlan: protectedProcedure
     .input(

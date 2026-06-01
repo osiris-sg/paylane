@@ -45,6 +45,10 @@ const templates = {
     name: "statement_received",
     vars: ["senderName"] as const,
   },
+  delivery_order_received: {
+    name: "delivery_order_received",
+    vars: ["senderName", "doNumber"] as const,
+  },
 } as const;
 
 export type WhatsAppTemplate = {

@@ -22,7 +22,7 @@ export const storageRouter = createTRPCRouter({
   createUploadUrl: protectedProcedure
     .input(
       z.object({
-        kind: z.enum(["invoices", "statements"]),
+        kind: z.enum(["invoices", "statements", "delivery-orders"]),
         contentType: z.string(),
       }),
     )

@@ -73,6 +73,16 @@ export default function AdminPage() {
     },
   });
 
+  const setDeliveryOrders = api.admin.setDeliveryOrders.useMutation({
+    onSuccess: () => {
+      toast.success("Delivery Orders updated");
+      void refetch();
+    },
+    onError: (err) => {
+      toast.error(err.message || "Failed to update Delivery Orders");
+    },
+  });
+
   const handleModuleChange = (companyId: string, value: string) => {
     const selectedModule = value === "none" ? null : (value as "RECEIVE" | "SEND" | "BOTH");
     setModule.mutate({ companyId, module: selectedModule });
@@ -193,6 +203,7 @@ export default function AdminPage() {
                   <TableHead>Users</TableHead>
                   <TableHead>Module</TableHead>
                   <TableHead>Send Plan</TableHead>
+                  <TableHead>Delivery Orders</TableHead>
                   <TableHead className="text-center">Customers</TableHead>
                   <TableHead className="text-center">Sent</TableHead>
                   <TableHead className="text-center">Received</TableHead>
@@ -203,7 +214,7 @@ export default function AdminPage() {
               <TableBody>
                 {(!companies || companies.length === 0) ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
+                    <TableCell colSpan={10} className="h-24 text-center text-muted-foreground">
                       No companies yet
                     </TableCell>
                   </TableRow>
@@ -282,6 +293,22 @@ export default function AdminPage() {
                             </p>
                           )}
                         </div>
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant={company.deliveryOrdersEnabled ? "default" : "outline"}
+                          size="sm"
+                          className="h-8"
+                          disabled={setDeliveryOrders.isPending}
+                          onClick={() =>
+                            setDeliveryOrders.mutate({
+                              companyId: company.id,
+                              enabled: !company.deliveryOrdersEnabled,
+                            })
+                          }
+                        >
+                          {company.deliveryOrdersEnabled ? "Enabled" : "Off"}
+                        </Button>
                       </TableCell>
                       <TableCell className="text-center">{company._count.customers}</TableCell>
                       <TableCell className="text-center">{company._count.sentInvoices}</TableCell>

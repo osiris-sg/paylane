@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   FileText,
   FileSpreadsheet,
+  PackageCheck,
   Users,
   Truck,
   Bell,
@@ -30,12 +31,14 @@ interface NavItem {
   icon: React.ElementType;
   modules?: ("RECEIVE" | "SEND" | "BOTH")[];
   adminOnly?: boolean;
+  deliveryOrders?: boolean; // gated by the per-company DO feature (send) or having received any
 }
 
 const navItems: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/invoices", label: "Invoices", icon: FileText },
   { href: "/statements", label: "Statements", icon: FileSpreadsheet },
+  { href: "/delivery-orders", label: "Delivery Orders", icon: PackageCheck, deliveryOrders: true },
   { href: "/customers", label: "Customers", icon: Users, modules: ["SEND", "BOTH"] },
   { href: "/suppliers", label: "Suppliers", icon: Truck, modules: ["RECEIVE", "BOTH"] },
   { href: "/agent", label: "AI Assistant", icon: Sparkles, modules: ["SEND", "BOTH"] },
@@ -46,11 +49,14 @@ const navItems: NavItem[] = [
 function useVisibleItems() {
   const { data: status } = api.onboarding.getStatus.useQuery();
   const { data: adminCheck } = api.admin.isAdmin.useQuery();
+  const { data: doAccess } = api.deliveryOrder.getAccess.useQuery();
   const companyModule = status?.module;
   const isAdmin = adminCheck?.isAdmin ?? false;
+  const showDeliveryOrders = !!doAccess && (doAccess.canSend || doAccess.hasReceived);
 
   return navItems.filter((item) => {
     if (item.adminOnly) return isAdmin;
+    if (item.deliveryOrders) return showDeliveryOrders;
     if (!item.modules) return true;
     if (!companyModule) return true;
     return item.modules.includes(companyModule as "RECEIVE" | "SEND" | "BOTH");

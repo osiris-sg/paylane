@@ -56,7 +56,7 @@ const EXT_BY_TYPE: Record<string, string> = {
 
 /** Namespaced, unguessable object key, e.g. `invoices/<companyId>/<uuid>.pdf`. */
 export function buildKey(
-  kind: "invoices" | "statements",
+  kind: "invoices" | "statements" | "delivery-orders",
   companyId: string,
   contentType: string,
 ): string {
