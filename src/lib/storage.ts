@@ -77,11 +77,25 @@ export function presignUpload(
   );
 }
 
-/** Short-lived presigned GET URL for viewing/downloading a private object. */
-export function presignDownload(key: string, expiresIn = 3600): Promise<string> {
+/**
+ * Short-lived presigned GET URL for a private object.
+ * Pass `filename` to make S3 return `Content-Disposition: attachment`, which
+ * forces the browser to download (with that name) instead of rendering inline.
+ */
+export function presignDownload(
+  key: string,
+  expiresIn = 3600,
+  opts?: { filename?: string },
+): Promise<string> {
   return getSignedUrl(
     client(),
-    new GetObjectCommand({ Bucket: BUCKET, Key: key }),
+    new GetObjectCommand({
+      Bucket: BUCKET,
+      Key: key,
+      ...(opts?.filename
+        ? { ResponseContentDisposition: `attachment; filename="${opts.filename}"` }
+        : {}),
+    }),
     { expiresIn },
   );
 }

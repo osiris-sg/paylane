@@ -1197,7 +1197,7 @@ function UploadInvoicePageInner() {
             <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-700">
               Add an <strong>email or phone</strong> — at least one is required so
               we can reach this customer (e.g. via WhatsApp) when they&apos;re not
-              on PayLane.
+              on E-StatementNow.
             </p>
             <div className="grid gap-1.5">
               <Label htmlFor="cust-email">Email</Label>
@@ -1261,7 +1261,7 @@ function UploadInvoicePageInner() {
             <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-700">
               Add an <strong>email or phone</strong> — at least one is required so
               we can reach this customer (e.g. via WhatsApp) when they&apos;re not
-              on PayLane.
+              on E-StatementNow.
             </p>
             <div className="grid gap-1.5">
               <Label htmlFor="confirm-email">Email</Label>

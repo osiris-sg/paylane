@@ -10,7 +10,7 @@ import { FEATURE_FLAGS, type FeatureFlagKey } from "~/lib/feature-flags";
 import { signInviteToken, verifyInviteToken } from "~/lib/invoice-invite";
 import { requireSendAccess } from "~/server/api/lib/sending-access";
 import { syncCustomerReceivers } from "~/server/api/lib/customer-routing";
-import { resolveFileUrl } from "~/lib/storage";
+import { resolveFileUrl, isInlineOrExternal, presignDownload } from "~/lib/storage";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const FROM_EMAIL = process.env.EMAIL_FROM ?? "E-StatementNow <onboarding@resend.dev>";
@@ -191,6 +191,45 @@ export const invoiceRouter = createTRPCRouter({
     ]);
     return { unviewedByRecipient, newReceived };
   }),
+
+  /**
+   * Download URL for the originally-uploaded invoice file. For S3-stored files
+   * this is a short-lived presigned GET that forces a download with a friendly
+   * filename (invoice-<number>.<ext>); legacy inline/external URLs pass through
+   * and the client names them via the anchor `download` attribute.
+   */
+  getDownloadUrl: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const inv = await ctx.db.invoice.findUnique({
+        where: { id: input.id },
+        select: { fileUrl: true, invoiceNumber: true },
+      });
+      if (!inv?.fileUrl) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "This invoice has no uploaded file." });
+      }
+
+      const safeNumber = inv.invoiceNumber.replace(/[^a-zA-Z0-9._-]+/g, "-") || "invoice";
+
+      if (isInlineOrExternal(inv.fileUrl)) {
+        const ext = inv.fileUrl.startsWith("data:application/pdf")
+          ? "pdf"
+          : inv.fileUrl.startsWith("data:image/png")
+            ? "png"
+            : inv.fileUrl.startsWith("data:image/webp")
+              ? "webp"
+              : inv.fileUrl.startsWith("data:image/")
+                ? "jpg"
+                : "pdf";
+        return { url: inv.fileUrl, filename: `invoice-${safeNumber}.${ext}` };
+      }
+
+      // S3 key → presign with Content-Disposition so the browser downloads it.
+      const ext = /\.([a-z0-9]+)$/i.exec(inv.fileUrl)?.[1]?.toLowerCase() ?? "pdf";
+      const filename = `invoice-${safeNumber}.${ext}`;
+      const url = await presignDownload(inv.fileUrl, 300, { filename });
+      return { url, filename };
+    }),
 
   /** Receiver: mark an invoice as viewed (first-time only — no-op after). */
   markViewed: protectedProcedure
@@ -980,7 +1019,7 @@ export const invoiceRouter = createTRPCRouter({
 
   /**
    * Bearer-link claim: link an UNLINKED invoice to the caller's company.
-   * Used when a customer who isn't on PayLane opens an invoice deep link (e.g.
+   * Used when a customer who isn't on E-StatementNow opens an invoice deep link (e.g.
    * the WhatsApp invite) and signs up — there's no invite token in that flow,
    * so the unguessable invoice id acts as the bearer credential. Only ever
    * links an invoice with no receiver yet: it never takes over one already

@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import dynamic from "next/dynamic";
 import dayjs from "dayjs";
 import { toast } from "sonner";
 import {
@@ -14,6 +13,7 @@ import {
   AlertTriangle,
   Clock,
   FileText,
+  Download,
   Calendar,
   DollarSign,
   Hash,
@@ -63,14 +63,9 @@ import {
 } from "~/components/ui/select";
 
 import { formatCurrency } from "~/lib/currency";
-
-// PDF/image viewer is client-only (pdf.js touches browser APIs) — load lazily.
-const DocumentView = dynamic(() => import("~/components/document-view"), {
-  ssr: false,
-  loading: () => (
-    <div className="p-8 text-center text-sm text-muted-foreground">Loading…</div>
-  ),
-});
+// PDF/image viewer, wrapped in an error boundary so a pdf.js failure can never
+// crash the page (it falls back to an "open in new tab" link).
+import { DocumentViewer } from "~/components/document-viewer";
 
 function InvoiceStatusBadge({ sentAt }: { sentAt: Date | string | null }) {
   const sent = !!sentAt;
@@ -266,6 +261,28 @@ export default function InvoiceDetailPage() {
 
   const [scheduleDate, setScheduleDate] = useState("");
   const [showDocument, setShowDocument] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+
+  // Download the originally-uploaded file. The server returns a presigned URL
+  // (Content-Disposition: attachment for S3) or a legacy inline/data URL; we
+  // trigger the download via a temporary anchor so it doesn't navigate away.
+  const handleDownload = async () => {
+    setDownloading(true);
+    try {
+      const { url, filename } = await utils.invoice.getDownloadUrl.fetch({ id: params.id });
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't download the file");
+    } finally {
+      setDownloading(false);
+    }
+  };
   const [confirmAction, setConfirmAction] = useState<
     | null
     | {
@@ -485,10 +502,16 @@ export default function InvoiceDetailPage() {
               )}
             </div>
             {invoice.fileUrl && (
-              <Button variant="outline" className="mt-3 w-full" onClick={() => setShowDocument(true)}>
-                <FileText className="mr-2 h-4 w-4" />
-                View Original Document
-              </Button>
+              <div className="mt-3 flex flex-col gap-2">
+                <Button variant="outline" className="w-full" onClick={() => setShowDocument(true)}>
+                  <FileText className="mr-2 h-4 w-4" />
+                  View Original Document
+                </Button>
+                <Button variant="outline" className="w-full" onClick={handleDownload} disabled={downloading}>
+                  <Download className="mr-2 h-4 w-4" />
+                  {downloading ? "Preparing…" : "Download"}
+                </Button>
+              </div>
             )}
           </CardContent>
         </Card>
@@ -639,13 +662,19 @@ export default function InvoiceDetailPage() {
           {/* Uploaded Invoice File — desktop only, mobile uses full-screen dialog */}
           {invoice.fileUrl && (
             <Card className="hidden sm:block">
-              <CardHeader>
-                <CardTitle>Uploaded Invoice</CardTitle>
-                <CardDescription>Original uploaded document</CardDescription>
+              <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
+                <div className="space-y-1.5">
+                  <CardTitle>Uploaded Invoice</CardTitle>
+                  <CardDescription>Original uploaded document</CardDescription>
+                </div>
+                <Button variant="outline" size="sm" onClick={handleDownload} disabled={downloading}>
+                  <Download className="mr-2 h-4 w-4" />
+                  {downloading ? "Preparing…" : "Download"}
+                </Button>
               </CardHeader>
               <CardContent>
                 <div className="max-h-[70vh] overflow-auto">
-                  <DocumentView url={invoice.fileUrl} />
+                  <DocumentViewer url={invoice.fileUrl} />
                 </div>
               </CardContent>
             </Card>
@@ -828,10 +857,16 @@ export default function InvoiceDetailPage() {
         <div className="fixed inset-0 z-50 flex flex-col bg-white sm:hidden">
           <div className="flex items-center justify-between border-b px-4 py-3">
             <span className="font-semibold">Invoice Document</span>
-            <Button variant="ghost" size="sm" onClick={() => setShowDocument(false)}>Close</Button>
+            <div className="flex items-center gap-1">
+              <Button variant="ghost" size="sm" onClick={handleDownload} disabled={downloading}>
+                <Download className="mr-1.5 h-4 w-4" />
+                {downloading ? "…" : "Download"}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setShowDocument(false)}>Close</Button>
+            </div>
           </div>
           <div className="flex-1 overflow-auto p-2">
-            <DocumentView url={invoice.fileUrl} />
+            <DocumentViewer url={invoice.fileUrl} />
           </div>
         </div>
       )}

@@ -114,9 +114,6 @@ export default function CustomerDetailPage() {
                 <p className="text-xs text-muted-foreground">
                   {statement.data.fileName} · sent{" "}
                   {dayjs(statement.data.sentAt).format("D MMM YYYY")}
-                  {statement.data.viewedAt
-                    ? ` · viewed ${dayjs(statement.data.viewedAt).format("D MMM")}`
-                    : " · not yet viewed"}
                 </p>
               </div>
             </div>
@@ -159,10 +156,10 @@ export default function CustomerDetailPage() {
             </p>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={220}>
+            <ResponsiveContainer width="100%" height={240}>
               <BarChart
                 data={aging.data}
-                margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
+                margin={{ top: 8, right: 8, bottom: 24, left: 16 }}
               >
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
                 <XAxis
@@ -171,8 +168,25 @@ export default function CustomerDetailPage() {
                   axisLine={false}
                   fontSize={12}
                   tickFormatter={(v: string) => `${v} mo`}
+                  label={{
+                    value: "Months since invoiced",
+                    position: "insideBottom",
+                    offset: -12,
+                    style: { fontSize: 11, fill: "#6b7280" },
+                  }}
                 />
-                <YAxis tickLine={false} axisLine={false} fontSize={12} />
+                <YAxis
+                  tickLine={false}
+                  axisLine={false}
+                  fontSize={12}
+                  width={56}
+                  label={{
+                    value: "Outstanding (SGD)",
+                    angle: -90,
+                    position: "insideLeft",
+                    style: { fontSize: 11, fill: "#6b7280", textAnchor: "middle" },
+                  }}
+                />
                 <Tooltip
                   formatter={(value) => [formatCurrency(value as number, "SGD"), "Amount"]}
                   labelFormatter={(label) => `${label} months outstanding`}

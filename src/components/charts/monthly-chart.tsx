@@ -68,6 +68,8 @@ export function MonthlyChart({
     if (granularity === "weekly") return `Week of ${d.format("D MMM YYYY")}`;
     return d.format("D MMM YYYY");
   };
+  const xAxisLabel =
+    granularity === "monthly" ? "Month" : granularity === "weekly" ? "Week" : "Day";
   return (
     <Card className="overflow-hidden shadow-sm">
       <CardHeader className="space-y-3 pb-3">
@@ -93,10 +95,10 @@ export function MonthlyChart({
         {isLoading ? (
           <div className="h-[220px] animate-pulse rounded bg-muted/40" />
         ) : (
-          <ResponsiveContainer width="100%" height={220}>
+          <ResponsiveContainer width="100%" height={240}>
             <LineChart
               data={data}
-              margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
+              margin={{ top: 8, right: 8, bottom: 24, left: 16 }}
             >
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
               <XAxis
@@ -105,12 +107,25 @@ export function MonthlyChart({
                 axisLine={false}
                 fontSize={12}
                 tickFormatter={tickFormat}
+                label={{
+                  value: xAxisLabel,
+                  position: "insideBottom",
+                  offset: -12,
+                  style: { fontSize: 11, fill: "#6b7280" },
+                }}
               />
               <YAxis
                 tickLine={false}
                 axisLine={false}
                 fontSize={12}
+                width={56}
                 tickFormatter={(v) => formatCurrencyCompact(v)}
+                label={{
+                  value: "Amount (SGD)",
+                  angle: -90,
+                  position: "insideLeft",
+                  style: { fontSize: 11, fill: "#6b7280", textAnchor: "middle" },
+                }}
               />
               <Tooltip
                 labelFormatter={(v) => labelFormat(String(v))}

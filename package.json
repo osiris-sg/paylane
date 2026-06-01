@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "next lint",
     "db:push": "prisma db push",
-    "backfill:files": "node --env-file=.env scripts/backfill-files-to-s3.mjs"
+    "backfill:files": "node --env-file=.env scripts/backfill-files-to-s3.mjs",
+    "backfill:rename": "node --env-file=.env scripts/rename-paylane-to-estatementnow.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
