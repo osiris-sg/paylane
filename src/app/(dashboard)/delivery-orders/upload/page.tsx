@@ -53,6 +53,7 @@ function UploadInner() {
   const [fileType, setFileType] = useState("");
   const [doNumber, setDoNumber] = useState("");
   const [customerId, setCustomerId] = useState("");
+  const [dragOver, setDragOver] = useState(false);
 
   // Add-customer dialog
   const [addOpen, setAddOpen] = useState(false);
@@ -181,7 +182,20 @@ function UploadInner() {
       </div>
 
       {status === "idle" ? (
-        <label className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-300 bg-white p-12 transition-colors hover:border-gray-400">
+        <label
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragEnter={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragOver(false);
+            const file = e.dataTransfer.files?.[0];
+            if (file) void handleFile(file);
+          }}
+          className={`flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-12 transition-colors ${
+            dragOver ? "border-blue-400 bg-blue-50" : "border-gray-300 bg-white hover:border-gray-400"
+          }`}
+        >
           <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gray-100">
             <Upload className="h-8 w-8 text-gray-400" />
           </div>
