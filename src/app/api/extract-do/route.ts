@@ -52,6 +52,10 @@ Extract the data and return ONLY a JSON object (no markdown, no explanation) in 
 
 {
   "doNumber": "string - the delivery order number / DO no. shown on the document",
+  "reference": "string or null - any reference / PO no. / 'Your Ref' / 'Our Ref' on the document",
+  "doDate": "string or null - the document's date in YYYY-MM-DD format",
+  "amount": "number or null - the total amount/value on the DO if shown (numbers only, no currency symbol)",
+  "currency": "string or null - currency code like SGD, USD, EUR, IDR if an amount is shown",
   "customer": {
     "company": "string - the customer's company name (the 'Customer' / 'Deliver To' / 'Bill To' field)",
     "name": "string or null - the contact / attention person name if shown (e.g. an 'Attention:' line)",
@@ -64,6 +68,8 @@ Rules:
 - doNumber is the document's own DO number (look for labels like 'DO No', 'Delivery Order No', 'D.O. No', 'DO #').
 - Prefer the recipient/customer company, not the sender/issuer.
 - For phone, capture the customer's contact number; if multiple are shown, return the first.
+- Convert any DD/MM/YYYY date to YYYY-MM-DD.
+- Many delivery orders have no monetary total — return null for amount/currency if none is shown. Do not invent values.
 - Return null for any field you can't find. Do not invent values.`,
             },
           ],

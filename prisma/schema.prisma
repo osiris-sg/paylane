@@ -296,6 +296,10 @@ model Statement {
 model DeliveryOrder {
   id                String    @id @default(cuid())
   doNumber          String
+  reference         String?
+  doDate            DateTime?                 // date shown on the DO document
+  amount            Decimal?  @db.Decimal(12, 2)
+  currency          String    @default("SGD")
   senderCompanyId   String
   senderCompany     Company   @relation("SentDeliveryOrders", fields: [senderCompanyId], references: [id])
   customerId        String?

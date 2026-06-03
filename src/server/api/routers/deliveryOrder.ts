@@ -70,6 +70,10 @@ export const deliveryOrderRouter = createTRPCRouter({
       select: {
         id: true,
         doNumber: true,
+        reference: true,
+        doDate: true,
+        amount: true,
+        currency: true,
         fileName: true,
         sentAt: true,
         createdAt: true,
@@ -87,6 +91,10 @@ export const deliveryOrderRouter = createTRPCRouter({
       select: {
         id: true,
         doNumber: true,
+        reference: true,
+        doDate: true,
+        amount: true,
+        currency: true,
         fileName: true,
         sentAt: true,
         senderCompany: { select: { id: true, name: true } },
@@ -120,6 +128,10 @@ export const deliveryOrderRouter = createTRPCRouter({
     .input(
       z.object({
         doNumber: z.string().min(1),
+        reference: z.string().optional(),
+        doDate: z.coerce.date().optional(),
+        amount: z.number().min(0).optional(),
+        currency: z.string().optional(),
         customerId: z.string().optional(),
         fileUrl: z.string().min(1),
         fileName: z.string().min(1),
@@ -134,6 +146,10 @@ export const deliveryOrderRouter = createTRPCRouter({
       return ctx.db.deliveryOrder.create({
         data: {
           doNumber: input.doNumber,
+          reference: input.reference,
+          doDate: input.doDate,
+          amount: input.amount,
+          currency: input.currency ?? "SGD",
           customerId: input.customerId,
           fileUrl: input.fileUrl,
           fileName: input.fileName,

@@ -6,7 +6,6 @@ import dayjs from "dayjs";
 import { toast } from "sonner";
 import {
   Upload,
-  FileText,
   ExternalLink,
   Download,
   Send,
@@ -38,6 +37,7 @@ import {
 } from "~/components/ui/dialog";
 import { api } from "~/trpc/react";
 import { useSendAccess } from "~/lib/use-send-access";
+import { formatCurrency } from "~/lib/currency";
 
 function DeliveryOrdersContent() {
   const { data: access, isLoading } = api.deliveryOrder.getAccess.useQuery();
@@ -253,9 +253,10 @@ function SentTable() {
               <TableRow>
                 <TableHead>DO #</TableHead>
                 <TableHead>Customer</TableHead>
-                <TableHead>File</TableHead>
-                <TableHead>Created</TableHead>
+                <TableHead>Reference</TableHead>
+                <TableHead>Date</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead className="text-right">Amount</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -268,14 +269,12 @@ function SentTable() {
                     </Link>
                   </TableCell>
                   <TableCell>{d.customer ? d.customer.company || d.customer.name : <span className="text-muted-foreground">—</span>}</TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <FileText className="h-3.5 w-3.5 shrink-0 text-blue-600" />
-                      <span className="truncate text-sm">{d.fileName}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-sm">{dayjs(d.createdAt).format("D MMM YYYY")}</TableCell>
+                  <TableCell className="max-w-[150px] truncate text-muted-foreground">{d.reference || "—"}</TableCell>
+                  <TableCell className="text-sm">{d.doDate ? dayjs(d.doDate).format("D MMM YYYY") : "—"}</TableCell>
                   <TableCell><StatusBadge sentAt={d.sentAt} /></TableCell>
+                  <TableCell className="text-right font-medium tabular-nums">
+                    {d.amount != null ? formatCurrency(Number(d.amount), d.currency) : <span className="text-muted-foreground">—</span>}
+                  </TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-1">
                       <Button variant="outline" size="sm" onClick={() => download(d.id)} disabled={busyId === d.id}>
@@ -381,8 +380,9 @@ function ReceivedTable() {
               <TableRow>
                 <TableHead>DO #</TableHead>
                 <TableHead>Supplier</TableHead>
-                <TableHead>File</TableHead>
-                <TableHead>Received</TableHead>
+                <TableHead>Reference</TableHead>
+                <TableHead>Date</TableHead>
+                <TableHead className="text-right">Amount</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -395,13 +395,11 @@ function ReceivedTable() {
                     </Link>
                   </TableCell>
                   <TableCell>{d.senderCompany.name}</TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <FileText className="h-3.5 w-3.5 shrink-0 text-purple-600" />
-                      <span className="truncate text-sm">{d.fileName}</span>
-                    </div>
+                  <TableCell className="max-w-[150px] truncate text-muted-foreground">{d.reference || "—"}</TableCell>
+                  <TableCell className="text-sm">{d.doDate ? dayjs(d.doDate).format("D MMM YYYY") : d.sentAt ? dayjs(d.sentAt).format("D MMM YYYY") : "—"}</TableCell>
+                  <TableCell className="text-right font-medium tabular-nums">
+                    {d.amount != null ? formatCurrency(Number(d.amount), d.currency) : <span className="text-muted-foreground">—</span>}
                   </TableCell>
-                  <TableCell className="text-sm">{d.sentAt ? dayjs(d.sentAt).format("D MMM YYYY") : "—"}</TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-1">
                       <Button variant="outline" size="sm" asChild>
