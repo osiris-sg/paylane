@@ -14,8 +14,10 @@ import {
   PackageCheck,
   Inbox,
   AlertTriangle,
+  Search,
 } from "lucide-react";
 import { Button } from "~/components/ui/button";
+import { Input } from "~/components/ui/input";
 import { Card, CardContent } from "~/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import {
@@ -116,6 +118,40 @@ export default function DeliveryOrdersPage() {
   );
 }
 
+function SearchBar({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="relative mb-3 sm:max-w-sm">
+      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+      <Input
+        placeholder="Autocomplete search..."
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="pl-9"
+      />
+    </div>
+  );
+}
+
+function CountBanner({ count, label }: { count: number; label: string }) {
+  return (
+    <div className="mb-3 overflow-hidden rounded-xl border-2 border-blue-300 bg-gradient-to-br from-blue-50 via-blue-100/70 to-blue-50 px-4 py-3 shadow-sm dark:border-blue-700 dark:from-blue-950/50 dark:via-blue-900/30 dark:to-blue-950/40">
+      <div className="flex items-center gap-2.5">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white shadow-sm">
+          <PackageCheck className="h-4 w-4" />
+        </div>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-blue-800 dark:text-blue-200">
+            {label}
+          </p>
+          <p className="text-xl font-bold tabular-nums tracking-tight text-blue-900 dark:text-blue-100 sm:text-2xl">
+            {count} delivery order{count === 1 ? "" : "s"}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function StatusBadge({ sentAt }: { sentAt: Date | string | null }) {
   const sent = !!sentAt;
   return (
@@ -160,6 +196,7 @@ function SentTable() {
   const list = api.deliveryOrder.listSent.useQuery();
   const { download, busyId } = useDownload();
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
 
   const send = api.deliveryOrder.send.useMutation({
     onSuccess: () => {
@@ -189,10 +226,28 @@ function SentTable() {
     );
   }
 
+  const q = search.trim().toLowerCase();
+  const filtered = q
+    ? rows.filter(
+        (d) =>
+          d.doNumber.toLowerCase().includes(q) ||
+          (d.customer?.company ?? "").toLowerCase().includes(q) ||
+          (d.customer?.name ?? "").toLowerCase().includes(q) ||
+          d.fileName.toLowerCase().includes(q),
+      )
+    : rows;
+
   return (
     <Card>
-      <CardContent className="p-0">
-        <div className="overflow-x-auto">
+      <CardContent className="p-3">
+        <SearchBar value={search} onChange={setSearch} />
+        <CountBanner count={filtered.length} label="Total sent" />
+        {filtered.length === 0 ? (
+          <p className="py-10 text-center text-sm text-muted-foreground">
+            No delivery orders match &ldquo;{search}&rdquo;.
+          </p>
+        ) : (
+        <div className="overflow-x-auto rounded-md border">
           <Table className="min-w-[720px]">
             <TableHeader>
               <TableRow>
@@ -205,7 +260,7 @@ function SentTable() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((d) => (
+              {filtered.map((d) => (
                 <TableRow key={d.id}>
                   <TableCell className="font-medium">
                     <Link href={`/delivery-orders/${d.id}`} className="text-blue-600 hover:underline">
@@ -252,7 +307,7 @@ function SentTable() {
             </TableBody>
           </Table>
         </div>
-      </CardContent>
+        )}
 
       <Dialog open={!!confirmDelete} onOpenChange={(o) => !o && setConfirmDelete(null)}>
         <DialogContent>
@@ -278,6 +333,7 @@ function SentTable() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      </CardContent>
     </Card>
   );
 }
@@ -285,6 +341,7 @@ function SentTable() {
 function ReceivedTable() {
   const list = api.deliveryOrder.listReceived.useQuery();
   const { download, busyId } = useDownload();
+  const [search, setSearch] = useState("");
 
   if (list.isLoading) return <TableSkeleton />;
   const rows = list.data ?? [];
@@ -298,10 +355,27 @@ function ReceivedTable() {
     );
   }
 
+  const q = search.trim().toLowerCase();
+  const filtered = q
+    ? rows.filter(
+        (d) =>
+          d.doNumber.toLowerCase().includes(q) ||
+          d.senderCompany.name.toLowerCase().includes(q) ||
+          d.fileName.toLowerCase().includes(q),
+      )
+    : rows;
+
   return (
     <Card>
-      <CardContent className="p-0">
-        <div className="overflow-x-auto">
+      <CardContent className="p-3">
+        <SearchBar value={search} onChange={setSearch} />
+        <CountBanner count={filtered.length} label="Total received" />
+        {filtered.length === 0 ? (
+          <p className="py-10 text-center text-sm text-muted-foreground">
+            No delivery orders match &ldquo;{search}&rdquo;.
+          </p>
+        ) : (
+        <div className="overflow-x-auto rounded-md border">
           <Table className="min-w-[640px]">
             <TableHeader>
               <TableRow>
@@ -313,7 +387,7 @@ function ReceivedTable() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((d) => (
+              {filtered.map((d) => (
                 <TableRow key={d.id}>
                   <TableCell className="font-medium">
                     <Link href={`/delivery-orders/${d.id}`} className="text-blue-600 hover:underline">
@@ -347,6 +421,7 @@ function ReceivedTable() {
             </TableBody>
           </Table>
         </div>
+        )}
       </CardContent>
     </Card>
   );

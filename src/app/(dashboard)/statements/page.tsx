@@ -15,8 +15,10 @@ import {
   Inbox,
   Trash2,
   AlertTriangle,
+  Search,
 } from "lucide-react";
 import { Button } from "~/components/ui/button";
+import { Input } from "~/components/ui/input";
 import { Card, CardContent } from "~/components/ui/card";
 import { Checkbox } from "~/components/ui/checkbox";
 import {
@@ -164,8 +166,18 @@ function SentStatementsTable() {
   } | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [search, setSearch] = useState("");
 
   const statements = list.data ?? [];
+  const q = search.trim().toLowerCase();
+  const filtered = q
+    ? statements.filter(
+        (s) =>
+          (s.customer.company ?? "").toLowerCase().includes(q) ||
+          s.customer.name.toLowerCase().includes(q) ||
+          s.fileName.toLowerCase().includes(q),
+      )
+    : statements;
 
   const bulkDelete = api.statement.bulkDelete.useMutation({
     onSuccess: async (data) => {
@@ -187,13 +199,13 @@ function SentStatementsTable() {
 
   const toggleSelectAll = () =>
     setSelectedIds((prev) =>
-      prev.size === statements.length
+      prev.size === filtered.length
         ? new Set()
-        : new Set(statements.map((s) => s.id)),
+        : new Set(filtered.map((s) => s.id)),
     );
 
   const isAllSelected =
-    statements.length > 0 && selectedIds.size === statements.length;
+    filtered.length > 0 && selectedIds.size === filtered.length;
   const isSomeSelected = selectedIds.size > 0;
   const canDelete = access.canSend && isSomeSelected;
   // View + Replace act on one statement, so they only appear when exactly one
@@ -215,13 +227,16 @@ function SentStatementsTable() {
   }
 
   return (
-    <>
-      {/* Selection action bar */}
-      {isSomeSelected && (
-        <div className="mb-3 flex items-center gap-2 overflow-x-auto whitespace-nowrap rounded-lg border bg-muted/40 px-3 py-2">
-          <span className="shrink-0 text-sm font-medium">
-            {selectedIds.size} selected
-          </span>
+    <Card>
+      <CardContent className="p-3">
+        {/* Fixed-height control bar — swaps between search and the selection
+            actions so selecting never shifts the table down (matches invoices). */}
+        <div className="mb-3 h-10">
+          {isSomeSelected ? (
+            <div className="flex h-10 items-center gap-2 overflow-x-auto whitespace-nowrap">
+              <span className="shrink-0 text-sm font-medium">
+                {selectedIds.size} selected
+              </span>
           {singleSelected && (
             <>
               <Button size="sm" variant="outline" className="shrink-0" asChild>
@@ -264,22 +279,41 @@ function SentStatementsTable() {
               {bulkDelete.isPending ? "Deleting..." : "Delete"}
             </Button>
           )}
-          <Button
-            size="sm"
-            variant="ghost"
-            className="ml-auto shrink-0"
-            onClick={() => setSelectedIds(new Set())}
-          >
-            Clear
-          </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="ml-auto shrink-0"
+                onClick={() => setSelectedIds(new Set())}
+              >
+                Clear
+              </Button>
+            </div>
+          ) : (
+            <div className="flex h-10 items-center gap-2">
+              <div className="relative flex-1 sm:max-w-sm">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Autocomplete search..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+            </div>
+          )}
         </div>
-      )}
 
-      <CountBanner count={statements.length} label="Total sent" />
+        <CountBanner count={filtered.length} label="Total sent" />
 
+        {filtered.length === 0 ? (
+          <p className="py-10 text-center text-sm text-muted-foreground">
+            No statements match &ldquo;{search}&rdquo;.
+          </p>
+        ) : (
+          <>
       {/* Mobile: card per statement */}
       <div className="space-y-3 md:hidden">
-        {list.data.map((s) => {
+        {filtered.map((s) => {
           const isSelected = selectedIds.has(s.id);
           return (
           <div
@@ -320,9 +354,7 @@ function SentStatementsTable() {
       </div>
 
       {/* Desktop: full table */}
-      <Card className="hidden md:block">
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
+      <div className="hidden overflow-x-auto rounded-md border md:block">
             <Table className="min-w-[760px]">
               <TableHeader>
                 <TableRow>
@@ -340,7 +372,7 @@ function SentStatementsTable() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {list.data.map((s) => {
+                {filtered.map((s) => {
                   const isSelected = selectedIds.has(s.id);
                   return (
                   <TableRow
@@ -397,9 +429,10 @@ function SentStatementsTable() {
                 })}
               </TableBody>
             </Table>
-          </div>
-        </CardContent>
-      </Card>
+      </div>
+          </>
+        )}
+      </CardContent>
 
       {replaceFor && (
         <SendStatementDialog
@@ -443,13 +476,14 @@ function SentStatementsTable() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </>
+    </Card>
   );
 }
 
 function ReceivedStatementsTable() {
   const list = api.statement.listIncoming.useQuery();
   const utils = api.useUtils();
+  const [search, setSearch] = useState("");
   const markViewed = api.statement.markViewed.useMutation({
     onSuccess: async () => {
       await utils.statement.listIncoming.invalidate();
@@ -467,13 +501,31 @@ function ReceivedStatementsTable() {
     );
   }
 
-  return (
-    <>
-      <CountBanner count={list.data.length} label="Total received" />
+  const q = search.trim().toLowerCase();
+  const filtered = q
+    ? list.data.filter(
+        (s) =>
+          s.senderCompany.name.toLowerCase().includes(q) ||
+          s.fileName.toLowerCase().includes(q) ||
+          (s.notes ?? "").toLowerCase().includes(q),
+      )
+    : list.data;
 
+  return (
+    <Card>
+      <CardContent className="p-3">
+        <SearchBar value={search} onChange={setSearch} />
+        <CountBanner count={filtered.length} label="Total received" />
+
+        {filtered.length === 0 ? (
+          <p className="py-10 text-center text-sm text-muted-foreground">
+            No statements match &ldquo;{search}&rdquo;.
+          </p>
+        ) : (
+          <>
       {/* Mobile: card per statement */}
       <div className="space-y-3 md:hidden">
-        {list.data.map((s) => (
+        {filtered.map((s) => (
           <div key={s.id} className="rounded-lg border bg-white p-3">
             <div className="flex items-start justify-between gap-2">
               <p className="min-w-0 font-semibold">{s.senderCompany.name}</p>
@@ -511,9 +563,7 @@ function ReceivedStatementsTable() {
       </div>
 
       {/* Desktop: full table */}
-      <Card className="hidden md:block">
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
+      <div className="hidden overflow-x-auto rounded-md border md:block">
             <Table className="min-w-[680px]">
             <TableHeader>
               <TableRow>
@@ -524,7 +574,7 @@ function ReceivedStatementsTable() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {list.data.map((s) => (
+              {filtered.map((s) => (
                 <TableRow key={s.id}>
                   <TableCell>
                     <p className="font-medium">{s.senderCompany.name}</p>
@@ -571,10 +621,31 @@ function ReceivedStatementsTable() {
               ))}
             </TableBody>
           </Table>
-        </div>
+      </div>
+          </>
+        )}
       </CardContent>
     </Card>
-    </>
+  );
+}
+
+function SearchBar({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="relative mb-3 sm:max-w-sm">
+      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+      <Input
+        placeholder="Autocomplete search..."
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="pl-9"
+      />
+    </div>
   );
 }
 
