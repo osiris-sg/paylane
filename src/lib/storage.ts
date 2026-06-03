@@ -120,6 +120,15 @@ export async function deleteObject(key: string): Promise<void> {
   await client().send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key }));
 }
 
+/** Fetch a private object's raw bytes server-side (e.g. to bundle into a zip). */
+export async function getObjectBuffer(key: string): Promise<Buffer> {
+  const res = await client().send(
+    new GetObjectCommand({ Bucket: BUCKET, Key: key }),
+  );
+  const bytes = await res.Body!.transformToByteArray();
+  return Buffer.from(bytes);
+}
+
 /**
  * Resolve a stored `fileUrl` for viewing: legacy inline/external values pass
  * through unchanged; S3 keys become a short-lived presigned GET URL.

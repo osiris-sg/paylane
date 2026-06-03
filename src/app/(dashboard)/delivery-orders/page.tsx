@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
+import { Checkbox } from "~/components/ui/checkbox";
 import { Card, CardContent } from "~/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import {
@@ -37,7 +38,6 @@ import {
 } from "~/components/ui/dialog";
 import { api } from "~/trpc/react";
 import { useSendAccess } from "~/lib/use-send-access";
-import { formatCurrency } from "~/lib/currency";
 
 function DeliveryOrdersContent() {
   const { data: access, isLoading } = api.deliveryOrder.getAccess.useQuery();
@@ -118,20 +118,6 @@ export default function DeliveryOrdersPage() {
   );
 }
 
-function SearchBar({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  return (
-    <div className="relative mb-3 sm:max-w-sm">
-      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-      <Input
-        placeholder="Autocomplete search..."
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="pl-9"
-      />
-    </div>
-  );
-}
-
 function CountBanner({ count, label }: { count: number; label: string }) {
   return (
     <div className="mb-3 overflow-hidden rounded-xl border-2 border-blue-300 bg-gradient-to-br from-blue-50 via-blue-100/70 to-blue-50 px-4 py-3 shadow-sm dark:border-blue-700 dark:from-blue-950/50 dark:via-blue-900/30 dark:to-blue-950/40">
@@ -170,62 +156,64 @@ function StatusBadge({ sentAt }: { sentAt: Date | string | null }) {
 function useDownload() {
   const utils = api.useUtils();
   const [busyId, setBusyId] = useState<string | null>(null);
+  const trigger = async (id: string) => {
+    const { url, filename } = await utils.deliveryOrder.getDownloadUrl.fetch({ id });
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
   const download = async (id: string) => {
     setBusyId(id);
     try {
-      const { url, filename } = await utils.deliveryOrder.getDownloadUrl.fetch({ id });
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      a.rel = "noopener";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
+      await trigger(id);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn't download the file");
     } finally {
       setBusyId(null);
     }
   };
-  return { download, busyId };
+  // Bundle several DO files into one zip (built server-side) and download it.
+  const downloadZip = async (ids: string[]) => {
+    setBusyId("bulk");
+    try {
+      const res = await fetch("/api/delivery-orders/download-zip", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
+      if (!res.ok) throw new Error("Couldn't build the zip");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "delivery-orders.zip";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't download the files");
+    } finally {
+      setBusyId(null);
+    }
+  };
+  return { download, downloadZip, busyId };
 }
 
 function SentTable() {
   const utils = api.useUtils();
   const sendAccess = useSendAccess();
   const list = api.deliveryOrder.listSent.useQuery();
-  const { download, busyId } = useDownload();
-  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const { download, downloadZip, busyId } = useDownload();
   const [search, setSearch] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
-  const send = api.deliveryOrder.send.useMutation({
-    onSuccess: () => {
-      toast.success("Delivery order sent");
-      void utils.deliveryOrder.listSent.invalidate();
-    },
-    onError: (e) => toast.error(e.message || "Failed to send"),
-  });
-  const del = api.deliveryOrder.delete.useMutation({
-    onSuccess: () => {
-      toast.success("Delivery order deleted");
-      setConfirmDelete(null);
-      void utils.deliveryOrder.listSent.invalidate();
-    },
-    onError: (e) => toast.error(e.message || "Failed to delete"),
-  });
-
-  if (list.isLoading) return <TableSkeleton />;
   const rows = list.data ?? [];
-  if (rows.length === 0) {
-    return (
-      <EmptyState
-        icon={<PackageCheck className="h-10 w-10 text-muted-foreground" />}
-        title="No delivery orders yet"
-        body="Upload a delivery order — the AI reads the DO number and customer, then you can send it."
-      />
-    );
-  }
-
   const q = search.trim().toLowerCase();
   const filtered = q
     ? rows.filter(
@@ -237,123 +225,226 @@ function SentTable() {
       )
     : rows;
 
+  const send = api.deliveryOrder.send.useMutation({
+    onError: (e) => toast.error(e.message || "Failed to send"),
+  });
+  const bulkDelete = api.deliveryOrder.bulkDelete.useMutation({
+    onSuccess: (data) => {
+      toast.success(`${data.count} delivery order(s) deleted`);
+      setSelectedIds(new Set());
+      setConfirmOpen(false);
+      void utils.deliveryOrder.listSent.invalidate();
+    },
+    onError: (e) => toast.error(e.message || "Failed to delete"),
+  });
+
+  const toggleSelect = (id: string) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const toggleSelectAll = () =>
+    setSelectedIds((prev) =>
+      prev.size === filtered.length ? new Set() : new Set(filtered.map((d) => d.id)),
+    );
+  const isAllSelected = filtered.length > 0 && selectedIds.size === filtered.length;
+  const isSomeSelected = selectedIds.size > 0;
+  const single =
+    selectedIds.size === 1 ? filtered.find((d) => selectedIds.has(d.id)) ?? null : null;
+  const anyDraftSelected = filtered.some((d) => selectedIds.has(d.id) && !d.sentAt);
+
+  const handleBulkSend = async () => {
+    const toSend = filtered.filter((d) => selectedIds.has(d.id) && !d.sentAt && d.customer);
+    for (const d of toSend) {
+      try { await send.mutateAsync({ id: d.id }); } catch {}
+    }
+    setSelectedIds(new Set());
+    void utils.deliveryOrder.listSent.invalidate();
+    if (toSend.length) toast.success(`${toSend.length} delivery order(s) sent`);
+  };
+
+  if (list.isLoading) return <TableSkeleton />;
+  if (rows.length === 0) {
+    return (
+      <EmptyState
+        icon={<PackageCheck className="h-10 w-10 text-muted-foreground" />}
+        title="No delivery orders yet"
+        body="Upload a delivery order — the AI reads the DO number and customer, then you can send it."
+      />
+    );
+  }
+
   return (
     <Card>
       <CardContent className="p-3">
-        <SearchBar value={search} onChange={setSearch} />
+        {/* Fixed-height control bar — swaps between search and selection actions
+            so selecting never shifts the table (matches invoices/statements). */}
+        <div className="mb-3 h-10">
+          {isSomeSelected ? (
+            <div className="flex h-10 items-center gap-2 overflow-x-auto whitespace-nowrap">
+              <span className="shrink-0 text-sm font-medium">{selectedIds.size} selected</span>
+              {single && (
+                <Button size="sm" variant="outline" className="shrink-0" asChild>
+                  <Link href={`/delivery-orders/${single.id}`}>
+                    <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+                    View
+                  </Link>
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                className="shrink-0"
+                disabled={busyId !== null}
+                onClick={() =>
+                  single ? download(single.id) : downloadZip(Array.from(selectedIds))
+                }
+              >
+                <Download className="mr-1.5 h-3.5 w-3.5" />
+                {busyId === "bulk" ? "Zipping…" : "Download"}
+              </Button>
+              {anyDraftSelected && (
+                <Button
+                  size="sm"
+                  className="shrink-0"
+                  disabled={!sendAccess.canSend || send.isPending}
+                  onClick={handleBulkSend}
+                >
+                  <Send className="mr-1.5 h-3.5 w-3.5" />
+                  Send
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                className="shrink-0 border-red-300 text-red-600 hover:bg-red-50"
+                disabled={bulkDelete.isPending}
+                onClick={() => setConfirmOpen(true)}
+              >
+                <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                {bulkDelete.isPending ? "Deleting..." : "Delete"}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="ml-auto shrink-0"
+                onClick={() => setSelectedIds(new Set())}
+              >
+                Clear
+              </Button>
+            </div>
+          ) : (
+            <div className="flex h-10 items-center gap-2">
+              <div className="relative flex-1 sm:max-w-sm">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Autocomplete search..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
         <CountBanner count={filtered.length} label="Total sent" />
+
         {filtered.length === 0 ? (
           <p className="py-10 text-center text-sm text-muted-foreground">
             No delivery orders match &ldquo;{search}&rdquo;.
           </p>
         ) : (
-        <div className="overflow-x-auto rounded-md border">
-          <Table className="min-w-[720px]">
-            <TableHeader>
-              <TableRow>
-                <TableHead>DO #</TableHead>
-                <TableHead>Customer</TableHead>
-                <TableHead>Reference</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.map((d) => (
-                <TableRow key={d.id}>
-                  <TableCell className="font-medium">
-                    <Link href={`/delivery-orders/${d.id}`} className="text-blue-600 hover:underline">
-                      {d.doNumber}
-                    </Link>
-                  </TableCell>
-                  <TableCell>{d.customer ? d.customer.company || d.customer.name : <span className="text-muted-foreground">—</span>}</TableCell>
-                  <TableCell className="max-w-[150px] truncate text-muted-foreground">{d.reference || "—"}</TableCell>
-                  <TableCell className="text-sm">{d.doDate ? dayjs(d.doDate).format("D MMM YYYY") : "—"}</TableCell>
-                  <TableCell><StatusBadge sentAt={d.sentAt} /></TableCell>
-                  <TableCell className="text-right font-medium tabular-nums">
-                    {d.amount != null ? formatCurrency(Number(d.amount), d.currency) : <span className="text-muted-foreground">—</span>}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex justify-end gap-1">
-                      <Button variant="outline" size="sm" onClick={() => download(d.id)} disabled={busyId === d.id}>
-                        <Download className="mr-1.5 h-3.5 w-3.5" />
-                        {busyId === d.id ? "…" : "Download"}
-                      </Button>
-                      {!d.sentAt && (
-                        <Button
-                          size="sm"
-                          disabled={!sendAccess.canSend || !d.customer || send.isPending}
-                          onClick={() => send.mutate({ id: d.id })}
-                        >
-                          <Send className="mr-1.5 h-3.5 w-3.5" />
-                          Send
-                        </Button>
-                      )}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="border-red-300 text-red-600 hover:bg-red-50"
-                        onClick={() => setConfirmDelete(d.id)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  </TableCell>
+          <div className="overflow-x-auto rounded-md border">
+            <Table className="min-w-[640px]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-10">
+                    <Checkbox checked={isAllSelected} onCheckedChange={toggleSelectAll} aria-label="Select all" />
+                  </TableHead>
+                  <TableHead>DO #</TableHead>
+                  <TableHead>Customer</TableHead>
+                  <TableHead>Reference</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Status</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+              </TableHeader>
+              <TableBody>
+                {filtered.map((d) => {
+                  const isSelected = selectedIds.has(d.id);
+                  return (
+                    <TableRow
+                      key={d.id}
+                      onClick={() => toggleSelect(d.id)}
+                      className={`cursor-pointer select-none ${isSelected ? "bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/30" : ""}`}
+                    >
+                      <TableCell>
+                        <Checkbox
+                          checked={isSelected}
+                          onClick={(e) => e.stopPropagation()}
+                          onCheckedChange={() => toggleSelect(d.id)}
+                          aria-label={`Select ${d.doNumber}`}
+                        />
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        <Link
+                          href={`/delivery-orders/${d.id}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-blue-600 hover:underline"
+                        >
+                          {d.doNumber}
+                        </Link>
+                      </TableCell>
+                      <TableCell>{d.customer ? d.customer.company || d.customer.name : <span className="text-muted-foreground">—</span>}</TableCell>
+                      <TableCell className="max-w-[150px] truncate text-muted-foreground">{d.reference || "—"}</TableCell>
+                      <TableCell className="text-sm">{d.doDate ? dayjs(d.doDate).format("D MMM YYYY") : "—"}</TableCell>
+                      <TableCell><StatusBadge sentAt={d.sentAt} /></TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
         )}
+      </CardContent>
 
-      <Dialog open={!!confirmDelete} onOpenChange={(o) => !o && setConfirmDelete(null)}>
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent>
           <DialogHeader>
             <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-red-100">
               <AlertTriangle className="h-5 w-5 text-red-600" />
             </div>
-            <DialogTitle>Delete this delivery order?</DialogTitle>
+            <DialogTitle>Delete selected delivery orders?</DialogTitle>
             <DialogDescription>
-              This permanently deletes the delivery order and its file.
+              {selectedIds.size} delivery order(s) will be permanently deleted.
               <span className="mt-2 block font-medium text-red-600">This cannot be undone.</span>
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setConfirmDelete(null)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setConfirmOpen(false)}>Cancel</Button>
             <Button
               variant="destructive"
-              disabled={del.isPending}
-              onClick={() => confirmDelete && del.mutate({ id: confirmDelete })}
+              disabled={bulkDelete.isPending}
+              onClick={() => bulkDelete.mutate({ ids: Array.from(selectedIds) })}
             >
               Delete
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      </CardContent>
     </Card>
   );
 }
 
 function ReceivedTable() {
+  const { download, downloadZip, busyId } = useDownload();
   const list = api.deliveryOrder.listReceived.useQuery();
-  const { download, busyId } = useDownload();
   const [search, setSearch] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  if (list.isLoading) return <TableSkeleton />;
   const rows = list.data ?? [];
-  if (rows.length === 0) {
-    return (
-      <EmptyState
-        icon={<Inbox className="h-10 w-10 text-muted-foreground" />}
-        title="No delivery orders received"
-        body="When a supplier sends you a delivery order, it'll show up here."
-      />
-    );
-  }
-
   const q = search.trim().toLowerCase();
   const filtered = q
     ? rows.filter(
@@ -364,61 +455,139 @@ function ReceivedTable() {
       )
     : rows;
 
+  const toggleSelect = (id: string) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const toggleSelectAll = () =>
+    setSelectedIds((prev) =>
+      prev.size === filtered.length ? new Set() : new Set(filtered.map((d) => d.id)),
+    );
+  const isAllSelected = filtered.length > 0 && selectedIds.size === filtered.length;
+  const isSomeSelected = selectedIds.size > 0;
+  const single =
+    selectedIds.size === 1 ? filtered.find((d) => selectedIds.has(d.id)) ?? null : null;
+
+  if (list.isLoading) return <TableSkeleton />;
+  if (rows.length === 0) {
+    return (
+      <EmptyState
+        icon={<Inbox className="h-10 w-10 text-muted-foreground" />}
+        title="No delivery orders received"
+        body="When a supplier sends you a delivery order, it'll show up here."
+      />
+    );
+  }
+
   return (
     <Card>
       <CardContent className="p-3">
-        <SearchBar value={search} onChange={setSearch} />
+        <div className="mb-3 h-10">
+          {isSomeSelected ? (
+            <div className="flex h-10 items-center gap-2 overflow-x-auto whitespace-nowrap">
+              <span className="shrink-0 text-sm font-medium">{selectedIds.size} selected</span>
+              {single && (
+                <Button size="sm" variant="outline" className="shrink-0" asChild>
+                  <Link href={`/delivery-orders/${single.id}`}>
+                    <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+                    View
+                  </Link>
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                className="shrink-0"
+                disabled={busyId !== null}
+                onClick={() =>
+                  single ? download(single.id) : downloadZip(Array.from(selectedIds))
+                }
+              >
+                <Download className="mr-1.5 h-3.5 w-3.5" />
+                {busyId === "bulk" ? "Zipping…" : "Download"}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="ml-auto shrink-0"
+                onClick={() => setSelectedIds(new Set())}
+              >
+                Clear
+              </Button>
+            </div>
+          ) : (
+            <div className="flex h-10 items-center gap-2">
+              <div className="relative flex-1 sm:max-w-sm">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Autocomplete search..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
         <CountBanner count={filtered.length} label="Total received" />
+
         {filtered.length === 0 ? (
           <p className="py-10 text-center text-sm text-muted-foreground">
             No delivery orders match &ldquo;{search}&rdquo;.
           </p>
         ) : (
-        <div className="overflow-x-auto rounded-md border">
-          <Table className="min-w-[640px]">
-            <TableHeader>
-              <TableRow>
-                <TableHead>DO #</TableHead>
-                <TableHead>Supplier</TableHead>
-                <TableHead>Reference</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.map((d) => (
-                <TableRow key={d.id}>
-                  <TableCell className="font-medium">
-                    <Link href={`/delivery-orders/${d.id}`} className="text-blue-600 hover:underline">
-                      {d.doNumber}
-                    </Link>
-                  </TableCell>
-                  <TableCell>{d.senderCompany.name}</TableCell>
-                  <TableCell className="max-w-[150px] truncate text-muted-foreground">{d.reference || "—"}</TableCell>
-                  <TableCell className="text-sm">{d.doDate ? dayjs(d.doDate).format("D MMM YYYY") : d.sentAt ? dayjs(d.sentAt).format("D MMM YYYY") : "—"}</TableCell>
-                  <TableCell className="text-right font-medium tabular-nums">
-                    {d.amount != null ? formatCurrency(Number(d.amount), d.currency) : <span className="text-muted-foreground">—</span>}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex justify-end gap-1">
-                      <Button variant="outline" size="sm" asChild>
-                        <Link href={`/delivery-orders/${d.id}`}>
-                          <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
-                          View
-                        </Link>
-                      </Button>
-                      <Button variant="outline" size="sm" onClick={() => download(d.id)} disabled={busyId === d.id}>
-                        <Download className="mr-1.5 h-3.5 w-3.5" />
-                        {busyId === d.id ? "…" : "Download"}
-                      </Button>
-                    </div>
-                  </TableCell>
+          <div className="overflow-x-auto rounded-md border">
+            <Table className="min-w-[560px]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-10">
+                    <Checkbox checked={isAllSelected} onCheckedChange={toggleSelectAll} aria-label="Select all" />
+                  </TableHead>
+                  <TableHead>DO #</TableHead>
+                  <TableHead>Supplier</TableHead>
+                  <TableHead>Reference</TableHead>
+                  <TableHead>Date</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+              </TableHeader>
+              <TableBody>
+                {filtered.map((d) => {
+                  const isSelected = selectedIds.has(d.id);
+                  return (
+                    <TableRow
+                      key={d.id}
+                      onClick={() => toggleSelect(d.id)}
+                      className={`cursor-pointer select-none ${isSelected ? "bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/30" : ""}`}
+                    >
+                      <TableCell>
+                        <Checkbox
+                          checked={isSelected}
+                          onClick={(e) => e.stopPropagation()}
+                          onCheckedChange={() => toggleSelect(d.id)}
+                          aria-label={`Select ${d.doNumber}`}
+                        />
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        <Link
+                          href={`/delivery-orders/${d.id}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-blue-600 hover:underline"
+                        >
+                          {d.doNumber}
+                        </Link>
+                      </TableCell>
+                      <TableCell>{d.senderCompany.name}</TableCell>
+                      <TableCell className="max-w-[150px] truncate text-muted-foreground">{d.reference || "—"}</TableCell>
+                      <TableCell className="text-sm">{d.doDate ? dayjs(d.doDate).format("D MMM YYYY") : d.sentAt ? dayjs(d.sentAt).format("D MMM YYYY") : "—"}</TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
         )}
       </CardContent>
     </Card>

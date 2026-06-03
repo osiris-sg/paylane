@@ -54,8 +54,6 @@ function UploadInner() {
   const [doNumber, setDoNumber] = useState("");
   const [reference, setReference] = useState("");
   const [doDate, setDoDate] = useState("");
-  const [amount, setAmount] = useState("");
-  const [currency, setCurrency] = useState("SGD");
   const [customerId, setCustomerId] = useState("");
   const [dragOver, setDragOver] = useState(false);
 
@@ -83,8 +81,6 @@ function UploadInner() {
             doNumber?: string;
             reference?: string;
             doDate?: string;
-            amount?: number;
-            currency?: string;
             customer?: { company?: string; name?: string; email?: string; phone?: string };
           };
         })(),
@@ -95,8 +91,6 @@ function UploadInner() {
       setDoNumber(extractRes.doNumber ?? "");
       setReference(extractRes.reference ?? "");
       setDoDate(extractRes.doDate ?? "");
-      setAmount(extractRes.amount != null ? String(extractRes.amount) : "");
-      if (extractRes.currency) setCurrency(extractRes.currency);
 
       // Try to match the extracted customer to an existing one.
       const needle = normalise(extractRes.customer?.company ?? "");
@@ -161,13 +155,10 @@ function UploadInner() {
     if (thenSend && !customerId) { toast.error("Assign a customer to send"); return; }
     setStatus("saving");
     try {
-      const parsedAmount = parseFloat(amount.replace(/[^\d.]/g, ""));
       const created = await createDO.mutateAsync({
         doNumber: doNumber.trim(),
         reference: reference.trim() || undefined,
         doDate: doDate ? new Date(doDate) : undefined,
-        amount: Number.isFinite(parsedAmount) ? parsedAmount : undefined,
-        currency,
         customerId: customerId || undefined,
         fileUrl: fileKey,
         fileName,
@@ -249,25 +240,6 @@ function UploadInner() {
                 <div className="grid gap-1.5">
                   <Label htmlFor="do-date">Date</Label>
                   <Input id="do-date" type="date" value={doDate} onChange={(e) => setDoDate(e.target.value)} />
-                </div>
-                <div className="grid gap-1.5">
-                  <Label htmlFor="do-amount">Amount</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      id="do-currency"
-                      value={currency}
-                      onChange={(e) => setCurrency(e.target.value.toUpperCase().slice(0, 3))}
-                      className="w-16"
-                    />
-                    <Input
-                      id="do-amount"
-                      inputMode="decimal"
-                      value={amount}
-                      onChange={(e) => setAmount(e.target.value)}
-                      placeholder="0.00"
-                      className="flex-1"
-                    />
-                  </div>
                 </div>
               </div>
 

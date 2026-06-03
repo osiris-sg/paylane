@@ -72,8 +72,6 @@ export const deliveryOrderRouter = createTRPCRouter({
         doNumber: true,
         reference: true,
         doDate: true,
-        amount: true,
-        currency: true,
         fileName: true,
         sentAt: true,
         createdAt: true,
@@ -93,8 +91,6 @@ export const deliveryOrderRouter = createTRPCRouter({
         doNumber: true,
         reference: true,
         doDate: true,
-        amount: true,
-        currency: true,
         fileName: true,
         sentAt: true,
         senderCompany: { select: { id: true, name: true } },
@@ -130,8 +126,6 @@ export const deliveryOrderRouter = createTRPCRouter({
         doNumber: z.string().min(1),
         reference: z.string().optional(),
         doDate: z.coerce.date().optional(),
-        amount: z.number().min(0).optional(),
-        currency: z.string().optional(),
         customerId: z.string().optional(),
         fileUrl: z.string().min(1),
         fileName: z.string().min(1),
@@ -148,8 +142,6 @@ export const deliveryOrderRouter = createTRPCRouter({
           doNumber: input.doNumber,
           reference: input.reference,
           doDate: input.doDate,
-          amount: input.amount,
-          currency: input.currency ?? "SGD",
           customerId: input.customerId,
           fileUrl: input.fileUrl,
           fileName: input.fileName,
@@ -309,6 +301,18 @@ export const deliveryOrderRouter = createTRPCRouter({
       });
       if (count === 0) throw new TRPCError({ code: "NOT_FOUND" });
       return { success: true };
+    }),
+
+  /** Sender: bulk-delete DOs they own (sender-scoped). */
+  bulkDelete: protectedProcedure
+    .input(z.object({ ids: z.array(z.string()).min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      const user = ctx.user;
+      await requireDeliveryOrders(ctx.db as unknown as PrismaClient, user.companyId);
+      const { count } = await ctx.db.deliveryOrder.deleteMany({
+        where: { id: { in: input.ids }, senderCompanyId: user.companyId },
+      });
+      return { success: true, count };
     }),
 
   /** Receiver: mark a received DO as viewed (first-time only). */
