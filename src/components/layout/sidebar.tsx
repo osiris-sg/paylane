@@ -36,9 +36,9 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/delivery-orders", label: "Delivery Orders", icon: PackageCheck, deliveryOrders: true },
   { href: "/invoices", label: "Invoices", icon: FileText },
   { href: "/statements", label: "Statements", icon: FileSpreadsheet },
-  { href: "/delivery-orders", label: "Delivery Orders", icon: PackageCheck, deliveryOrders: true },
   { href: "/customers", label: "Customers", icon: Users, modules: ["SEND", "BOTH"] },
   { href: "/suppliers", label: "Suppliers", icon: Truck, modules: ["RECEIVE", "BOTH"] },
   { href: "/agent", label: "AI Assistant", icon: Sparkles, modules: ["SEND", "BOTH"] },
