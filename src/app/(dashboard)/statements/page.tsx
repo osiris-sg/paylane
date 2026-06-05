@@ -48,6 +48,12 @@ import { SendStatementDialog } from "~/components/statements/send-statement-dial
 import { ExpiredBanner } from "~/components/subscription/expired-banner";
 import { LockedSendingCTA } from "~/components/subscription/locked-sending-cta";
 import { useSendAccess } from "~/lib/use-send-access";
+import {
+  ALL_DATES,
+  withinDateRange,
+  type DateFilterValue,
+} from "~/components/filters/date-filter";
+import { FilterMenu, EntityFilterSection } from "~/components/filters/filter-menu";
 
 dayjs.extend(relativeTime);
 
@@ -167,17 +173,32 @@ function SentStatementsTable() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [dateFilter, setDateFilter] = useState<DateFilterValue>(ALL_DATES);
+  const [customerId, setCustomerId] = useState<string | undefined>(undefined);
 
   const statements = list.data ?? [];
+
+  // Customers that actually have a statement, for the filter dropdown.
+  const customerOptions = Array.from(
+    new Map(
+      statements.map((s) => [
+        s.customer.id,
+        { id: s.customer.id, name: s.customer.name, company: s.customer.company },
+      ]),
+    ).values(),
+  );
+
   const q = search.trim().toLowerCase();
-  const filtered = q
-    ? statements.filter(
-        (s) =>
-          (s.customer.company ?? "").toLowerCase().includes(q) ||
-          s.customer.name.toLowerCase().includes(q) ||
-          s.fileName.toLowerCase().includes(q),
-      )
-    : statements;
+  const filtered = statements.filter((s) => {
+    if (customerId && s.customer.id !== customerId) return false;
+    if (!withinDateRange(s.sentAt, dateFilter)) return false;
+    if (!q) return true;
+    return (
+      (s.customer.company ?? "").toLowerCase().includes(q) ||
+      s.customer.name.toLowerCase().includes(q) ||
+      s.fileName.toLowerCase().includes(q)
+    );
+  });
 
   const bulkDelete = api.statement.bulkDelete.useMutation({
     onSuccess: async (data) => {
@@ -299,6 +320,19 @@ function SentStatementsTable() {
                   className="pl-9"
                 />
               </div>
+              <FilterMenu
+                date={dateFilter}
+                onDateChange={setDateFilter}
+                extraActiveCount={customerId ? 1 : 0}
+                onClearExtra={() => setCustomerId(undefined)}
+              >
+                <EntityFilterSection
+                  label="Customer"
+                  options={customerOptions}
+                  selectedId={customerId}
+                  onChange={setCustomerId}
+                />
+              </FilterMenu>
             </div>
           )}
         </div>
@@ -307,7 +341,9 @@ function SentStatementsTable() {
 
         {filtered.length === 0 ? (
           <p className="py-10 text-center text-sm text-muted-foreground">
-            No statements match &ldquo;{search}&rdquo;.
+            {search
+              ? <>No statements match &ldquo;{search}&rdquo;.</>
+              : "No statements match your filters."}
           </p>
         ) : (
           <>
@@ -484,6 +520,7 @@ function ReceivedStatementsTable() {
   const list = api.statement.listIncoming.useQuery();
   const utils = api.useUtils();
   const [search, setSearch] = useState("");
+  const [dateFilter, setDateFilter] = useState<DateFilterValue>(ALL_DATES);
   const markViewed = api.statement.markViewed.useMutation({
     onSuccess: async () => {
       await utils.statement.listIncoming.invalidate();
@@ -502,24 +539,38 @@ function ReceivedStatementsTable() {
   }
 
   const q = search.trim().toLowerCase();
-  const filtered = q
-    ? list.data.filter(
-        (s) =>
-          s.senderCompany.name.toLowerCase().includes(q) ||
-          s.fileName.toLowerCase().includes(q) ||
-          (s.notes ?? "").toLowerCase().includes(q),
-      )
-    : list.data;
+  const filtered = list.data.filter((s) => {
+    if (!withinDateRange(s.sentAt, dateFilter)) return false;
+    if (!q) return true;
+    return (
+      s.senderCompany.name.toLowerCase().includes(q) ||
+      s.fileName.toLowerCase().includes(q) ||
+      (s.notes ?? "").toLowerCase().includes(q)
+    );
+  });
 
   return (
     <Card>
       <CardContent className="p-3">
-        <SearchBar value={search} onChange={setSearch} />
+        <div className="mb-3 flex items-center gap-2">
+          <div className="relative flex-1 sm:max-w-sm">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Autocomplete search..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+          <FilterMenu date={dateFilter} onDateChange={setDateFilter} />
+        </div>
         <CountBanner count={filtered.length} label="Total received" />
 
         {filtered.length === 0 ? (
           <p className="py-10 text-center text-sm text-muted-foreground">
-            No statements match &ldquo;{search}&rdquo;.
+            {search
+              ? <>No statements match &ldquo;{search}&rdquo;.</>
+              : "No statements match your filters."}
           </p>
         ) : (
           <>
@@ -626,26 +677,6 @@ function ReceivedStatementsTable() {
         )}
       </CardContent>
     </Card>
-  );
-}
-
-function SearchBar({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <div className="relative mb-3 sm:max-w-sm">
-      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-      <Input
-        placeholder="Autocomplete search..."
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="pl-9"
-      />
-    </div>
   );
 }
 

@@ -44,6 +44,8 @@ export const invoiceRouter = createTRPCRouter({
         search: z.string().optional(),
         customerId: z.string().optional(),
         senderCompanyId: z.string().optional(),
+        dateFrom: z.coerce.date().optional(),
+        dateTo: z.coerce.date().optional(),
         sortBy: z
           .enum([
             "invoiceNumber",
@@ -75,6 +77,15 @@ export const invoiceRouter = createTRPCRouter({
 
       if (input.senderCompanyId && input.type === "received") {
         where.senderCompanyId = input.senderCompanyId;
+      }
+
+      // Date filter applies to the invoice date (the table's primary date
+      // column). Index-backed by the (company, invoicedDate) composite indexes.
+      if (input.dateFrom || input.dateTo) {
+        where.invoicedDate = {
+          ...(input.dateFrom ? { gte: input.dateFrom } : {}),
+          ...(input.dateTo ? { lte: input.dateTo } : {}),
+        };
       }
 
       if (input.search) {

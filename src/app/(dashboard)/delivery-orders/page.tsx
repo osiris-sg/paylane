@@ -38,6 +38,12 @@ import {
 } from "~/components/ui/dialog";
 import { api } from "~/trpc/react";
 import { useSendAccess } from "~/lib/use-send-access";
+import {
+  ALL_DATES,
+  withinDateRange,
+  type DateFilterValue,
+} from "~/components/filters/date-filter";
+import { FilterMenu, EntityFilterSection } from "~/components/filters/filter-menu";
 
 function DeliveryOrdersContent() {
   const { data: access, isLoading } = api.deliveryOrder.getAccess.useQuery();
@@ -210,20 +216,37 @@ function SentTable() {
   const list = api.deliveryOrder.listSent.useQuery();
   const { download, downloadZip, busyId } = useDownload();
   const [search, setSearch] = useState("");
+  const [dateFilter, setDateFilter] = useState<DateFilterValue>(ALL_DATES);
+  const [customerId, setCustomerId] = useState<string | undefined>(undefined);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const rows = list.data ?? [];
+
+  // Customers that actually have a delivery order, for the filter dropdown.
+  const customerOptions = Array.from(
+    new Map(
+      rows
+        .filter((d) => d.customer)
+        .map((d) => [
+          d.customer!.id,
+          { id: d.customer!.id, name: d.customer!.name, company: d.customer!.company },
+        ]),
+    ).values(),
+  );
+
   const q = search.trim().toLowerCase();
-  const filtered = q
-    ? rows.filter(
-        (d) =>
-          d.doNumber.toLowerCase().includes(q) ||
-          (d.customer?.company ?? "").toLowerCase().includes(q) ||
-          (d.customer?.name ?? "").toLowerCase().includes(q) ||
-          d.fileName.toLowerCase().includes(q),
-      )
-    : rows;
+  const filtered = rows.filter((d) => {
+    if (customerId && d.customer?.id !== customerId) return false;
+    if (!withinDateRange(d.doDate, dateFilter)) return false;
+    if (!q) return true;
+    return (
+      d.doNumber.toLowerCase().includes(q) ||
+      (d.customer?.company ?? "").toLowerCase().includes(q) ||
+      (d.customer?.name ?? "").toLowerCase().includes(q) ||
+      d.fileName.toLowerCase().includes(q)
+    );
+  });
 
   const send = api.deliveryOrder.send.useMutation({
     onError: (e) => toast.error(e.message || "Failed to send"),
@@ -346,6 +369,19 @@ function SentTable() {
                   className="pl-9"
                 />
               </div>
+              <FilterMenu
+                date={dateFilter}
+                onDateChange={setDateFilter}
+                extraActiveCount={customerId ? 1 : 0}
+                onClearExtra={() => setCustomerId(undefined)}
+              >
+                <EntityFilterSection
+                  label="Customer"
+                  options={customerOptions}
+                  selectedId={customerId}
+                  onChange={setCustomerId}
+                />
+              </FilterMenu>
             </div>
           )}
         </div>
@@ -354,7 +390,9 @@ function SentTable() {
 
         {filtered.length === 0 ? (
           <p className="py-10 text-center text-sm text-muted-foreground">
-            No delivery orders match &ldquo;{search}&rdquo;.
+            {search
+              ? <>No delivery orders match &ldquo;{search}&rdquo;.</>
+              : "No delivery orders match your filters."}
           </p>
         ) : (
           <div className="overflow-x-auto rounded-md border">
@@ -442,18 +480,21 @@ function ReceivedTable() {
   const { download, downloadZip, busyId } = useDownload();
   const list = api.deliveryOrder.listReceived.useQuery();
   const [search, setSearch] = useState("");
+  const [dateFilter, setDateFilter] = useState<DateFilterValue>(ALL_DATES);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const rows = list.data ?? [];
   const q = search.trim().toLowerCase();
-  const filtered = q
-    ? rows.filter(
-        (d) =>
-          d.doNumber.toLowerCase().includes(q) ||
-          d.senderCompany.name.toLowerCase().includes(q) ||
-          d.fileName.toLowerCase().includes(q),
-      )
-    : rows;
+  const filtered = rows.filter((d) => {
+    // Match the date column shown for received DOs (DO date, else sent date).
+    if (!withinDateRange(d.doDate ?? d.sentAt, dateFilter)) return false;
+    if (!q) return true;
+    return (
+      d.doNumber.toLowerCase().includes(q) ||
+      d.senderCompany.name.toLowerCase().includes(q) ||
+      d.fileName.toLowerCase().includes(q)
+    );
+  });
 
   const toggleSelect = (id: string) =>
     setSelectedIds((prev) => {
@@ -529,6 +570,7 @@ function ReceivedTable() {
                   className="pl-9"
                 />
               </div>
+              <FilterMenu date={dateFilter} onDateChange={setDateFilter} />
             </div>
           )}
         </div>
@@ -537,7 +579,9 @@ function ReceivedTable() {
 
         {filtered.length === 0 ? (
           <p className="py-10 text-center text-sm text-muted-foreground">
-            No delivery orders match &ldquo;{search}&rdquo;.
+            {search
+              ? <>No delivery orders match &ldquo;{search}&rdquo;.</>
+              : "No delivery orders in the selected date range."}
           </p>
         ) : (
           <div className="overflow-x-auto rounded-md border">

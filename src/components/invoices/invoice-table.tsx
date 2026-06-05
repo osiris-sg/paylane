@@ -15,7 +15,6 @@ import {
   AlertTriangle,
   FileX,
   Check as CheckIcon,
-  SlidersHorizontal,
   X,
   ChevronDown,
 } from "lucide-react";
@@ -23,6 +22,12 @@ import {
 import { api } from "~/trpc/react";
 import { formatCurrency } from "~/lib/currency";
 import { useSendAccess } from "~/lib/use-send-access";
+import {
+  ALL_DATES,
+  resolveDateRange,
+  type DateFilterValue,
+} from "~/components/filters/date-filter";
+import { FilterMenu } from "~/components/filters/filter-menu";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Checkbox } from "~/components/ui/checkbox";
@@ -46,11 +51,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "~/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -147,6 +147,8 @@ export function InvoiceTable({ type, initialSearch, initialCustomerId, initialSe
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [sortBy, setSortBy] = useState<SortField | undefined>(undefined);
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [dateFilter, setDateFilter] = useState<DateFilterValue>(ALL_DATES);
+  const dateRange = resolveDateRange(dateFilter);
 
   const toggleSort = (field: SortField) => {
     if (sortBy !== field) {
@@ -187,6 +189,8 @@ export function InvoiceTable({ type, initialSearch, initialCustomerId, initialSe
     search: debouncedSearch || undefined,
     customerId: customerId || undefined,
     senderCompanyId: senderCompanyId || undefined,
+    dateFrom: dateRange?.from,
+    dateTo: dateRange?.to,
     sortBy,
     sortDir,
   });
@@ -210,8 +214,7 @@ export function InvoiceTable({ type, initialSearch, initialCustomerId, initialSe
   );
   const customerList = customersData?.customers ?? [];
 
-  // Unified filter popover state
-  const [customerFilterOpen, setCustomerFilterOpen] = useState(false);
+  // Customer filter section state (rendered inside the shared FilterMenu)
   const [customerFilterSearch, setCustomerFilterSearch] = useState("");
   const [customerSectionOpen, setCustomerSectionOpen] = useState(false);
   const filteredCustomerOptions = customerList.filter((c) => {
@@ -223,7 +226,6 @@ export function InvoiceTable({ type, initialSearch, initialCustomerId, initialSe
       (c.email ?? "").toLowerCase().includes(q)
     );
   });
-  const activeFilterCount = customerId ? 1 : 0;
 
   const sendInvoice = api.invoice.send.useMutation({
     onSuccess: () => {
@@ -407,109 +409,92 @@ export function InvoiceTable({ type, initialSearch, initialCustomerId, initialSe
                   <X className="h-3 w-3" />
                 </button>
               )}
-              {/* Unified Filter button */}
-              <Popover open={customerFilterOpen} onOpenChange={setCustomerFilterOpen}>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" size="sm" className="relative h-10 shrink-0 gap-2">
-                    <SlidersHorizontal className="h-4 w-4" />
-                    <span className="hidden sm:inline">Filter</span>
-                    {activeFilterCount > 0 && (
-                      <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-blue-600 px-1.5 text-[10px] font-semibold text-white">
-                        {activeFilterCount}
+              {/* Unified Filter dropdown — Date + Customer (sent tab) */}
+              <FilterMenu
+                date={dateFilter}
+                onDateChange={(v) => {
+                  setDateFilter(v);
+                  setPage(1);
+                }}
+                extraActiveCount={customerId ? 1 : 0}
+                onClearExtra={() => {
+                  setCustomerId(undefined);
+                  setCustomerFilterSearch("");
+                  setPage(1);
+                }}
+              >
+                {/* Customer — collapsible (sent tab only) */}
+                {type === "sent" && (
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => setCustomerSectionOpen((v) => !v)}
+                      className="flex w-full items-center justify-between px-3 py-2.5 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800"
+                    >
+                      <span className="flex items-center gap-2">
+                        Customer
+                        {customerId && (
+                          <span className="max-w-[140px] truncate rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-950/50 dark:text-blue-300">
+                            {filteredCustomer?.company || filteredCustomer?.name || "Customer"}
+                          </span>
+                        )}
                       </span>
-                    )}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-[300px] p-0" align="end">
-                  <div className="flex items-center justify-between border-b px-3 py-2">
-                    <span className="text-sm font-semibold">Filters</span>
-                    {activeFilterCount > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setCustomerId(undefined);
-                          setCustomerFilterSearch("");
-                        }}
-                        className="text-xs font-medium text-blue-600 hover:underline"
-                      >
-                        Clear all
-                      </button>
+                      <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${customerSectionOpen ? "rotate-180" : ""}`} />
+                    </button>
+                    {customerSectionOpen && (
+                      <div className="px-2 pb-2">
+                        <div className="mb-1 flex items-center gap-2 rounded-md border bg-background px-2 py-1">
+                          <Search className="h-3.5 w-3.5 text-muted-foreground" />
+                          <input
+                            className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                            placeholder="Search customers..."
+                            value={customerFilterSearch}
+                            onChange={(e) => setCustomerFilterSearch(e.target.value)}
+                          />
+                        </div>
+                        <div className="max-h-48 overflow-y-auto">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCustomerId(undefined);
+                              setPage(1);
+                              setCustomerFilterSearch("");
+                            }}
+                            className={`flex w-full items-center justify-between rounded-sm px-2 py-1.5 text-left text-sm hover:bg-gray-100 ${!customerId ? "bg-blue-50 font-medium" : ""}`}
+                          >
+                            <span>All Customers</span>
+                            {!customerId && <CheckIcon className="h-3.5 w-3.5 text-blue-600" />}
+                          </button>
+                          {filteredCustomerOptions.length === 0 ? (
+                            <p className="py-3 text-center text-xs text-muted-foreground">No customers</p>
+                          ) : (
+                            filteredCustomerOptions.map((c) => (
+                              <button
+                                key={c.id}
+                                type="button"
+                                onClick={() => {
+                                  setCustomerId(c.id);
+                                  setPage(1);
+                                  setCustomerFilterSearch("");
+                                }}
+                                className={`flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-gray-100 ${c.id === customerId ? "bg-blue-50" : ""}`}
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate">{c.company || c.name}</p>
+                                  {c.company && (
+                                    <p className="truncate text-xs text-muted-foreground">{c.name}</p>
+                                  )}
+                                </div>
+                                {c.id === customerId && <CheckIcon className="h-3.5 w-3.5 shrink-0 text-blue-600" />}
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      </div>
                     )}
                   </div>
-
-                  {/* Customer — collapsible (sent tab only) */}
-                  {type === "sent" && (
-                    <div>
-                      <button
-                        type="button"
-                        onClick={() => setCustomerSectionOpen((v) => !v)}
-                        className="flex w-full items-center justify-between px-3 py-2.5 text-sm font-medium hover:bg-gray-50"
-                      >
-                        <span className="flex items-center gap-2">
-                          Customer
-                          {customerId && (
-                            <span className="max-w-[140px] truncate rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
-                              {filteredCustomer?.company || filteredCustomer?.name || "Customer"}
-                            </span>
-                          )}
-                        </span>
-                        <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${customerSectionOpen ? "rotate-180" : ""}`} />
-                      </button>
-                      {customerSectionOpen && (
-                        <div className="px-2 pb-2">
-                          <div className="mb-1 flex items-center gap-2 rounded-md border bg-background px-2 py-1">
-                            <Search className="h-3.5 w-3.5 text-muted-foreground" />
-                            <input
-                              className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-                              placeholder="Search customers..."
-                              value={customerFilterSearch}
-                              onChange={(e) => setCustomerFilterSearch(e.target.value)}
-                            />
-                          </div>
-                          <div className="max-h-48 overflow-y-auto">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setCustomerId(undefined);
-                                setPage(1);
-                                setCustomerFilterSearch("");
-                              }}
-                              className={`flex w-full items-center justify-between rounded-sm px-2 py-1.5 text-left text-sm hover:bg-gray-100 ${!customerId ? "bg-blue-50 font-medium" : ""}`}
-                            >
-                              <span>All Customers</span>
-                              {!customerId && <CheckIcon className="h-3.5 w-3.5 text-blue-600" />}
-                            </button>
-                            {filteredCustomerOptions.length === 0 ? (
-                              <p className="py-3 text-center text-xs text-muted-foreground">No customers</p>
-                            ) : (
-                              filteredCustomerOptions.map((c) => (
-                                <button
-                                  key={c.id}
-                                  type="button"
-                                  onClick={() => {
-                                    setCustomerId(c.id);
-                                    setPage(1);
-                                    setCustomerFilterSearch("");
-                                  }}
-                                  className={`flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-gray-100 ${c.id === customerId ? "bg-blue-50" : ""}`}
-                                >
-                                  <div className="min-w-0 flex-1">
-                                    <p className="truncate">{c.company || c.name}</p>
-                                    {c.company && (
-                                      <p className="truncate text-xs text-muted-foreground">{c.name}</p>
-                                    )}
-                                  </div>
-                                  {c.id === customerId && <CheckIcon className="h-3.5 w-3.5 shrink-0 text-blue-600" />}
-                                </button>
-                              ))
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </PopoverContent>
-              </Popover>
+                )}
+              </FilterMenu>
             </div>
           )}
         </div>
@@ -529,7 +514,7 @@ export function InvoiceTable({ type, initialSearch, initialCustomerId, initialSe
             : [];
           const displayTotals = showingSelected ? selectedTotals : totalsByCurrency;
           const displayCount = showingSelected ? selectedInvoices.length : totalCount;
-          const filtersActive = customerId || debouncedSearch;
+          const filtersActive = customerId || debouncedSearch || dateFilter.preset !== "all";
           if (displayTotals.length === 0) return null;
           return (
             <div
