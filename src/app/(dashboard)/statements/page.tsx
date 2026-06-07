@@ -1,6 +1,7 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useState, useEffect } from "react";
+import { keepPreviousData } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import dayjs from "dayjs";
@@ -50,12 +51,15 @@ import { LockedSendingCTA } from "~/components/subscription/locked-sending-cta";
 import { useSendAccess } from "~/lib/use-send-access";
 import {
   ALL_DATES,
-  withinDateRange,
+  resolveDateRange,
   type DateFilterValue,
 } from "~/components/filters/date-filter";
 import { FilterMenu, EntityFilterSection } from "~/components/filters/filter-menu";
+import { TablePagination } from "~/components/table-pagination";
 
 dayjs.extend(relativeTime);
+
+const PAGE_SIZE = 10;
 
 function StatementsContent() {
   const router = useRouter();
@@ -165,40 +169,46 @@ export default function StatementsPage() {
 function SentStatementsTable() {
   const access = useSendAccess();
   const utils = api.useUtils();
-  const list = api.statement.listSent.useQuery();
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [dateFilter, setDateFilter] = useState<DateFilterValue>(ALL_DATES);
+  const [customerId, setCustomerId] = useState<string | undefined>(undefined);
   const [replaceFor, setReplaceFor] = useState<{
     customerId: string;
     customerLabel: string;
   } | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [search, setSearch] = useState("");
-  const [dateFilter, setDateFilter] = useState<DateFilterValue>(ALL_DATES);
-  const [customerId, setCustomerId] = useState<string | undefined>(undefined);
 
-  const statements = list.data ?? [];
+  // Debounce the search box so we don't hit the server on every keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [search]);
 
-  // Customers that actually have a statement, for the filter dropdown.
-  const customerOptions = Array.from(
-    new Map(
-      statements.map((s) => [
-        s.customer.id,
-        { id: s.customer.id, name: s.customer.name, company: s.customer.company },
-      ]),
-    ).values(),
+  const dateRange = resolveDateRange(dateFilter);
+  const list = api.statement.listSent.useQuery(
+    {
+      page,
+      limit: PAGE_SIZE,
+      search: debouncedSearch || undefined,
+      customerId: customerId || undefined,
+      dateFrom: dateRange?.from,
+      dateTo: dateRange?.to,
+    },
+    { placeholderData: keepPreviousData },
   );
+  const { data: customerOptions } = api.statement.sentCustomers.useQuery();
 
-  const q = search.trim().toLowerCase();
-  const filtered = statements.filter((s) => {
-    if (customerId && s.customer.id !== customerId) return false;
-    if (!withinDateRange(s.sentAt, dateFilter)) return false;
-    if (!q) return true;
-    return (
-      (s.customer.company ?? "").toLowerCase().includes(q) ||
-      s.customer.name.toLowerCase().includes(q) ||
-      s.fileName.toLowerCase().includes(q)
-    );
-  });
+  const rows = list.data?.statements ?? [];
+  const totalCount = list.data?.totalCount ?? 0;
+  const totalPages = list.data?.totalPages ?? 1;
+  const hasFilters =
+    !!debouncedSearch || !!customerId || dateFilter.preset !== "all";
 
   const bulkDelete = api.statement.bulkDelete.useMutation({
     onSuccess: async (data) => {
@@ -220,24 +230,21 @@ function SentStatementsTable() {
 
   const toggleSelectAll = () =>
     setSelectedIds((prev) =>
-      prev.size === filtered.length
-        ? new Set()
-        : new Set(filtered.map((s) => s.id)),
+      prev.size === rows.length ? new Set() : new Set(rows.map((s) => s.id)),
     );
 
-  const isAllSelected =
-    filtered.length > 0 && selectedIds.size === filtered.length;
+  const isAllSelected = rows.length > 0 && selectedIds.size === rows.length;
   const isSomeSelected = selectedIds.size > 0;
   const canDelete = access.canSend && isSomeSelected;
   // View + Replace act on one statement, so they only appear when exactly one
   // row is selected (Delete still works for any number).
   const singleSelected =
     selectedIds.size === 1
-      ? statements.find((s) => selectedIds.has(s.id)) ?? null
+      ? rows.find((s) => selectedIds.has(s.id)) ?? null
       : null;
 
   if (list.isLoading) return <TableSkeleton />;
-  if (!list.data || list.data.length === 0) {
+  if (totalCount === 0 && !hasFilters) {
     return (
       <EmptyState
         icon={<MailCheck className="h-10 w-10 text-muted-foreground" />}
@@ -322,34 +329,43 @@ function SentStatementsTable() {
               </div>
               <FilterMenu
                 date={dateFilter}
-                onDateChange={setDateFilter}
+                onDateChange={(v) => {
+                  setDateFilter(v);
+                  setPage(1);
+                }}
                 extraActiveCount={customerId ? 1 : 0}
-                onClearExtra={() => setCustomerId(undefined)}
+                onClearExtra={() => {
+                  setCustomerId(undefined);
+                  setPage(1);
+                }}
               >
                 <EntityFilterSection
                   label="Customer"
-                  options={customerOptions}
+                  options={customerOptions ?? []}
                   selectedId={customerId}
-                  onChange={setCustomerId}
+                  onChange={(id) => {
+                    setCustomerId(id);
+                    setPage(1);
+                  }}
                 />
               </FilterMenu>
             </div>
           )}
         </div>
 
-        <CountBanner count={filtered.length} label="Total sent" />
+        <CountBanner count={totalCount} label="Total sent" />
 
-        {filtered.length === 0 ? (
+        {rows.length === 0 ? (
           <p className="py-10 text-center text-sm text-muted-foreground">
-            {search
-              ? <>No statements match &ldquo;{search}&rdquo;.</>
+            {debouncedSearch
+              ? <>No statements match &ldquo;{debouncedSearch}&rdquo;.</>
               : "No statements match your filters."}
           </p>
         ) : (
           <>
       {/* Mobile: card per statement */}
       <div className="space-y-3 md:hidden">
-        {filtered.map((s) => {
+        {rows.map((s) => {
           const isSelected = selectedIds.has(s.id);
           return (
           <div
@@ -408,7 +424,7 @@ function SentStatementsTable() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((s) => {
+                {rows.map((s) => {
                   const isSelected = selectedIds.has(s.id);
                   return (
                   <TableRow
@@ -468,6 +484,14 @@ function SentStatementsTable() {
       </div>
           </>
         )}
+
+        <TablePagination
+          page={page}
+          totalPages={totalPages}
+          totalCount={totalCount}
+          pageSize={PAGE_SIZE}
+          onPageChange={setPage}
+        />
       </CardContent>
 
       {replaceFor && (
@@ -517,18 +541,48 @@ function SentStatementsTable() {
 }
 
 function ReceivedStatementsTable() {
-  const list = api.statement.listIncoming.useQuery();
   const utils = api.useUtils();
+  const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [dateFilter, setDateFilter] = useState<DateFilterValue>(ALL_DATES);
+  const [supplierId, setSupplierId] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const dateRange = resolveDateRange(dateFilter);
+  const list = api.statement.listIncoming.useQuery(
+    {
+      page,
+      limit: PAGE_SIZE,
+      search: debouncedSearch || undefined,
+      supplierId: supplierId || undefined,
+      dateFrom: dateRange?.from,
+      dateTo: dateRange?.to,
+    },
+    { placeholderData: keepPreviousData },
+  );
+  const { data: supplierOptions } = api.statement.incomingSuppliers.useQuery();
   const markViewed = api.statement.markViewed.useMutation({
     onSuccess: async () => {
       await utils.statement.listIncoming.invalidate();
     },
   });
 
+  const rows = list.data?.statements ?? [];
+  const totalCount = list.data?.totalCount ?? 0;
+  const totalPages = list.data?.totalPages ?? 1;
+  const hasFilters =
+    !!debouncedSearch || !!supplierId || dateFilter.preset !== "all";
+
   if (list.isLoading) return <TableSkeleton />;
-  if (!list.data || list.data.length === 0) {
+  if (totalCount === 0 && !hasFilters) {
     return (
       <EmptyState
         icon={<Inbox className="h-10 w-10 text-muted-foreground" />}
@@ -537,17 +591,6 @@ function ReceivedStatementsTable() {
       />
     );
   }
-
-  const q = search.trim().toLowerCase();
-  const filtered = list.data.filter((s) => {
-    if (!withinDateRange(s.sentAt, dateFilter)) return false;
-    if (!q) return true;
-    return (
-      s.senderCompany.name.toLowerCase().includes(q) ||
-      s.fileName.toLowerCase().includes(q) ||
-      (s.notes ?? "").toLowerCase().includes(q)
-    );
-  });
 
   return (
     <Card>
@@ -562,21 +605,42 @@ function ReceivedStatementsTable() {
               className="pl-9"
             />
           </div>
-          <FilterMenu date={dateFilter} onDateChange={setDateFilter} />
+          <FilterMenu
+            date={dateFilter}
+            onDateChange={(v) => {
+              setDateFilter(v);
+              setPage(1);
+            }}
+            extraActiveCount={supplierId ? 1 : 0}
+            onClearExtra={() => {
+              setSupplierId(undefined);
+              setPage(1);
+            }}
+          >
+            <EntityFilterSection
+              label="Supplier"
+              options={supplierOptions ?? []}
+              selectedId={supplierId}
+              onChange={(id) => {
+                setSupplierId(id);
+                setPage(1);
+              }}
+            />
+          </FilterMenu>
         </div>
-        <CountBanner count={filtered.length} label="Total received" />
+        <CountBanner count={totalCount} label="Total received" />
 
-        {filtered.length === 0 ? (
+        {rows.length === 0 ? (
           <p className="py-10 text-center text-sm text-muted-foreground">
-            {search
-              ? <>No statements match &ldquo;{search}&rdquo;.</>
+            {debouncedSearch
+              ? <>No statements match &ldquo;{debouncedSearch}&rdquo;.</>
               : "No statements match your filters."}
           </p>
         ) : (
           <>
       {/* Mobile: card per statement */}
       <div className="space-y-3 md:hidden">
-        {filtered.map((s) => (
+        {rows.map((s) => (
           <div key={s.id} className="rounded-lg border bg-white p-3">
             <div className="flex items-start justify-between gap-2">
               <p className="min-w-0 font-semibold">{s.senderCompany.name}</p>
@@ -625,7 +689,7 @@ function ReceivedStatementsTable() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((s) => (
+              {rows.map((s) => (
                 <TableRow key={s.id}>
                   <TableCell>
                     <p className="font-medium">{s.senderCompany.name}</p>
@@ -675,6 +739,14 @@ function ReceivedStatementsTable() {
       </div>
           </>
         )}
+
+        <TablePagination
+          page={page}
+          totalPages={totalPages}
+          totalCount={totalCount}
+          pageSize={PAGE_SIZE}
+          onPageChange={setPage}
+        />
       </CardContent>
     </Card>
   );

@@ -1,6 +1,7 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useState, useEffect } from "react";
+import { keepPreviousData } from "@tanstack/react-query";
 import Link from "next/link";
 import dayjs from "dayjs";
 import { toast } from "sonner";
@@ -40,10 +41,13 @@ import { api } from "~/trpc/react";
 import { useSendAccess } from "~/lib/use-send-access";
 import {
   ALL_DATES,
-  withinDateRange,
+  resolveDateRange,
   type DateFilterValue,
 } from "~/components/filters/date-filter";
 import { FilterMenu, EntityFilterSection } from "~/components/filters/filter-menu";
+import { TablePagination } from "~/components/table-pagination";
+
+const PAGE_SIZE = 10;
 
 function DeliveryOrdersContent() {
   const { data: access, isLoading } = api.deliveryOrder.getAccess.useQuery();
@@ -213,40 +217,42 @@ function useDownload() {
 function SentTable() {
   const utils = api.useUtils();
   const sendAccess = useSendAccess();
-  const list = api.deliveryOrder.listSent.useQuery();
   const { download, downloadZip, busyId } = useDownload();
+  const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [dateFilter, setDateFilter] = useState<DateFilterValue>(ALL_DATES);
   const [customerId, setCustomerId] = useState<string | undefined>(undefined);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  const rows = list.data ?? [];
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [search]);
 
-  // Customers that actually have a delivery order, for the filter dropdown.
-  const customerOptions = Array.from(
-    new Map(
-      rows
-        .filter((d) => d.customer)
-        .map((d) => [
-          d.customer!.id,
-          { id: d.customer!.id, name: d.customer!.name, company: d.customer!.company },
-        ]),
-    ).values(),
+  const dateRange = resolveDateRange(dateFilter);
+  const list = api.deliveryOrder.listSent.useQuery(
+    {
+      page,
+      limit: PAGE_SIZE,
+      search: debouncedSearch || undefined,
+      customerId: customerId || undefined,
+      dateFrom: dateRange?.from,
+      dateTo: dateRange?.to,
+    },
+    { placeholderData: keepPreviousData },
   );
+  const { data: customerOptions } = api.deliveryOrder.sentCustomers.useQuery();
 
-  const q = search.trim().toLowerCase();
-  const filtered = rows.filter((d) => {
-    if (customerId && d.customer?.id !== customerId) return false;
-    if (!withinDateRange(d.doDate, dateFilter)) return false;
-    if (!q) return true;
-    return (
-      d.doNumber.toLowerCase().includes(q) ||
-      (d.customer?.company ?? "").toLowerCase().includes(q) ||
-      (d.customer?.name ?? "").toLowerCase().includes(q) ||
-      d.fileName.toLowerCase().includes(q)
-    );
-  });
+  const rows = list.data?.rows ?? [];
+  const totalCount = list.data?.totalCount ?? 0;
+  const totalPages = list.data?.totalPages ?? 1;
+  const hasFilters =
+    !!debouncedSearch || !!customerId || dateFilter.preset !== "all";
 
   const send = api.deliveryOrder.send.useMutation({
     onError: (e) => toast.error(e.message || "Failed to send"),
@@ -270,16 +276,16 @@ function SentTable() {
     });
   const toggleSelectAll = () =>
     setSelectedIds((prev) =>
-      prev.size === filtered.length ? new Set() : new Set(filtered.map((d) => d.id)),
+      prev.size === rows.length ? new Set() : new Set(rows.map((d) => d.id)),
     );
-  const isAllSelected = filtered.length > 0 && selectedIds.size === filtered.length;
+  const isAllSelected = rows.length > 0 && selectedIds.size === rows.length;
   const isSomeSelected = selectedIds.size > 0;
   const single =
-    selectedIds.size === 1 ? filtered.find((d) => selectedIds.has(d.id)) ?? null : null;
-  const anyDraftSelected = filtered.some((d) => selectedIds.has(d.id) && !d.sentAt);
+    selectedIds.size === 1 ? rows.find((d) => selectedIds.has(d.id)) ?? null : null;
+  const anyDraftSelected = rows.some((d) => selectedIds.has(d.id) && !d.sentAt);
 
   const handleBulkSend = async () => {
-    const toSend = filtered.filter((d) => selectedIds.has(d.id) && !d.sentAt && d.customer);
+    const toSend = rows.filter((d) => selectedIds.has(d.id) && !d.sentAt && d.customer);
     for (const d of toSend) {
       try { await send.mutateAsync({ id: d.id }); } catch {}
     }
@@ -289,7 +295,7 @@ function SentTable() {
   };
 
   if (list.isLoading) return <TableSkeleton />;
-  if (rows.length === 0) {
+  if (totalCount === 0 && !hasFilters) {
     return (
       <EmptyState
         icon={<PackageCheck className="h-10 w-10 text-muted-foreground" />}
@@ -371,27 +377,36 @@ function SentTable() {
               </div>
               <FilterMenu
                 date={dateFilter}
-                onDateChange={setDateFilter}
+                onDateChange={(v) => {
+                  setDateFilter(v);
+                  setPage(1);
+                }}
                 extraActiveCount={customerId ? 1 : 0}
-                onClearExtra={() => setCustomerId(undefined)}
+                onClearExtra={() => {
+                  setCustomerId(undefined);
+                  setPage(1);
+                }}
               >
                 <EntityFilterSection
                   label="Customer"
-                  options={customerOptions}
+                  options={customerOptions ?? []}
                   selectedId={customerId}
-                  onChange={setCustomerId}
+                  onChange={(id) => {
+                    setCustomerId(id);
+                    setPage(1);
+                  }}
                 />
               </FilterMenu>
             </div>
           )}
         </div>
 
-        <CountBanner count={filtered.length} label="Total sent" />
+        <CountBanner count={totalCount} label="Total sent" />
 
-        {filtered.length === 0 ? (
+        {rows.length === 0 ? (
           <p className="py-10 text-center text-sm text-muted-foreground">
-            {search
-              ? <>No delivery orders match &ldquo;{search}&rdquo;.</>
+            {debouncedSearch
+              ? <>No delivery orders match &ldquo;{debouncedSearch}&rdquo;.</>
               : "No delivery orders match your filters."}
           </p>
         ) : (
@@ -410,7 +425,7 @@ function SentTable() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((d) => {
+                {rows.map((d) => {
                   const isSelected = selectedIds.has(d.id);
                   return (
                     <TableRow
@@ -446,6 +461,14 @@ function SentTable() {
             </Table>
           </div>
         )}
+
+        <TablePagination
+          page={page}
+          totalPages={totalPages}
+          totalCount={totalCount}
+          pageSize={PAGE_SIZE}
+          onPageChange={setPage}
+        />
       </CardContent>
 
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
@@ -478,23 +501,40 @@ function SentTable() {
 
 function ReceivedTable() {
   const { download, downloadZip, busyId } = useDownload();
-  const list = api.deliveryOrder.listReceived.useQuery();
+  const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [dateFilter, setDateFilter] = useState<DateFilterValue>(ALL_DATES);
+  const [supplierId, setSupplierId] = useState<string | undefined>(undefined);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  const rows = list.data ?? [];
-  const q = search.trim().toLowerCase();
-  const filtered = rows.filter((d) => {
-    // Match the date column shown for received DOs (DO date, else sent date).
-    if (!withinDateRange(d.doDate ?? d.sentAt, dateFilter)) return false;
-    if (!q) return true;
-    return (
-      d.doNumber.toLowerCase().includes(q) ||
-      d.senderCompany.name.toLowerCase().includes(q) ||
-      d.fileName.toLowerCase().includes(q)
-    );
-  });
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const dateRange = resolveDateRange(dateFilter);
+  const list = api.deliveryOrder.listReceived.useQuery(
+    {
+      page,
+      limit: PAGE_SIZE,
+      search: debouncedSearch || undefined,
+      supplierId: supplierId || undefined,
+      dateFrom: dateRange?.from,
+      dateTo: dateRange?.to,
+    },
+    { placeholderData: keepPreviousData },
+  );
+  const { data: supplierOptions } = api.deliveryOrder.receivedSuppliers.useQuery();
+
+  const rows = list.data?.rows ?? [];
+  const totalCount = list.data?.totalCount ?? 0;
+  const totalPages = list.data?.totalPages ?? 1;
+  const hasFilters =
+    !!debouncedSearch || !!supplierId || dateFilter.preset !== "all";
 
   const toggleSelect = (id: string) =>
     setSelectedIds((prev) => {
@@ -505,15 +545,15 @@ function ReceivedTable() {
     });
   const toggleSelectAll = () =>
     setSelectedIds((prev) =>
-      prev.size === filtered.length ? new Set() : new Set(filtered.map((d) => d.id)),
+      prev.size === rows.length ? new Set() : new Set(rows.map((d) => d.id)),
     );
-  const isAllSelected = filtered.length > 0 && selectedIds.size === filtered.length;
+  const isAllSelected = rows.length > 0 && selectedIds.size === rows.length;
   const isSomeSelected = selectedIds.size > 0;
   const single =
-    selectedIds.size === 1 ? filtered.find((d) => selectedIds.has(d.id)) ?? null : null;
+    selectedIds.size === 1 ? rows.find((d) => selectedIds.has(d.id)) ?? null : null;
 
   if (list.isLoading) return <TableSkeleton />;
-  if (rows.length === 0) {
+  if (totalCount === 0 && !hasFilters) {
     return (
       <EmptyState
         icon={<Inbox className="h-10 w-10 text-muted-foreground" />}
@@ -570,18 +610,39 @@ function ReceivedTable() {
                   className="pl-9"
                 />
               </div>
-              <FilterMenu date={dateFilter} onDateChange={setDateFilter} />
+              <FilterMenu
+                date={dateFilter}
+                onDateChange={(v) => {
+                  setDateFilter(v);
+                  setPage(1);
+                }}
+                extraActiveCount={supplierId ? 1 : 0}
+                onClearExtra={() => {
+                  setSupplierId(undefined);
+                  setPage(1);
+                }}
+              >
+                <EntityFilterSection
+                  label="Supplier"
+                  options={supplierOptions ?? []}
+                  selectedId={supplierId}
+                  onChange={(id) => {
+                    setSupplierId(id);
+                    setPage(1);
+                  }}
+                />
+              </FilterMenu>
             </div>
           )}
         </div>
 
-        <CountBanner count={filtered.length} label="Total received" />
+        <CountBanner count={totalCount} label="Total received" />
 
-        {filtered.length === 0 ? (
+        {rows.length === 0 ? (
           <p className="py-10 text-center text-sm text-muted-foreground">
-            {search
-              ? <>No delivery orders match &ldquo;{search}&rdquo;.</>
-              : "No delivery orders in the selected date range."}
+            {debouncedSearch
+              ? <>No delivery orders match &ldquo;{debouncedSearch}&rdquo;.</>
+              : "No delivery orders match your filters."}
           </p>
         ) : (
           <div className="overflow-x-auto rounded-md border">
@@ -598,7 +659,7 @@ function ReceivedTable() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((d) => {
+                {rows.map((d) => {
                   const isSelected = selectedIds.has(d.id);
                   return (
                     <TableRow
@@ -633,6 +694,14 @@ function ReceivedTable() {
             </Table>
           </div>
         )}
+
+        <TablePagination
+          page={page}
+          totalPages={totalPages}
+          totalCount={totalCount}
+          pageSize={PAGE_SIZE}
+          onPageChange={setPage}
+        />
       </CardContent>
     </Card>
   );

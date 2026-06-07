@@ -97,8 +97,10 @@ export const invoiceRouter = createTRPCRouter({
           { invoiceNumber: { contains: input.search, mode: "insensitive" } },
           { reference: { contains: input.search, mode: "insensitive" } },
           { description: { contains: input.search, mode: "insensitive" } },
+          { notes: { contains: input.search, mode: "insensitive" } },
           { customer: { name: { contains: input.search, mode: "insensitive" } } },
           { customer: { company: { contains: input.search, mode: "insensitive" } } },
+          { customer: { email: { contains: input.search, mode: "insensitive" } } },
           { senderCompany: { name: { contains: input.search, mode: "insensitive" } } },
         ];
       }

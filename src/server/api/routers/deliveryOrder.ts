@@ -60,42 +60,160 @@ export const deliveryOrderRouter = createTRPCRouter({
     }
   }),
 
-  /** Sender: list DOs this company has uploaded. */
-  listSent: protectedProcedure.query(async ({ ctx }) => {
+  /** Sender: paginated DOs this company has uploaded, with search + filters. */
+  listSent: protectedProcedure
+    .input(
+      z.object({
+        page: z.number().min(1).default(1),
+        limit: z.number().min(1).max(100).default(10),
+        search: z.string().optional(),
+        customerId: z.string().optional(),
+        dateFrom: z.coerce.date().optional(),
+        dateTo: z.coerce.date().optional(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const user = ctx.user;
+      await requireDeliveryOrders(ctx.db as unknown as PrismaClient, user.companyId);
+
+      const where: Record<string, unknown> = { senderCompanyId: user.companyId };
+      if (input.customerId) where.customerId = input.customerId;
+      if (input.dateFrom || input.dateTo) {
+        // Sent table shows the DO date column.
+        where.doDate = {
+          ...(input.dateFrom ? { gte: input.dateFrom } : {}),
+          ...(input.dateTo ? { lte: input.dateTo } : {}),
+        };
+      }
+      if (input.search) {
+        where.OR = [
+          { doNumber: { contains: input.search, mode: "insensitive" } },
+          { reference: { contains: input.search, mode: "insensitive" } },
+          { fileName: { contains: input.search, mode: "insensitive" } },
+          { customer: { name: { contains: input.search, mode: "insensitive" } } },
+          { customer: { company: { contains: input.search, mode: "insensitive" } } },
+        ];
+      }
+
+      const [rows, totalCount] = await Promise.all([
+        ctx.db.deliveryOrder.findMany({
+          where,
+          orderBy: { createdAt: "desc" },
+          skip: (input.page - 1) * input.limit,
+          take: input.limit,
+          select: {
+            id: true,
+            doNumber: true,
+            reference: true,
+            doDate: true,
+            fileName: true,
+            sentAt: true,
+            createdAt: true,
+            customer: { select: { id: true, name: true, company: true } },
+          },
+        }),
+        ctx.db.deliveryOrder.count({ where }),
+      ]);
+
+      return {
+        rows,
+        totalCount,
+        totalPages: Math.max(1, Math.ceil(totalCount / input.limit)),
+        page: input.page,
+      };
+    }),
+
+  /** Receiver: paginated DOs sent to this company. No feature flag required. */
+  listReceived: protectedProcedure
+    .input(
+      z.object({
+        page: z.number().min(1).default(1),
+        limit: z.number().min(1).max(100).default(10),
+        search: z.string().optional(),
+        supplierId: z.string().optional(),
+        dateFrom: z.coerce.date().optional(),
+        dateTo: z.coerce.date().optional(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const user = ctx.user;
+
+      const where: Record<string, unknown> = { receiverCompanyId: user.companyId };
+      if (input.supplierId) where.senderCompanyId = input.supplierId;
+      const and: Record<string, unknown>[] = [];
+      if (input.search) {
+        and.push({
+          OR: [
+            { doNumber: { contains: input.search, mode: "insensitive" } },
+            { reference: { contains: input.search, mode: "insensitive" } },
+            { fileName: { contains: input.search, mode: "insensitive" } },
+            { senderCompany: { name: { contains: input.search, mode: "insensitive" } } },
+          ],
+        });
+      }
+      if (input.dateFrom || input.dateTo) {
+        // Received table shows DO date, falling back to sent date.
+        const range = {
+          ...(input.dateFrom ? { gte: input.dateFrom } : {}),
+          ...(input.dateTo ? { lte: input.dateTo } : {}),
+        };
+        and.push({
+          OR: [{ doDate: range }, { doDate: null, sentAt: range }],
+        });
+      }
+      if (and.length) where.AND = and;
+
+      const [rows, totalCount] = await Promise.all([
+        ctx.db.deliveryOrder.findMany({
+          where,
+          orderBy: { sentAt: "desc" },
+          skip: (input.page - 1) * input.limit,
+          take: input.limit,
+          select: {
+            id: true,
+            doNumber: true,
+            reference: true,
+            doDate: true,
+            fileName: true,
+            sentAt: true,
+            senderCompany: { select: { id: true, name: true } },
+          },
+        }),
+        ctx.db.deliveryOrder.count({ where }),
+      ]);
+
+      return {
+        rows,
+        totalCount,
+        totalPages: Math.max(1, Math.ceil(totalCount / input.limit)),
+        page: input.page,
+      };
+    }),
+
+  /** Distinct customers that have a sent DO — for the filter dropdown. */
+  sentCustomers: protectedProcedure.query(async ({ ctx }) => {
     const user = ctx.user;
-    await requireDeliveryOrders(ctx.db as unknown as PrismaClient, user.companyId);
-    return ctx.db.deliveryOrder.findMany({
-      where: { senderCompanyId: user.companyId },
-      orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        doNumber: true,
-        reference: true,
-        doDate: true,
-        fileName: true,
-        sentAt: true,
-        createdAt: true,
-        customer: { select: { id: true, name: true, company: true } },
-      },
+    const rows = await ctx.db.deliveryOrder.findMany({
+      where: { senderCompanyId: user.companyId, customerId: { not: null } },
+      select: { customer: { select: { id: true, name: true, company: true } } },
+      distinct: ["customerId"],
+      orderBy: { customerId: "asc" },
     });
+    return rows
+      .map((r) => r.customer)
+      .filter((c): c is NonNullable<typeof c> => !!c);
   }),
 
-  /** Receiver: list DOs sent to this company. No feature flag required. */
-  listReceived: protectedProcedure.query(async ({ ctx }) => {
+  /** Distinct suppliers that have sent a DO — for the filter dropdown. */
+  receivedSuppliers: protectedProcedure.query(async ({ ctx }) => {
     const user = ctx.user;
-    return ctx.db.deliveryOrder.findMany({
+    const rows = await ctx.db.deliveryOrder.findMany({
       where: { receiverCompanyId: user.companyId },
-      orderBy: { sentAt: "desc" },
-      select: {
-        id: true,
-        doNumber: true,
-        reference: true,
-        doDate: true,
-        fileName: true,
-        sentAt: true,
-        senderCompany: { select: { id: true, name: true } },
-      },
+      select: { senderCompany: { select: { id: true, name: true } } },
+      distinct: ["senderCompanyId"],
+      orderBy: { senderCompanyId: "asc" },
     });
+    return rows.map((r) => r.senderCompany);
   }),
 
   getById: protectedProcedure

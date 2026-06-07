@@ -27,7 +27,7 @@ import {
   resolveDateRange,
   type DateFilterValue,
 } from "~/components/filters/date-filter";
-import { FilterMenu } from "~/components/filters/filter-menu";
+import { FilterMenu, EntityFilterSection } from "~/components/filters/filter-menu";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Checkbox } from "~/components/ui/checkbox";
@@ -213,6 +213,17 @@ export function InvoiceTable({ type, initialSearch, initialCustomerId, initialSe
     { enabled: type === "sent" },
   );
   const customerList = customersData?.customers ?? [];
+
+  // Supplier list for the filter dropdown (only for the Received tab). We filter
+  // received invoices by senderCompanyId, so each option's id is the supplier's
+  // linkedCompanyId. Only show suppliers that have actually sent us invoices.
+  const { data: suppliersData } = api.supplier.list.useQuery(
+    { limit: 100 },
+    { enabled: type === "received" },
+  );
+  const supplierOptions = (suppliersData?.suppliers ?? [])
+    .filter((s) => s.linkedCompanyId && s.invoiceCount > 0)
+    .map((s) => ({ id: s.linkedCompanyId!, name: s.name, company: s.company }));
 
   // Customer filter section state (rendered inside the shared FilterMenu)
   const [customerFilterSearch, setCustomerFilterSearch] = useState("");
@@ -409,20 +420,33 @@ export function InvoiceTable({ type, initialSearch, initialCustomerId, initialSe
                   <X className="h-3 w-3" />
                 </button>
               )}
-              {/* Unified Filter dropdown — Date + Customer (sent tab) */}
+              {/* Unified Filter dropdown — Date + Customer (sent) / Supplier (received) */}
               <FilterMenu
                 date={dateFilter}
                 onDateChange={(v) => {
                   setDateFilter(v);
                   setPage(1);
                 }}
-                extraActiveCount={customerId ? 1 : 0}
+                extraActiveCount={(customerId ? 1 : 0) + (senderCompanyId ? 1 : 0)}
                 onClearExtra={() => {
                   setCustomerId(undefined);
                   setCustomerFilterSearch("");
+                  setSenderCompanyId(undefined);
                   setPage(1);
                 }}
               >
+                {/* Supplier — collapsible (received tab only) */}
+                {type === "received" && (
+                  <EntityFilterSection
+                    label="Supplier"
+                    options={supplierOptions}
+                    selectedId={senderCompanyId}
+                    onChange={(id) => {
+                      setSenderCompanyId(id);
+                      setPage(1);
+                    }}
+                  />
+                )}
                 {/* Customer — collapsible (sent tab only) */}
                 {type === "sent" && (
                   <div>

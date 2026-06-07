@@ -248,34 +248,139 @@ export const statementRouter = createTRPCRouter({
   }),
 
   /** Sender: list every statement they've sent (one per customer). */
-  listSent: protectedProcedure.query(async ({ ctx }) => {
+  listSent: protectedProcedure
+    .input(
+      z.object({
+        page: z.number().min(1).default(1),
+        limit: z.number().min(1).max(100).default(10),
+        search: z.string().optional(),
+        customerId: z.string().optional(),
+        dateFrom: z.coerce.date().optional(),
+        dateTo: z.coerce.date().optional(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const user = ctx.user;
+
+      const where: Record<string, unknown> = { senderCompanyId: user.companyId };
+      if (input.customerId) where.customerId = input.customerId;
+      if (input.dateFrom || input.dateTo) {
+        where.sentAt = {
+          ...(input.dateFrom ? { gte: input.dateFrom } : {}),
+          ...(input.dateTo ? { lte: input.dateTo } : {}),
+        };
+      }
+      if (input.search) {
+        where.OR = [
+          { fileName: { contains: input.search, mode: "insensitive" } },
+          { notes: { contains: input.search, mode: "insensitive" } },
+          { customer: { name: { contains: input.search, mode: "insensitive" } } },
+          { customer: { company: { contains: input.search, mode: "insensitive" } } },
+          { customer: { email: { contains: input.search, mode: "insensitive" } } },
+        ];
+      }
+
+      const [rows, totalCount] = await Promise.all([
+        ctx.db.statement.findMany({
+          where,
+          orderBy: { sentAt: "desc" },
+          skip: (input.page - 1) * input.limit,
+          take: input.limit,
+          include: {
+            customer: {
+              select: { id: true, company: true, name: true, email: true },
+            },
+            receiverCompany: { select: { id: true, name: true } },
+          },
+        }),
+        ctx.db.statement.count({ where }),
+      ]);
+
+      const statements = await Promise.all(
+        rows.map(async (s) => ({ ...s, fileUrl: await resolveFileUrl(s.fileUrl) })),
+      );
+      return {
+        statements,
+        totalCount,
+        totalPages: Math.max(1, Math.ceil(totalCount / input.limit)),
+        page: input.page,
+      };
+    }),
+
+  /** Receiver: paginated incoming statements (one per supplier). */
+  listIncoming: protectedProcedure
+    .input(
+      z.object({
+        page: z.number().min(1).default(1),
+        limit: z.number().min(1).max(100).default(10),
+        search: z.string().optional(),
+        supplierId: z.string().optional(),
+        dateFrom: z.coerce.date().optional(),
+        dateTo: z.coerce.date().optional(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const user = ctx.user;
+
+      const where: Record<string, unknown> = { receiverCompanyId: user.companyId };
+      if (input.supplierId) where.senderCompanyId = input.supplierId;
+      if (input.dateFrom || input.dateTo) {
+        where.sentAt = {
+          ...(input.dateFrom ? { gte: input.dateFrom } : {}),
+          ...(input.dateTo ? { lte: input.dateTo } : {}),
+        };
+      }
+      if (input.search) {
+        where.OR = [
+          { fileName: { contains: input.search, mode: "insensitive" } },
+          { notes: { contains: input.search, mode: "insensitive" } },
+          { senderCompany: { name: { contains: input.search, mode: "insensitive" } } },
+        ];
+      }
+
+      const [rows, totalCount] = await Promise.all([
+        ctx.db.statement.findMany({
+          where,
+          orderBy: { sentAt: "desc" },
+          skip: (input.page - 1) * input.limit,
+          take: input.limit,
+          include: { senderCompany: { select: { id: true, name: true } } },
+        }),
+        ctx.db.statement.count({ where }),
+      ]);
+
+      const statements = await Promise.all(
+        rows.map(async (s) => ({ ...s, fileUrl: await resolveFileUrl(s.fileUrl) })),
+      );
+      return {
+        statements,
+        totalCount,
+        totalPages: Math.max(1, Math.ceil(totalCount / input.limit)),
+        page: input.page,
+      };
+    }),
+
+  /** Distinct customers that have a sent statement — for the filter dropdown. */
+  sentCustomers: protectedProcedure.query(async ({ ctx }) => {
     const user = ctx.user;
     const rows = await ctx.db.statement.findMany({
       where: { senderCompanyId: user.companyId },
-      orderBy: { sentAt: "desc" },
-      include: {
-        customer: {
-          select: { id: true, company: true, name: true, email: true },
-        },
-        receiverCompany: { select: { id: true, name: true } },
-      },
+      select: { customer: { select: { id: true, name: true, company: true } } },
+      orderBy: { customer: { name: "asc" } },
     });
-    return Promise.all(
-      rows.map(async (s) => ({ ...s, fileUrl: await resolveFileUrl(s.fileUrl) })),
-    );
+    return rows.map((r) => r.customer);
   }),
 
-  /** Receiver: list every incoming statement (one per supplier). */
-  listIncoming: protectedProcedure.query(async ({ ctx }) => {
+  /** Distinct suppliers that have sent a statement — for the filter dropdown. */
+  incomingSuppliers: protectedProcedure.query(async ({ ctx }) => {
     const user = ctx.user;
     const rows = await ctx.db.statement.findMany({
       where: { receiverCompanyId: user.companyId },
-      orderBy: { sentAt: "desc" },
-      include: { senderCompany: { select: { id: true, name: true } } },
+      select: { senderCompany: { select: { id: true, name: true } } },
+      distinct: ["senderCompanyId"],
+      orderBy: { senderCompanyId: "asc" },
     });
-    return Promise.all(
-      rows.map(async (s) => ({ ...s, fileUrl: await resolveFileUrl(s.fileUrl) })),
-    );
+    return rows.map((r) => r.senderCompany);
   }),
 
   getById: protectedProcedure
