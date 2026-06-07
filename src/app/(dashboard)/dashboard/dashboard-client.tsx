@@ -245,7 +245,7 @@ function DashboardSummary({
             value={mobileTab}
             onValueChange={(v) => onMobileTabChange(v as "customer" | "supplier")}
           >
-            <TabsList className="grid w-full grid-cols-2">
+            <TabsList>
               <TabsTrigger value="customer" className="font-bold">
                 CUSTOMER
               </TabsTrigger>
