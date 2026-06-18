@@ -2,6 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import Anthropic from "@anthropic-ai/sdk";
+import { env } from "~/env";
 
 import { createCaller } from "~/server/api/root";
 import { createTRPCContext } from "~/server/api/trpc";
@@ -10,7 +11,7 @@ import { AGENT_TOOLS, executeTool } from "~/lib/agent-tools";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-const MODEL = "claude-sonnet-4-6";
+const MODEL = env.ANTHROPIC_MODEL;
 const MAX_TURNS = 8;
 
 export async function POST(req: NextRequest) {

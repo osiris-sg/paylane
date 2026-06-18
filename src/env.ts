@@ -8,6 +8,10 @@ export const env = createEnv({
     NODE_ENV: z
       .enum(["development", "test", "production"])
       .default("development"),
+    // Claude model used for all document extraction + the agent. Centralised
+    // here so a model retirement is a one-field change (set ANTHROPIC_MODEL in
+    // Vercel and redeploy) instead of editing every route.
+    ANTHROPIC_MODEL: z.string().default("claude-sonnet-4-6"),
     // Meta WhatsApp Cloud API — optional. When unset, WhatsApp sends are no-ops.
     META_WHATSAPP_PHONE_NUMBER_ID: z.string().optional(),
     META_WHATSAPP_ACCESS_TOKEN: z.string().optional(),
@@ -26,6 +30,7 @@ export const env = createEnv({
     DATABASE_URL: process.env.DATABASE_URL,
     CLERK_SECRET_KEY: process.env.CLERK_SECRET_KEY,
     NODE_ENV: process.env.NODE_ENV,
+    ANTHROPIC_MODEL: process.env.ANTHROPIC_MODEL,
     NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:
       process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
     NEXT_PUBLIC_CLERK_SIGN_IN_URL: process.env.NEXT_PUBLIC_CLERK_SIGN_IN_URL,

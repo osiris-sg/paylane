@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { env } from "~/env";
 import * as XLSX from "xlsx";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -26,7 +27,7 @@ async function inferColumnMapping(
   sampleRows: Record<string, unknown>[],
 ): Promise<ColumnMapping> {
   const message = await client.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: env.ANTHROPIC_MODEL,
     max_tokens: 1000,
     messages: [
       {
@@ -146,7 +147,7 @@ async function extractWithAI(file: File): Promise<Contact[]> {
       };
 
   const message = await client.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: env.ANTHROPIC_MODEL,
     max_tokens: 8000,
     messages: [
       {

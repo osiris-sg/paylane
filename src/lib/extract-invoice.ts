@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { env } from "~/env";
 import { z } from "zod";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -71,7 +72,7 @@ export async function extractInvoiceForIngestion(
   const isPdf = mediaType === "application/pdf";
 
   const message = await client.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: env.ANTHROPIC_MODEL,
     max_tokens: 2000,
     messages: [
       {
