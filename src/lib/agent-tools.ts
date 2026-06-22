@@ -137,6 +137,43 @@ export const AGENT_TOOLS: Anthropic.Tool[] = [
       properties: {},
     },
   },
+  {
+    name: "list_delivery_orders",
+    description:
+      "List the user's delivery orders (DOs). Use for any question about delivery orders — what was sent or received, to which customer/from which supplier, and whether each is sent or still a draft. Returns up to 20.",
+    input_schema: {
+      type: "object",
+      properties: {
+        direction: {
+          type: "string",
+          enum: ["sent", "received"],
+          description:
+            "'sent' = DOs the user sent to their customers (default). 'received' = DOs suppliers sent to the user.",
+        },
+        search: {
+          type: "string",
+          description:
+            "Free-text search across DO number, reference, file name, and customer/supplier name.",
+        },
+        customerId: {
+          type: "string",
+          description: "Filter sent DOs to one customer (resolve via list_customers).",
+        },
+        limit: { type: "number", description: "Max results, default 20." },
+      },
+    },
+  },
+  {
+    name: "get_delivery_order",
+    description: "Get full details of a single delivery order by id.",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+      },
+      required: ["id"],
+    },
+  },
 ];
 
 /** Auto-generate the next invoice number for a company (INV-001, INV-002, ...). */
@@ -337,6 +374,87 @@ export async function executeTool(
     case "get_dashboard_summary": {
       const summary = await caller.dashboard.getSummary();
       return summary;
+    }
+
+    case "list_delivery_orders": {
+      const direction = input.direction === "received" ? "received" : "sent";
+      const search =
+        typeof input.search === "string" ? input.search : undefined;
+      const limit =
+        typeof input.limit === "number"
+          ? Math.min(50, Math.max(1, input.limit))
+          : 20;
+
+      if (direction === "received") {
+        const res = await caller.deliveryOrder.listReceived({
+          page: 1,
+          limit,
+          search,
+        });
+        return {
+          direction,
+          deliveryOrders: res.rows.map((d) => ({
+            id: d.id,
+            doNumber: d.doNumber,
+            reference: d.reference,
+            doDate: d.doDate,
+            receivedAt: d.sentAt,
+            supplier: d.senderCompany?.name ?? null,
+          })),
+          totalCount: res.totalCount,
+        };
+      }
+
+      const customerId =
+        typeof input.customerId === "string" ? input.customerId : undefined;
+      const res = await caller.deliveryOrder.listSent({
+        page: 1,
+        limit,
+        search,
+        customerId,
+      });
+      return {
+        direction,
+        deliveryOrders: res.rows.map((d) => ({
+          id: d.id,
+          doNumber: d.doNumber,
+          reference: d.reference,
+          doDate: d.doDate,
+          status: d.sentAt ? "sent" : "draft",
+          sentAt: d.sentAt,
+          customer: d.customer
+            ? {
+                id: d.customer.id,
+                company: d.customer.company,
+                name: d.customer.name,
+              }
+            : null,
+        })),
+        totalCount: res.totalCount,
+      };
+    }
+
+    case "get_delivery_order": {
+      const id = String(input.id ?? "");
+      const d = await caller.deliveryOrder.getById({ id });
+      return {
+        id: d.id,
+        doNumber: d.doNumber,
+        reference: d.reference,
+        doDate: d.doDate,
+        sentAt: d.sentAt,
+        status: d.sentAt ? "sent" : "draft",
+        fileName: d.fileName,
+        notes: d.notes ?? null,
+        customer: d.customer
+          ? {
+              id: d.customer.id,
+              company: d.customer.company,
+              name: d.customer.name,
+            }
+          : null,
+        supplier: d.senderCompany?.name ?? null,
+      };
     }
 
     default:

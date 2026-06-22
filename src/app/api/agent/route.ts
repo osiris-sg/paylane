@@ -148,6 +148,8 @@ CAPABILITIES:
 - list_invoices, get_invoice
 - create_invoice_draft (creates a DRAFT — does NOT send)
 - send_invoice (only after explicit user confirmation)
+- list_delivery_orders, get_delivery_order (read-only — answer questions about delivery orders / DOs, sent or received)
+- get_dashboard_summary
 
 SENDING AN INVOICE — you only need: customer, amount, invoice date, due date.
 1. Resolve the customer with list_customers. If ambiguous, ask. If they don't exist, ask permission to create.

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import dayjs from "dayjs";
 import { toast } from "sonner";
@@ -112,6 +112,49 @@ function formatFileSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// Invoices in a batch usually run sequentially (e.g. INV-202411035, -036, -037).
+// After extraction we look for gaps in that running sequence so the user can
+// spot an invoice they forgot to upload. We split each number into a leading
+// prefix + trailing digits, group by prefix, and within a group flag the
+// integers missing between two present numbers — but only across SMALL gaps.
+// Large jumps (e.g. month/year rollovers in date-coded numbers like
+// 202411099 → 202412001) are skipped to avoid false positives.
+const GAP_LIMIT = 20;
+
+function findMissingInvoiceNumbers(rawNumbers: string[]): string[] {
+  const parsed = rawNumbers
+    .map((raw) => {
+      const m = /^(.*?)(\d+)\s*$/.exec(raw.trim());
+      return m ? { prefix: m[1], num: parseInt(m[2], 10), width: m[2].length } : null;
+    })
+    .filter((p): p is { prefix: string; num: number; width: number } => p !== null);
+
+  const byPrefix = new Map<string, { num: number; width: number }[]>();
+  for (const p of parsed) {
+    const list = byPrefix.get(p.prefix) ?? [];
+    list.push({ num: p.num, width: p.width });
+    byPrefix.set(p.prefix, list);
+  }
+
+  const missing: string[] = [];
+  for (const [prefix, items] of Array.from(byPrefix.entries())) {
+    if (items.length < 2) continue;
+    const sorted = [...items].sort((a, b) => a.num - b.num);
+    const width = Math.max(...sorted.map((i) => i.width));
+    for (let i = 1; i < sorted.length; i++) {
+      const a = sorted[i - 1].num;
+      const b = sorted[i].num;
+      const diff = b - a;
+      if (diff > 1 && diff <= GAP_LIMIT) {
+        for (let n = a + 1; n < b; n++) {
+          missing.push(prefix + String(n).padStart(width, "0"));
+        }
+      }
+    }
+  }
+  return missing;
 }
 
 // Normalise a company/customer name for fuzzy matching — strip legal suffixes
@@ -805,6 +848,17 @@ function UploadInvoicePageInner() {
 
   const actionableInvoices = invoices.filter((i) => i.status === "ready");
 
+  // Gaps in the running invoice-number sequence across the extracted batch.
+  const missingInvoiceNumbers = useMemo(
+    () =>
+      findMissingInvoiceNumbers(
+        invoices
+          .filter((i) => i.status === "ready" && i.invoiceNumber.trim())
+          .map((i) => i.invoiceNumber),
+      ),
+    [invoices],
+  );
+
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   };
@@ -1006,6 +1060,24 @@ function UploadInvoicePageInner() {
         {/* ─── Invoice Table ───────────────────────────────────────── */}
         {hasInvoices && (
           <div className="space-y-4">
+            {/* Running-number gap warning */}
+            {missingInvoiceNumbers.length > 0 && (
+              <div className="flex items-start gap-2.5 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                <div>
+                  <p className="font-semibold">
+                    Possible missing invoice{missingInvoiceNumbers.length === 1 ? "" : "s"} in the sequence
+                  </p>
+                  <p className="mt-0.5">
+                    These running numbers fall between the ones you uploaded but
+                    aren&apos;t in this batch:{" "}
+                    <span className="font-medium">{missingInvoiceNumbers.join(", ")}</span>.
+                    Check whether you forgot to upload them.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Action bar / drop zone */}
             <div
               onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
