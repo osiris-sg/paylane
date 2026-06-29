@@ -399,6 +399,9 @@ function UploadInvoicePageInner() {
       await refetchCustomers();
       handledCustomerKeys.current.add(key);
       // Assign the new customer to every unassigned row the AI read as this name.
+      const targets = invoices.filter(
+        (inv) => !inv.customerId && normaliseCompany(inv.customerName) === key,
+      );
       setInvoices((prev) =>
         prev.map((inv) =>
           !inv.customerId && normaliseCompany(inv.customerName) === key
@@ -406,6 +409,7 @@ function UploadInvoicePageInner() {
             : inv,
         ),
       );
+      flushCustomerAssignment(targets, created.id);
       toast.success(`Customer "${created.company || created.name}" saved & assigned`);
       setNewCustomerQueue((prev) => prev.slice(1));
     } catch (err: unknown) {
@@ -444,11 +448,12 @@ function UploadInvoicePageInner() {
       });
       await refetchCustomers();
       toast.success("Customer added");
-      // Auto-assign to the triggering invoice (or all selected if bulk)
+      // Auto-assign to the triggering invoice (or all selected if bulk).
+      // Both paths flush the assignment to any already-saved draft.
       if (addCustomerFor === "bulk") {
-        setInvoices((prev) => prev.map((inv) => (selectedIds.has(inv.id) ? { ...inv, customerId: created.id } : inv)));
+        bulkAssignCustomer(created.id);
       } else if (addCustomerFor) {
-        updateInvoice(addCustomerFor, { customerId: created.id });
+        assignCustomer(addCustomerFor, created.id);
       }
       setAddCustomerFor(null);
       resetNewCust();
@@ -579,20 +584,29 @@ function UploadInvoicePageInner() {
       updateBeforeUnload();
       try {
         const result = await tryUpsert(invoiceNumber);
+        // If the user assigned a customer while this draft was still saving, the
+        // upsert above went out without it — capture the local assignment so we
+        // can flush it now that we have a dbId.
+        let raceCustomerId: string | null = null;
         setInvoices((prev) =>
-          prev.map((x) =>
-            x.id === id
-              ? {
-                  ...x,
-                  dbId: result.invoice.id,
-                  uploadResult: result.status,
-                  // For duplicates/overrides, hydrate local state from the saved invoice
-                  // so the read-only row reflects what's actually in the DB.
-                  customerId: result.invoice.customerId ?? x.customerId,
-                }
-              : x,
-          ),
+          prev.map((x) => {
+            if (x.id !== id) return x;
+            if (!result.invoice.customerId && x.customerId) {
+              raceCustomerId = x.customerId;
+            }
+            return {
+              ...x,
+              dbId: result.invoice.id,
+              uploadResult: result.status,
+              // For duplicates/overrides, hydrate local state from the saved invoice
+              // so the read-only row reflects what's actually in the DB.
+              customerId: result.invoice.customerId ?? x.customerId,
+            };
+          }),
         );
+        if (raceCustomerId && result.invoice.id) {
+          updateInvoiceMut.mutate({ id: result.invoice.id, customerId: raceCustomerId });
+        }
         if (result.status === "duplicate") {
           toast.info(`${invoiceNumber} already exists`);
         } else if (result.status === "updated") {
@@ -875,6 +889,34 @@ function UploadInvoicePageInner() {
     setInvoices((prev) => prev.map((inv) => (inv.id === id ? { ...inv, ...updates } : inv)));
   };
 
+  // Auto-persist a customer assignment to the DB for any rows already saved as a
+  // draft (dbId present). The first upload auto-saves the draft, but later edits
+  // — customer being the main one — used to live only in local state until the
+  // user clicked Save/Send, so assigning a customer then navigating away lost the
+  // link. This flushes it to the draft immediately.
+  const flushCustomerAssignment = (rows: UploadedInvoice[], customerId: string) => {
+    if (!customerId) return;
+    for (const inv of rows) {
+      if (!inv.dbId) continue;
+      updateInvoiceMut.mutate(
+        { id: inv.dbId, customerId },
+        {
+          onError: (err) =>
+            toast.error(
+              `Couldn't link customer to ${inv.invoiceNumber || "draft"}: ${err.message}`,
+            ),
+        },
+      );
+    }
+  };
+
+  // Assign a customer to a single row (local state) and flush it to the draft.
+  const assignCustomer = (invId: string, customerId: string) => {
+    const inv = invoices.find((x) => x.id === invId);
+    updateInvoice(invId, { customerId });
+    if (inv) flushCustomerAssignment([inv], customerId);
+  };
+
   const removeInvoice = (id: string) => {
     const inv = invoices.find((x) => x.id === id);
     if (inv?.dbId) {
@@ -886,7 +928,9 @@ function UploadInvoicePageInner() {
   };
 
   const bulkAssignCustomer = (customerId: string) => {
+    const targets = invoices.filter((inv) => selectedIds.has(inv.id));
     setInvoices((prev) => prev.map((inv) => (selectedIds.has(inv.id) ? { ...inv, customerId } : inv)));
+    flushCustomerAssignment(targets, customerId);
   };
 
   const buildPayload = (inv: UploadedInvoice) => ({
@@ -1182,7 +1226,7 @@ function UploadInvoicePageInner() {
                             <CustomerPicker
                               customers={customers}
                               selectedId={inv.customerId}
-                              onSelect={(id) => updateInvoice(inv.id, { customerId: id })}
+                              onSelect={(id) => assignCustomer(inv.id, id)}
                               onAddNew={() => openAddCustomer(inv.id, { name: inv.customerName, email: inv.customerEmail })}
                             />
                           ) : (
