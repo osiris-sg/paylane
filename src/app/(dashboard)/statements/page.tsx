@@ -365,7 +365,7 @@ function SentStatementsTable() {
           return (
           <div
             key={s.id}
-            onClick={(e) => toggleSelect(s.id, e)}
+            onClick={() => window.open(s.fileUrl, "_blank", "noopener,noreferrer")}
             className={`cursor-pointer select-none rounded-lg border bg-white p-3 transition-colors ${isSelected ? "border-blue-300 bg-blue-50" : ""}`}
           >
             <div className="flex items-start justify-between gap-2">
@@ -426,7 +426,7 @@ function SentStatementsTable() {
                   return (
                   <TableRow
                     key={s.id}
-                    onClick={(e) => toggleSelect(s.id, e)}
+                    onClick={() => window.open(s.fileUrl, "_blank", "noopener,noreferrer")}
                     className={`cursor-pointer select-none ${isSelected ? "bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/30" : ""}`}
                   >
                     <TableCell>

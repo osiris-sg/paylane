@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useState, useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { keepPreviousData } from "@tanstack/react-query";
 import Link from "next/link";
 import dayjs from "dayjs";
@@ -216,6 +217,7 @@ function useDownload() {
 }
 
 function SentTable() {
+  const router = useRouter();
   const utils = api.useUtils();
   const sendAccess = useSendAccess();
   const { download, downloadZip, busyId } = useDownload();
@@ -427,7 +429,7 @@ function SentTable() {
                   return (
                     <TableRow
                       key={d.id}
-                      onClick={(e) => toggleSelect(d.id, e)}
+                      onClick={() => router.push(`/delivery-orders/${d.id}`)}
                       className={`cursor-pointer select-none ${isSelected ? "bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/30" : ""}`}
                     >
                       <TableCell>
@@ -499,6 +501,7 @@ function SentTable() {
 }
 
 function ReceivedTable() {
+  const router = useRouter();
   const { download, downloadZip, busyId } = useDownload();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
@@ -659,7 +662,7 @@ function ReceivedTable() {
                   return (
                     <TableRow
                       key={d.id}
-                      onClick={(e) => toggleSelect(d.id, e)}
+                      onClick={() => router.push(`/delivery-orders/${d.id}`)}
                       className={`cursor-pointer select-none ${isSelected ? "bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/30" : ""}`}
                     >
                       <TableCell>

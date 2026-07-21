@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import dayjs from "dayjs";
 import { toast } from "sonner";
 import {
@@ -140,6 +141,7 @@ function SkeletonRow({ columns }: { columns: number }) {
 }
 
 export function InvoiceTable({ type, initialSearch, initialCustomerId, initialSenderCompanyId }: InvoiceTableProps) {
+  const router = useRouter();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState(initialSearch ?? "");
   const [debouncedSearch, setDebouncedSearch] = useState(initialSearch ?? "");
@@ -666,7 +668,7 @@ export function InvoiceTable({ type, initialSearch, initialCustomerId, initialSe
               return (
                 <div
                   key={invoice.id}
-                  onClick={(e) => toggleSelect(invoice.id, e)}
+                  onClick={() => router.push(`/invoices/${invoice.id}`)}
                   className={`relative cursor-pointer select-none overflow-hidden rounded-lg border bg-white p-3 transition-colors ${
                     isSelected ? "border-blue-300 bg-blue-50" : ""
                   }`}
@@ -772,7 +774,7 @@ export function InvoiceTable({ type, initialSearch, initialCustomerId, initialSe
                     <TableRow
                       key={invoice.id}
                       className={`cursor-pointer select-none ${rowClassName}`}
-                      onClick={(e) => toggleSelect(invoice.id, e)}
+                      onClick={() => router.push(`/invoices/${invoice.id}`)}
                     >
                       {/* Checkbox */}
                       <TableCell>
