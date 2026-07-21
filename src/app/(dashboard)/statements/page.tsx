@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useEffect } from "react";
+import { Suspense, useState, useEffect, useMemo } from "react";
 import { keepPreviousData } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -49,6 +49,7 @@ import { SendStatementDialog } from "~/components/statements/send-statement-dial
 import { ExpiredBanner } from "~/components/subscription/expired-banner";
 import { LockedSendingCTA } from "~/components/subscription/locked-sending-cta";
 import { useSendAccess } from "~/lib/use-send-access";
+import { useRowSelection } from "~/lib/use-row-selection";
 import {
   ALL_DATES,
   resolveDateRange,
@@ -178,7 +179,6 @@ function SentStatementsTable() {
     customerId: string;
     customerLabel: string;
   } | null>(null);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   // Debounce the search box so we don't hit the server on every keystroke.
@@ -204,7 +204,17 @@ function SentStatementsTable() {
   );
   const { data: customerOptions } = api.statement.sentCustomers.useQuery();
 
-  const rows = list.data?.statements ?? [];
+  const rows = useMemo(() => list.data?.statements ?? [], [list.data]);
+  // Row ids in display order — drives select-all and shift-click ranges.
+  const rowIds = useMemo(() => rows.map((s) => s.id), [rows]);
+  const {
+    selectedIds,
+    setSelectedIds,
+    toggle: toggleSelect,
+    toggleAll: toggleSelectAll,
+    isAllSelected,
+    isSomeSelected,
+  } = useRowSelection(rowIds);
   const totalCount = list.data?.totalCount ?? 0;
   const totalPages = list.data?.totalPages ?? 1;
   const hasFilters =
@@ -220,21 +230,6 @@ function SentStatementsTable() {
     onError: () => toast.error("Failed to delete statements"),
   });
 
-  const toggleSelect = (id: string) =>
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-
-  const toggleSelectAll = () =>
-    setSelectedIds((prev) =>
-      prev.size === rows.length ? new Set() : new Set(rows.map((s) => s.id)),
-    );
-
-  const isAllSelected = rows.length > 0 && selectedIds.size === rows.length;
-  const isSomeSelected = selectedIds.size > 0;
   const canDelete = access.canSend && isSomeSelected;
   // View + Replace act on one statement, so they only appear when exactly one
   // row is selected (Delete still works for any number).
@@ -370,15 +365,17 @@ function SentStatementsTable() {
           return (
           <div
             key={s.id}
-            onClick={() => toggleSelect(s.id)}
+            onClick={(e) => toggleSelect(s.id, e)}
             className={`cursor-pointer select-none rounded-lg border bg-white p-3 transition-colors ${isSelected ? "border-blue-300 bg-blue-50" : ""}`}
           >
             <div className="flex items-start justify-between gap-2">
               <div className="flex min-w-0 items-center gap-2">
                 <Checkbox
                   checked={isSelected}
-                  onClick={(e) => e.stopPropagation()}
-                  onCheckedChange={() => toggleSelect(s.id)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleSelect(s.id, e);
+                  }}
                   aria-label="Select statement"
                 />
                 <Link
@@ -429,14 +426,16 @@ function SentStatementsTable() {
                   return (
                   <TableRow
                     key={s.id}
-                    onClick={() => toggleSelect(s.id)}
+                    onClick={(e) => toggleSelect(s.id, e)}
                     className={`cursor-pointer select-none ${isSelected ? "bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/30" : ""}`}
                   >
                     <TableCell>
                       <Checkbox
                         checked={isSelected}
-                        onClick={(e) => e.stopPropagation()}
-                        onCheckedChange={() => toggleSelect(s.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleSelect(s.id, e);
+                        }}
                         aria-label={`Select statement for ${s.customer.company || s.customer.name}`}
                       />
                     </TableCell>
@@ -575,7 +574,7 @@ function ReceivedStatementsTable() {
     },
   });
 
-  const rows = list.data?.statements ?? [];
+  const rows = useMemo(() => list.data?.statements ?? [], [list.data]);
   const totalCount = list.data?.totalCount ?? 0;
   const totalPages = list.data?.totalPages ?? 1;
   const hasFilters =

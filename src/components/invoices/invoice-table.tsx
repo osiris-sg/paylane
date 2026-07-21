@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import dayjs from "dayjs";
 import { toast } from "sonner";
@@ -22,6 +22,7 @@ import {
 import { api } from "~/trpc/react";
 import { formatCurrency } from "~/lib/currency";
 import { useSendAccess } from "~/lib/use-send-access";
+import { useRowSelection } from "~/lib/use-row-selection";
 import {
   ALL_DATES,
   resolveDateRange,
@@ -144,7 +145,6 @@ export function InvoiceTable({ type, initialSearch, initialCustomerId, initialSe
   const [debouncedSearch, setDebouncedSearch] = useState(initialSearch ?? "");
   const [customerId, setCustomerId] = useState<string | undefined>(initialCustomerId);
   const [senderCompanyId, setSenderCompanyId] = useState<string | undefined>(initialSenderCompanyId);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [sortBy, setSortBy] = useState<SortField | undefined>(undefined);
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [dateFilter, setDateFilter] = useState<DateFilterValue>(ALL_DATES);
@@ -283,7 +283,9 @@ export function InvoiceTable({ type, initialSearch, initialCustomerId, initialSe
     return () => clearTimeout(timeout);
   };
 
-  const invoices = data?.invoices ?? [];
+  const invoices = useMemo(() => data?.invoices ?? [], [data]);
+  // Row ids in display order — drives select-all and shift-click ranges.
+  const invoiceIds = useMemo(() => invoices.map((i) => i.id), [invoices]);
   const totalCount = data?.totalCount ?? 0;
   const totalPages = data?.totalPages ?? 1;
   const totalsByCurrency = data?.totalsByCurrency ?? [];
@@ -291,26 +293,15 @@ export function InvoiceTable({ type, initialSearch, initialCustomerId, initialSe
   // Sent tab carries an extra Status column (Draft/Sent).
   const columnCount = type === "sent" ? 9 : 8;
 
-  // Selection helpers
-  const toggleSelect = (id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const toggleSelectAll = () => {
-    if (selectedIds.size === invoices.length) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(invoices.map((i) => i.id)));
-    }
-  };
-
-  const isAllSelected = invoices.length > 0 && selectedIds.size === invoices.length;
-  const isSomeSelected = selectedIds.size > 0;
+  // Selection helpers — shared hook adds shift-click range selection.
+  const {
+    selectedIds,
+    setSelectedIds,
+    toggle: toggleSelect,
+    toggleAll: toggleSelectAll,
+    isAllSelected,
+    isSomeSelected,
+  } = useRowSelection(invoiceIds);
 
   const selectedInvoices = invoices.filter((inv) => selectedIds.has(inv.id));
 
@@ -675,7 +666,7 @@ export function InvoiceTable({ type, initialSearch, initialCustomerId, initialSe
               return (
                 <div
                   key={invoice.id}
-                  onClick={() => toggleSelect(invoice.id)}
+                  onClick={(e) => toggleSelect(invoice.id, e)}
                   className={`relative cursor-pointer select-none overflow-hidden rounded-lg border bg-white p-3 transition-colors ${
                     isSelected ? "border-blue-300 bg-blue-50" : ""
                   }`}
@@ -683,8 +674,10 @@ export function InvoiceTable({ type, initialSearch, initialCustomerId, initialSe
                   <div className="flex items-start gap-3">
                     <Checkbox
                       checked={isSelected}
-                      onClick={(e) => e.stopPropagation()}
-                      onCheckedChange={() => toggleSelect(invoice.id)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleSelect(invoice.id, e);
+                      }}
                       className="mt-1"
                     />
                     <div className="min-w-0 flex-1">
@@ -779,14 +772,16 @@ export function InvoiceTable({ type, initialSearch, initialCustomerId, initialSe
                     <TableRow
                       key={invoice.id}
                       className={`cursor-pointer select-none ${rowClassName}`}
-                      onClick={() => toggleSelect(invoice.id)}
+                      onClick={(e) => toggleSelect(invoice.id, e)}
                     >
                       {/* Checkbox */}
                       <TableCell>
                         <Checkbox
                           checked={isSelected}
-                          onClick={(e) => e.stopPropagation()}
-                          onCheckedChange={() => toggleSelect(invoice.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleSelect(invoice.id, e);
+                          }}
                           aria-label={`Select invoice ${invoice.invoiceNumber}`}
                         />
                       </TableCell>

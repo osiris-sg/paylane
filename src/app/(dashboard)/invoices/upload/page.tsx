@@ -52,6 +52,7 @@ import { Label } from "~/components/ui/label";
 import { UserPlus } from "lucide-react";
 import { SendAccessGuard } from "~/components/subscription/send-access-guard";
 import { uploadViaPresignedPut } from "~/lib/upload-file";
+import { useRowSelection } from "~/lib/use-row-selection";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -336,7 +337,6 @@ function UploadInvoicePageInner() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [invoices, setInvoices] = useState<UploadedInvoice[]>([]);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [dragOver, setDragOver] = useState(false);
 
   const utils = api.useUtils();
@@ -873,15 +873,20 @@ function UploadInvoicePageInner() {
     [invoices],
   );
 
-  const toggleSelect = (id: string) => {
-    setSelectedIds((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
-  };
-  const toggleSelectAll = () => {
-    if (selectedIds.size === actionableInvoices.length) setSelectedIds(new Set());
-    else setSelectedIds(new Set(actionableInvoices.map((i) => i.id)));
-  };
-  const isAllSelected = actionableInvoices.length > 0 && selectedIds.size === actionableInvoices.length;
-  const isSomeSelected = selectedIds.size > 0;
+  // Only `ready` rows are selectable, so the hook's id list (which drives
+  // select-all and shift-click ranges) is the actionable rows in display order.
+  const actionableIds = useMemo(
+    () => actionableInvoices.map((i) => i.id),
+    [actionableInvoices],
+  );
+  const {
+    selectedIds,
+    setSelectedIds,
+    toggle: toggleSelect,
+    toggleAll: toggleSelectAll,
+    isAllSelected,
+    isSomeSelected,
+  } = useRowSelection(actionableIds);
 
   // ─── Actions ────────────────────────────────────────────────────────
 
@@ -1204,9 +1209,23 @@ function UploadInvoicePageInner() {
                     const customerLabel = customer ? customer.company || customer.name : null;
 
                     return (
-                      <TableRow key={inv.id} className={isSelected ? "bg-blue-50" : isDuplicate ? "bg-amber-50/40" : ""}>
+                      <TableRow
+                        key={inv.id}
+                        // Clicking anywhere on the row toggles its checkbox. The
+                        // inline editors below stop propagation so clicking into
+                        // an input still edits instead of selecting.
+                        onClick={(e) => { if (isActionable) toggleSelect(inv.id, e); }}
+                        className={`${isActionable ? "cursor-pointer select-none" : ""} ${isSelected ? "bg-blue-50" : isDuplicate ? "bg-amber-50/40" : ""}`}
+                      >
                         <TableCell>
-                          <Checkbox checked={isSelected} onCheckedChange={() => toggleSelect(inv.id)} disabled={!isActionable} />
+                          <Checkbox
+                            checked={isSelected}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleSelect(inv.id, e);
+                            }}
+                            disabled={!isActionable}
+                          />
                         </TableCell>
                         <TableCell>
                           <div className="max-w-[180px]">
@@ -1216,40 +1235,42 @@ function UploadInvoicePageInner() {
                         </TableCell>
                         <TableCell className="min-w-[160px]">
                           {isActionable ? (
-                            <Input className="h-7 border-gray-200 text-sm" value={inv.invoiceNumber} onChange={(e) => updateInvoice(inv.id, { invoiceNumber: e.target.value })} placeholder="Invoice #" />
+                            <Input onClick={(e) => e.stopPropagation()} className="h-7 border-gray-200 text-sm" value={inv.invoiceNumber} onChange={(e) => updateInvoice(inv.id, { invoiceNumber: e.target.value })} placeholder="Invoice #" />
                           ) : (
                             <span className="whitespace-nowrap text-sm font-medium">{inv.invoiceNumber || "—"}</span>
                           )}
                         </TableCell>
                         <TableCell className="min-w-[160px]">
                           {isActionable ? (
+                            <div onClick={(e) => e.stopPropagation()}>
                             <CustomerPicker
                               customers={customers}
                               selectedId={inv.customerId}
                               onSelect={(id) => assignCustomer(inv.id, id)}
                               onAddNew={() => openAddCustomer(inv.id, { name: inv.customerName, email: inv.customerEmail })}
                             />
+                            </div>
                           ) : (
                             <span className="text-sm font-medium">{customerLabel ?? "—"}</span>
                           )}
                         </TableCell>
                         <TableCell>
                           {isActionable ? (
-                            <Input className="h-7 border-gray-200 text-sm" value={inv.reference} onChange={(e) => updateInvoice(inv.id, { reference: e.target.value })} placeholder="Ref" />
+                            <Input onClick={(e) => e.stopPropagation()} className="h-7 border-gray-200 text-sm" value={inv.reference} onChange={(e) => updateInvoice(inv.id, { reference: e.target.value })} placeholder="Ref" />
                           ) : (
                             <span className="text-sm text-muted-foreground">{inv.reference || "—"}</span>
                           )}
                         </TableCell>
                         <TableCell>
                           {isActionable ? (
-                            <Input type="date" className="h-7 border-gray-200 text-sm" value={inv.invoicedDate} onChange={(e) => updateInvoice(inv.id, { invoicedDate: e.target.value })} />
+                            <Input onClick={(e) => e.stopPropagation()} type="date" className="h-7 border-gray-200 text-sm" value={inv.invoicedDate} onChange={(e) => updateInvoice(inv.id, { invoicedDate: e.target.value })} />
                           ) : (
                             <span className="text-sm">{inv.invoicedDate ? dayjs(inv.invoicedDate).format("MMM D, YYYY") : "—"}</span>
                           )}
                         </TableCell>
                         <TableCell>
                           {isActionable ? (
-                            <Input type="date" className="h-7 border-gray-200 text-sm" value={inv.dueDate} onChange={(e) => updateInvoice(inv.id, { dueDate: e.target.value })} />
+                            <Input onClick={(e) => e.stopPropagation()} type="date" className="h-7 border-gray-200 text-sm" value={inv.dueDate} onChange={(e) => updateInvoice(inv.id, { dueDate: e.target.value })} />
                           ) : (
                             <span className="text-sm">{inv.dueDate ? dayjs(inv.dueDate).format("MMM D, YYYY") : "—"}</span>
                           )}
@@ -1257,6 +1278,7 @@ function UploadInvoicePageInner() {
                         <TableCell>
                           {isActionable ? (
                             <Input
+                              onClick={(e) => e.stopPropagation()}
                               type="text"
                               inputMode="decimal"
                               className="h-7 w-28 border-gray-200 text-right text-sm"
@@ -1275,7 +1297,7 @@ function UploadInvoicePageInner() {
                           <StatusBadge status={inv.status} hasDbId={!!inv.dbId} uploadResult={inv.uploadResult} />
                         </TableCell>
                         <TableCell>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-red-500" onClick={() => removeInvoice(inv.id)}>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-red-500" onClick={(e) => { e.stopPropagation(); removeInvoice(inv.id); }}>
                             <X className="h-3.5 w-3.5" />
                           </Button>
                         </TableCell>

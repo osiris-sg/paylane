@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useEffect } from "react";
+import { Suspense, useState, useEffect, useMemo } from "react";
 import { keepPreviousData } from "@tanstack/react-query";
 import Link from "next/link";
 import dayjs from "dayjs";
@@ -39,6 +39,7 @@ import {
 } from "~/components/ui/dialog";
 import { api } from "~/trpc/react";
 import { useSendAccess } from "~/lib/use-send-access";
+import { useRowSelection } from "~/lib/use-row-selection";
 import {
   ALL_DATES,
   resolveDateRange,
@@ -223,7 +224,6 @@ function SentTable() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [dateFilter, setDateFilter] = useState<DateFilterValue>(ALL_DATES);
   const [customerId, setCustomerId] = useState<string | undefined>(undefined);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   useEffect(() => {
@@ -248,7 +248,17 @@ function SentTable() {
   );
   const { data: customerOptions } = api.deliveryOrder.sentCustomers.useQuery();
 
-  const rows = list.data?.rows ?? [];
+  const rows = useMemo(() => list.data?.rows ?? [], [list.data]);
+  // Row ids in display order — drives select-all and shift-click ranges.
+  const rowIds = useMemo(() => rows.map((d) => d.id), [rows]);
+  const {
+    selectedIds,
+    setSelectedIds,
+    toggle: toggleSelect,
+    toggleAll: toggleSelectAll,
+    isAllSelected,
+    isSomeSelected,
+  } = useRowSelection(rowIds);
   const totalCount = list.data?.totalCount ?? 0;
   const totalPages = list.data?.totalPages ?? 1;
   const hasFilters =
@@ -267,19 +277,6 @@ function SentTable() {
     onError: (e) => toast.error(e.message || "Failed to delete"),
   });
 
-  const toggleSelect = (id: string) =>
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  const toggleSelectAll = () =>
-    setSelectedIds((prev) =>
-      prev.size === rows.length ? new Set() : new Set(rows.map((d) => d.id)),
-    );
-  const isAllSelected = rows.length > 0 && selectedIds.size === rows.length;
-  const isSomeSelected = selectedIds.size > 0;
   const single =
     selectedIds.size === 1 ? rows.find((d) => selectedIds.has(d.id)) ?? null : null;
   const anyDraftSelected = rows.some((d) => selectedIds.has(d.id) && !d.sentAt);
@@ -430,14 +427,16 @@ function SentTable() {
                   return (
                     <TableRow
                       key={d.id}
-                      onClick={() => toggleSelect(d.id)}
+                      onClick={(e) => toggleSelect(d.id, e)}
                       className={`cursor-pointer select-none ${isSelected ? "bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/30" : ""}`}
                     >
                       <TableCell>
                         <Checkbox
                           checked={isSelected}
-                          onClick={(e) => e.stopPropagation()}
-                          onCheckedChange={() => toggleSelect(d.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleSelect(d.id, e);
+                          }}
                           aria-label={`Select ${d.doNumber}`}
                         />
                       </TableCell>
@@ -506,7 +505,6 @@ function ReceivedTable() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [dateFilter, setDateFilter] = useState<DateFilterValue>(ALL_DATES);
   const [supplierId, setSupplierId] = useState<string | undefined>(undefined);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -530,25 +528,22 @@ function ReceivedTable() {
   );
   const { data: supplierOptions } = api.deliveryOrder.receivedSuppliers.useQuery();
 
-  const rows = list.data?.rows ?? [];
+  const rows = useMemo(() => list.data?.rows ?? [], [list.data]);
+  // Row ids in display order — drives select-all and shift-click ranges.
+  const rowIds = useMemo(() => rows.map((d) => d.id), [rows]);
+  const {
+    selectedIds,
+    toggle: toggleSelect,
+    toggleAll: toggleSelectAll,
+    clear: clearSelection,
+    isAllSelected,
+    isSomeSelected,
+  } = useRowSelection(rowIds);
   const totalCount = list.data?.totalCount ?? 0;
   const totalPages = list.data?.totalPages ?? 1;
   const hasFilters =
     !!debouncedSearch || !!supplierId || dateFilter.preset !== "all";
 
-  const toggleSelect = (id: string) =>
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  const toggleSelectAll = () =>
-    setSelectedIds((prev) =>
-      prev.size === rows.length ? new Set() : new Set(rows.map((d) => d.id)),
-    );
-  const isAllSelected = rows.length > 0 && selectedIds.size === rows.length;
-  const isSomeSelected = selectedIds.size > 0;
   const single =
     selectedIds.size === 1 ? rows.find((d) => selectedIds.has(d.id)) ?? null : null;
 
@@ -594,7 +589,7 @@ function ReceivedTable() {
                 size="sm"
                 variant="ghost"
                 className="ml-auto shrink-0"
-                onClick={() => setSelectedIds(new Set())}
+                onClick={clearSelection}
               >
                 Clear
               </Button>
@@ -664,14 +659,16 @@ function ReceivedTable() {
                   return (
                     <TableRow
                       key={d.id}
-                      onClick={() => toggleSelect(d.id)}
+                      onClick={(e) => toggleSelect(d.id, e)}
                       className={`cursor-pointer select-none ${isSelected ? "bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/30" : ""}`}
                     >
                       <TableCell>
                         <Checkbox
                           checked={isSelected}
-                          onClick={(e) => e.stopPropagation()}
-                          onCheckedChange={() => toggleSelect(d.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleSelect(d.id, e);
+                          }}
                           aria-label={`Select ${d.doNumber}`}
                         />
                       </TableCell>
