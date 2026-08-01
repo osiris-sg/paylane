@@ -1,20 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "~/trpc/react";
 import { toast } from "sonner";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "~/components/ui/card";
+import { Card, CardContent } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Badge } from "~/components/ui/badge";
 import { Label } from "~/components/ui/label";
-import { Separator } from "~/components/ui/separator";
+import { Checkbox } from "~/components/ui/checkbox";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "~/components/ui/table";
 import {
   Dialog,
   DialogContent,
@@ -30,18 +33,20 @@ import {
   Trash2,
   Mail,
   Phone,
-  MapPin,
   FileText,
-  ChevronLeft,
-  ChevronRight,
   Users,
   Upload,
   MessageCircle,
+  AlertTriangle,
 } from "lucide-react";
 import Link from "next/link";
 import { useSendAccess } from "~/lib/use-send-access";
+import { useRowSelection } from "~/lib/use-row-selection";
 import { LockedSendingCTA } from "~/components/subscription/locked-sending-cta";
 import { ExpiredBanner } from "~/components/subscription/expired-banner";
+import { TablePagination } from "~/components/table-pagination";
+
+const PAGE_SIZE = 10;
 
 /** Shows when a customer's statement was last updated; recent ones stand out. */
 function StatementBadge({ sentAt }: { sentAt: string | Date }) {
@@ -67,6 +72,59 @@ function StatementBadge({ sentAt }: { sentAt: string | Date }) {
   );
 }
 
+function WhatsAppBadge() {
+  return (
+    <Badge
+      variant="outline"
+      className="gap-1 border-green-300 bg-green-50 text-green-700"
+      title="WhatsApp notifications enabled"
+    >
+      <MessageCircle className="h-3 w-3" />
+      WhatsApp
+    </Badge>
+  );
+}
+
+/** The status chips attached to a customer, shared by the table + mobile cards. */
+function CustomerStatuses({
+  customer,
+}: {
+  customer: {
+    whatsappEnabled?: boolean;
+    statement?: { sentAt: string | Date } | null;
+  };
+}) {
+  if (!customer.whatsappEnabled && !customer.statement) {
+    return <span className="text-sm text-muted-foreground">—</span>;
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {customer.whatsappEnabled && <WhatsAppBadge />}
+      {customer.statement && <StatementBadge sentAt={customer.statement.sentAt} />}
+    </div>
+  );
+}
+
+function CountBanner({ count }: { count: number }) {
+  return (
+    <div className="mb-3 overflow-hidden rounded-xl border-2 border-blue-300 bg-gradient-to-br from-blue-50 via-blue-100/70 to-blue-50 px-4 py-3 shadow-sm dark:border-blue-700 dark:from-blue-950/50 dark:via-blue-900/30 dark:to-blue-950/40">
+      <div className="flex items-center gap-2.5">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white shadow-sm">
+          <Users className="h-4 w-4" />
+        </div>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-blue-800 dark:text-blue-200">
+            Total customers
+          </p>
+          <p className="text-xl font-bold tabular-nums tracking-tight text-blue-900 dark:text-blue-100 sm:text-2xl">
+            {count} customer{count === 1 ? "" : "s"}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface CustomerFormData {
   name: string;
   email: string;
@@ -89,21 +147,41 @@ export default function CustomersPage() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [page, setPage] = useState(1);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<CustomerFormData>(emptyForm);
 
   const access = useSendAccess();
   const sendDisabled = !access.canSend;
 
-  const limit = 12;
+  // Debounce the search box so we don't hit the server on every keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [search]);
 
   const { data, isLoading, refetch } = api.customer.list.useQuery({
     search: debouncedSearch || undefined,
     page,
-    limit,
+    limit: PAGE_SIZE,
   });
+
+  const customers = useMemo(() => data?.customers ?? [], [data]);
+  const customerIds = useMemo(() => customers.map((c) => c.id), [customers]);
+  const {
+    selectedIds,
+    toggle: toggleSelect,
+    toggleAll: toggleSelectAll,
+    clear: clearSelection,
+    isAllSelected,
+    isSomeSelected,
+  } = useRowSelection(customerIds);
+
+  const totalCount = data?.totalCount ?? 0;
+  const totalPages = data?.totalPages ?? 1;
 
   const createMutation = api.customer.create.useMutation({
     onSuccess: () => {
@@ -130,27 +208,17 @@ export default function CustomersPage() {
     },
   });
 
-  const deleteMutation = api.customer.delete.useMutation({
-    onSuccess: () => {
-      toast.success("Customer deleted successfully");
-      setDeleteDialogOpen(false);
-      setDeletingId(null);
+  const bulkDeleteMutation = api.customer.bulkDelete.useMutation({
+    onSuccess: (res) => {
+      toast.success(`${res.count} customer${res.count === 1 ? "" : "s"} deleted`);
+      setConfirmDeleteOpen(false);
+      clearSelection();
       void refetch();
     },
     onError: (error) => {
-      toast.error(error.message || "Failed to delete customer");
+      toast.error(error.message || "Failed to delete customers");
     },
   });
-
-  const handleSearchChange = (value: string) => {
-    setSearch(value);
-    setPage(1);
-    // Simple debounce using setTimeout
-    const timeout = setTimeout(() => {
-      setDebouncedSearch(value);
-    }, 300);
-    return () => clearTimeout(timeout);
-  };
 
   const openCreateDialog = () => {
     setEditingId(null);
@@ -175,11 +243,6 @@ export default function CustomersPage() {
       company: customer.company ?? "",
     });
     setDialogOpen(true);
-  };
-
-  const openDeleteDialog = (id: string) => {
-    setDeletingId(id);
-    setDeleteDialogOpen(true);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -208,13 +271,14 @@ export default function CustomersPage() {
     }
   };
 
-  const handleDelete = () => {
-    if (deletingId) {
-      deleteMutation.mutate({ id: deletingId });
-    }
-  };
-
   const isMutating = createMutation.isPending || updateMutation.isPending;
+
+  // View + Edit act on one customer, so Edit only shows with exactly one row
+  // selected (Delete works for any number) — mirrors the statements table.
+  const singleSelected =
+    selectedIds.size === 1
+      ? customers.find((c) => selectedIds.has(c.id)) ?? null
+      : null;
 
   if (access.state === "locked") {
     return (
@@ -236,27 +300,12 @@ export default function CustomersPage() {
   return (
     <div className="flex flex-col gap-6">
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Customers</h1>
-        <p className="text-muted-foreground">
-          Manage your customers and their information.
-        </p>
-      </div>
-
-      {access.state === "expired" && (
-        <ExpiredBanner message="Your free trial has ended. Upgrade to add or edit customers." />
-      )}
-
-      {/* Search + Add Customer */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative w-full max-w-sm">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search customers..."
-            value={search}
-            onChange={(e) => handleSearchChange(e.target.value)}
-            className="pl-9"
-          />
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Customers</h1>
+          <p className="text-muted-foreground">
+            Manage your customers and their information.
+          </p>
         </div>
         <div className="flex flex-wrap gap-2">
           {sendDisabled ? (
@@ -279,179 +328,247 @@ export default function CustomersPage() {
         </div>
       </div>
 
-      {/* Loading Skeleton */}
-      {isLoading && (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Card key={i} className="animate-pulse">
-              <CardHeader className="pb-3">
-                <div className="h-5 w-36 rounded bg-muted" />
-                <div className="h-4 w-24 rounded bg-muted" />
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <div className="h-4 w-48 rounded bg-muted" />
-                <div className="h-4 w-32 rounded bg-muted" />
-                <div className="h-4 w-40 rounded bg-muted" />
-                <Separator className="my-3" />
-                <div className="flex items-center justify-between">
-                  <div className="h-5 w-20 rounded bg-muted" />
-                  <div className="flex gap-2">
-                    <div className="h-8 w-8 rounded bg-muted" />
-                    <div className="h-8 w-8 rounded bg-muted" />
+      {access.state === "expired" && (
+        <ExpiredBanner message="Your free trial has ended. Upgrade to add or edit customers." />
+      )}
+
+      {isLoading ? (
+        <Card>
+          <CardContent className="p-4">
+            <div className="space-y-2">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="h-10 animate-pulse rounded bg-muted/50" />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      ) : totalCount === 0 && !debouncedSearch ? (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+            <Users className="h-12 w-12 text-muted-foreground" />
+            <h3 className="text-lg font-semibold">No customers yet</h3>
+            <p className="max-w-md text-sm text-muted-foreground">
+              Add your first customer to get started.
+            </p>
+            <Button onClick={openCreateDialog} disabled={sendDisabled}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add Customer
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardContent className="p-3">
+            {/* Fixed-height control bar — swaps between search and the selection
+                actions so selecting never shifts the table down. */}
+            <div className="mb-3 h-10">
+              {isSomeSelected ? (
+                <div className="flex h-10 items-center gap-2 overflow-x-auto whitespace-nowrap">
+                  <span className="shrink-0 text-sm font-medium">
+                    {selectedIds.size} selected
+                  </span>
+                  {singleSelected && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="shrink-0"
+                      disabled={sendDisabled}
+                      onClick={() => openEditDialog(singleSelected)}
+                    >
+                      <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                      Edit
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={sendDisabled || bulkDeleteMutation.isPending}
+                    onClick={() => setConfirmDeleteOpen(true)}
+                    className="shrink-0 border-red-300 text-red-600 hover:bg-red-50"
+                  >
+                    <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                    {bulkDeleteMutation.isPending ? "Deleting..." : "Delete"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="ml-auto shrink-0"
+                    onClick={clearSelection}
+                  >
+                    Clear
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex h-10 items-center gap-2">
+                  <div className="relative flex-1 sm:max-w-sm">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      placeholder="Search customers..."
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      className="pl-9"
+                    />
                   </div>
                 </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
-
-      {/* Empty State */}
-      {!isLoading && data?.customers.length === 0 && (
-        <Card className="flex flex-col items-center justify-center py-16">
-          <Users className="mb-4 h-12 w-12 text-muted-foreground" />
-          <h3 className="text-lg font-semibold">No customers yet</h3>
-          <p className="mb-4 text-sm text-muted-foreground">
-            Add your first customer to get started.
-          </p>
-          <Button onClick={openCreateDialog} disabled={sendDisabled}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Customer
-          </Button>
-        </Card>
-      )}
-
-      {/* Customer Grid */}
-      {!isLoading && data && data.customers.length > 0 && (
-        <>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {data.customers.map((customer) => (
-              <Card
-                key={customer.id}
-                onClick={() => router.push(`/customers/${customer.id}`)}
-                className="cursor-pointer transition-shadow hover:shadow-md"
-              >
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between">
-                    <div className="min-w-0 flex-1">
-                      <CardTitle className="truncate text-lg">
-                        {customer.company || customer.name}
-                      </CardTitle>
-                      {customer.company && (
-                        <p className="flex items-center gap-1 truncate text-sm text-muted-foreground">
-                          {customer.name}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-1.5 text-sm text-muted-foreground">
-                    {customer.email && (
-                      <p className="flex items-center gap-2 truncate">
-                        <Mail className="h-3.5 w-3.5 shrink-0" />
-                        {customer.email}
-                      </p>
-                    )}
-                    {customer.phone && (
-                      <p className="flex items-center gap-2">
-                        <Phone className="h-3.5 w-3.5 shrink-0" />
-                        {customer.phone}
-                      </p>
-                    )}
-                    {customer.address && (
-                      <p className="flex items-center gap-2 truncate">
-                        <MapPin className="h-3.5 w-3.5 shrink-0" />
-                        {customer.address}
-                      </p>
-                    )}
-                  </div>
-
-                  <Separator className="my-3" />
-
-                  <div className="flex items-center justify-between">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <Badge variant="secondary" className="gap-1">
-                        <FileText className="h-3 w-3" />
-                        {customer._count.invoices}{" "}
-                        {customer._count.invoices === 1 ? "invoice" : "invoices"}
-                      </Badge>
-                      {customer.whatsappEnabled && (
-                        <Badge
-                          variant="outline"
-                          className="gap-1 border-green-300 bg-green-50 text-green-700"
-                          title="WhatsApp notifications enabled"
-                        >
-                          <MessageCircle className="h-3 w-3" />
-                          WhatsApp
-                        </Badge>
-                      )}
-                      {customer.statement && (
-                        <StatementBadge sentAt={customer.statement.sentAt} />
-                      )}
-                    </div>
-                    <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => openEditDialog(customer)}
-                        disabled={sendDisabled}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                        <span className="sr-only">Edit</span>
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive hover:text-destructive"
-                        onClick={() => openDeleteDialog(customer.id)}
-                        disabled={sendDisabled}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                        <span className="sr-only">Delete</span>
-                      </Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-
-          {/* Pagination */}
-          {data.totalPages > 1 && (
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-muted-foreground">
-                Showing {(page - 1) * limit + 1} to{" "}
-                {Math.min(page * limit, data.totalCount)} of {data.totalCount}{" "}
-                customers
-              </p>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page === 1}
-                >
-                  <ChevronLeft className="mr-1 h-4 w-4" />
-                  Previous
-                </Button>
-                <span className="text-sm text-muted-foreground">
-                  Page {page} of {data.totalPages}
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPage((p) => Math.min(data.totalPages, p + 1))}
-                  disabled={page === data.totalPages}
-                >
-                  Next
-                  <ChevronRight className="ml-1 h-4 w-4" />
-                </Button>
-              </div>
+              )}
             </div>
-          )}
-        </>
+
+            <CountBanner count={totalCount} />
+
+            {customers.length === 0 ? (
+              <p className="py-10 text-center text-sm text-muted-foreground">
+                No customers match &ldquo;{debouncedSearch}&rdquo;.
+              </p>
+            ) : (
+              <>
+                {/* Mobile: card per customer */}
+                <div className="space-y-3 md:hidden">
+                  {customers.map((customer) => {
+                    const isSelected = selectedIds.has(customer.id);
+                    return (
+                      <div
+                        key={customer.id}
+                        onClick={() => router.push(`/customers/${customer.id}`)}
+                        className={`cursor-pointer select-none rounded-lg border bg-white p-3 transition-colors ${isSelected ? "border-blue-300 bg-blue-50" : ""}`}
+                      >
+                        <div className="flex items-start gap-2">
+                          <Checkbox
+                            checked={isSelected}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleSelect(customer.id, e);
+                            }}
+                            className="mt-1"
+                            aria-label={`Select ${customer.company || customer.name}`}
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate font-semibold">
+                              {customer.company || customer.name}
+                            </p>
+                            {customer.company && customer.name && customer.name !== customer.company && (
+                              <p className="truncate text-xs text-muted-foreground">{customer.name}</p>
+                            )}
+                            <div className="mt-1 space-y-0.5 text-sm text-muted-foreground">
+                              {customer.email && (
+                                <p className="flex items-center gap-1.5 truncate">
+                                  <Mail className="h-3.5 w-3.5 shrink-0" />
+                                  {customer.email}
+                                </p>
+                              )}
+                              {customer.phone && (
+                                <p className="flex items-center gap-1.5">
+                                  <Phone className="h-3.5 w-3.5 shrink-0" />
+                                  {customer.phone}
+                                </p>
+                              )}
+                            </div>
+                            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                              <Badge variant="secondary" className="gap-1">
+                                <FileText className="h-3 w-3" />
+                                {customer._count.invoices}{" "}
+                                {customer._count.invoices === 1 ? "invoice" : "invoices"}
+                              </Badge>
+                              {customer.whatsappEnabled && <WhatsAppBadge />}
+                              {customer.statement && (
+                                <StatementBadge sentAt={customer.statement.sentAt} />
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Desktop: full table */}
+                <div className="hidden overflow-x-auto rounded-md border md:block">
+                  <Table className="min-w-[760px]">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-10">
+                          <Checkbox
+                            checked={isAllSelected}
+                            onCheckedChange={toggleSelectAll}
+                            aria-label="Select all"
+                          />
+                        </TableHead>
+                        <TableHead>Customer</TableHead>
+                        <TableHead>Contact</TableHead>
+                        <TableHead>Invoices</TableHead>
+                        <TableHead>Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {customers.map((customer) => {
+                        const isSelected = selectedIds.has(customer.id);
+                        return (
+                          <TableRow
+                            key={customer.id}
+                            onClick={() => router.push(`/customers/${customer.id}`)}
+                            className={`cursor-pointer select-none ${isSelected ? "bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/30" : ""}`}
+                          >
+                            <TableCell>
+                              <Checkbox
+                                checked={isSelected}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleSelect(customer.id, e);
+                                }}
+                                aria-label={`Select ${customer.company || customer.name}`}
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <p className="font-medium">
+                                {customer.company || customer.name}
+                              </p>
+                              {customer.company && customer.name && customer.name !== customer.company && (
+                                <p className="text-xs text-muted-foreground">{customer.name}</p>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <div className="space-y-0.5 text-sm text-muted-foreground">
+                                {customer.email && (
+                                  <p className="flex items-center gap-1.5 truncate">
+                                    <Mail className="h-3.5 w-3.5 shrink-0" />
+                                    {customer.email}
+                                  </p>
+                                )}
+                                {customer.phone && (
+                                  <p className="flex items-center gap-1.5">
+                                    <Phone className="h-3.5 w-3.5 shrink-0" />
+                                    {customer.phone}
+                                  </p>
+                                )}
+                                {!customer.email && !customer.phone && <span>—</span>}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="secondary" className="gap-1">
+                                <FileText className="h-3 w-3" />
+                                {customer._count.invoices}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <CustomerStatuses customer={customer} />
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              </>
+            )}
+
+            <TablePagination
+              page={page}
+              totalPages={totalPages}
+              totalCount={totalCount}
+              pageSize={PAGE_SIZE}
+              onPageChange={setPage}
+            />
+          </CardContent>
+        </Card>
       )}
 
       {/* Create / Edit Dialog */}
@@ -557,29 +674,34 @@ export default function CustomersPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
-      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <DialogContent className="sm:max-w-sm">
+      {/* Bulk Delete Confirmation Dialog */}
+      <Dialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete Customer</DialogTitle>
+            <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-red-100">
+              <AlertTriangle className="h-5 w-5 text-red-600" />
+            </div>
+            <DialogTitle>Delete selected customers?</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete this customer? This action cannot
-              be undone.
+              {selectedIds.size} customer{selectedIds.size === 1 ? "" : "s"} will be
+              permanently deleted.
+              <span className="mt-2 block font-medium text-red-600">
+                This cannot be undone.
+              </span>
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setDeleteDialogOpen(false)}
-            >
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setConfirmDeleteOpen(false)}>
               Cancel
             </Button>
             <Button
               variant="destructive"
-              onClick={handleDelete}
-              disabled={deleteMutation.isPending}
+              disabled={bulkDeleteMutation.isPending}
+              onClick={() =>
+                bulkDeleteMutation.mutate({ ids: Array.from(selectedIds) })
+              }
             >
-              {deleteMutation.isPending ? "Deleting..." : "Delete"}
+              {bulkDeleteMutation.isPending ? "Deleting..." : "Delete"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1,21 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api } from "~/trpc/react";
 import { toast } from "sonner";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "~/components/ui/card";
+import { Card, CardContent } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Badge } from "~/components/ui/badge";
 import { Label } from "~/components/ui/label";
-import { Separator } from "~/components/ui/separator";
+import { Checkbox } from "~/components/ui/checkbox";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "~/components/ui/table";
 import {
   Dialog,
   DialogContent,
@@ -31,14 +34,49 @@ import {
   Trash2,
   Mail,
   Phone,
-  MapPin,
   FileText,
-  ChevronLeft,
-  ChevronRight,
   Truck,
   Upload,
   MessageCircle,
+  AlertTriangle,
 } from "lucide-react";
+import { useRowSelection } from "~/lib/use-row-selection";
+import { TablePagination } from "~/components/table-pagination";
+
+const PAGE_SIZE = 10;
+
+function WhatsAppBadge() {
+  return (
+    <Badge
+      variant="outline"
+      className="gap-1 border-green-300 bg-green-50 text-green-700"
+      title="WhatsApp notifications enabled"
+    >
+      <MessageCircle className="h-3 w-3" />
+      WhatsApp
+    </Badge>
+  );
+}
+
+function CountBanner({ count }: { count: number }) {
+  return (
+    <div className="mb-3 overflow-hidden rounded-xl border-2 border-blue-300 bg-gradient-to-br from-blue-50 via-blue-100/70 to-blue-50 px-4 py-3 shadow-sm dark:border-blue-700 dark:from-blue-950/50 dark:via-blue-900/30 dark:to-blue-950/40">
+      <div className="flex items-center gap-2.5">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white shadow-sm">
+          <Truck className="h-4 w-4" />
+        </div>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-blue-800 dark:text-blue-200">
+            Total suppliers
+          </p>
+          <p className="text-xl font-bold tabular-nums tracking-tight text-blue-900 dark:text-blue-100 sm:text-2xl">
+            {count} supplier{count === 1 ? "" : "s"}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 interface SupplierFormData {
   name: string;
@@ -62,18 +100,38 @@ export default function SuppliersPage() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [page, setPage] = useState(1);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<SupplierFormData>(emptyForm);
 
-  const limit = 12;
+  // Debounce the search box so we don't hit the server on every keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [search]);
 
   const { data, isLoading, refetch } = api.supplier.list.useQuery({
     search: debouncedSearch || undefined,
     page,
-    limit,
+    limit: PAGE_SIZE,
   });
+
+  const suppliers = useMemo(() => data?.suppliers ?? [], [data]);
+  const supplierIds = useMemo(() => suppliers.map((s) => s.id), [suppliers]);
+  const {
+    selectedIds,
+    toggle: toggleSelect,
+    toggleAll: toggleSelectAll,
+    clear: clearSelection,
+    isAllSelected,
+    isSomeSelected,
+  } = useRowSelection(supplierIds);
+
+  const totalCount = data?.totalCount ?? 0;
+  const totalPages = data?.totalPages ?? 1;
 
   const createMutation = api.supplier.create.useMutation({
     onSuccess: () => {
@@ -96,24 +154,15 @@ export default function SuppliersPage() {
     onError: (e) => toast.error(e.message || "Failed to update supplier"),
   });
 
-  const deleteMutation = api.supplier.delete.useMutation({
-    onSuccess: () => {
-      toast.success("Supplier deleted");
-      setDeleteDialogOpen(false);
-      setDeletingId(null);
+  const bulkDeleteMutation = api.supplier.bulkDelete.useMutation({
+    onSuccess: (res) => {
+      toast.success(`${res.count} supplier${res.count === 1 ? "" : "s"} deleted`);
+      setConfirmDeleteOpen(false);
+      clearSelection();
       void refetch();
     },
-    onError: (e) => toast.error(e.message || "Failed to delete supplier"),
+    onError: (e) => toast.error(e.message || "Failed to delete suppliers"),
   });
-
-  const handleSearchChange = (value: string) => {
-    setSearch(value);
-    setPage(1);
-    const timeout = setTimeout(() => {
-      setDebouncedSearch(value);
-    }, 300);
-    return () => clearTimeout(timeout);
-  };
 
   const openCreateDialog = () => {
     setEditingId(null);
@@ -140,11 +189,6 @@ export default function SuppliersPage() {
     setDialogOpen(true);
   };
 
-  const openDeleteDialog = (id: string) => {
-    setDeletingId(id);
-    setDeleteDialogOpen(true);
-  };
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.company.trim()) {
@@ -167,34 +211,26 @@ export default function SuppliersPage() {
     }
   };
 
-  const handleDelete = () => {
-    if (deletingId) {
-      deleteMutation.mutate({ id: deletingId });
-    }
-  };
-
   const isMutating = createMutation.isPending || updateMutation.isPending;
+
+  // Edit acts on one supplier, so it only shows with exactly one row selected
+  // (Delete works for any number) — mirrors the customers/statements tables.
+  const singleSelected =
+    selectedIds.size === 1
+      ? suppliers.find((s) => selectedIds.has(s.id)) ?? null
+      : null;
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Suppliers</h1>
-        <p className="text-muted-foreground">
-          Manage your suppliers and their information.
-        </p>
-      </div>
-
+      {/* Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative w-full max-w-sm">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search suppliers..."
-            value={search}
-            onChange={(e) => handleSearchChange(e.target.value)}
-            className="pl-9"
-          />
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Suppliers</h1>
+          <p className="text-muted-foreground">
+            Manage your suppliers and their information.
+          </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" asChild>
             <Link href="/suppliers/import">
               <Upload className="mr-2 h-4 w-4" />
@@ -208,171 +244,254 @@ export default function SuppliersPage() {
         </div>
       </div>
 
-      {isLoading && (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Card key={i} className="animate-pulse">
-              <CardHeader className="pb-3">
-                <div className="h-5 w-36 rounded bg-muted" />
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <div className="h-4 w-48 rounded bg-muted" />
-                <Separator className="my-3" />
-                <div className="h-5 w-20 rounded bg-muted" />
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+      {isLoading ? (
+        <Card>
+          <CardContent className="p-4">
+            <div className="space-y-2">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="h-10 animate-pulse rounded bg-muted/50" />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      ) : totalCount === 0 && !debouncedSearch ? (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+            <Truck className="h-12 w-12 text-muted-foreground" />
+            <h3 className="text-lg font-semibold">No suppliers yet</h3>
+            <p className="max-w-md text-sm text-muted-foreground">
+              Add your first supplier or import from a list.
+            </p>
+            <div className="flex gap-2">
+              <Button variant="outline" asChild>
+                <Link href="/suppliers/import">
+                  <Upload className="mr-2 h-4 w-4" />
+                  Import
+                </Link>
+              </Button>
+              <Button onClick={openCreateDialog}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add Supplier
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardContent className="p-3">
+            {/* Fixed-height control bar — swaps between search and the selection
+                actions so selecting never shifts the table down. */}
+            <div className="mb-3 h-10">
+              {isSomeSelected ? (
+                <div className="flex h-10 items-center gap-2 overflow-x-auto whitespace-nowrap">
+                  <span className="shrink-0 text-sm font-medium">
+                    {selectedIds.size} selected
+                  </span>
+                  {singleSelected && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="shrink-0"
+                      onClick={() => openEditDialog(singleSelected)}
+                    >
+                      <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                      Edit
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={bulkDeleteMutation.isPending}
+                    onClick={() => setConfirmDeleteOpen(true)}
+                    className="shrink-0 border-red-300 text-red-600 hover:bg-red-50"
+                  >
+                    <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                    {bulkDeleteMutation.isPending ? "Deleting..." : "Delete"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="ml-auto shrink-0"
+                    onClick={clearSelection}
+                  >
+                    Clear
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex h-10 items-center gap-2">
+                  <div className="relative flex-1 sm:max-w-sm">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      placeholder="Search suppliers..."
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      className="pl-9"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
 
-      {!isLoading && data?.suppliers.length === 0 && (
-        <Card className="flex flex-col items-center justify-center py-16">
-          <Truck className="mb-4 h-12 w-12 text-muted-foreground" />
-          <h3 className="text-lg font-semibold">No suppliers yet</h3>
-          <p className="mb-4 text-sm text-muted-foreground">
-            Add your first supplier or import from a list.
-          </p>
-          <div className="flex gap-2">
-            <Button variant="outline" asChild>
-              <Link href="/suppliers/import">
-                <Upload className="mr-2 h-4 w-4" />
-                Import
-              </Link>
-            </Button>
-            <Button onClick={openCreateDialog}>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Supplier
-            </Button>
-          </div>
+            <CountBanner count={totalCount} />
+
+            {suppliers.length === 0 ? (
+              <p className="py-10 text-center text-sm text-muted-foreground">
+                No suppliers match &ldquo;{debouncedSearch}&rdquo;.
+              </p>
+            ) : (
+              <>
+                {/* Mobile: card per supplier */}
+                <div className="space-y-3 md:hidden">
+                  {suppliers.map((supplier) => {
+                    const isSelected = selectedIds.has(supplier.id);
+                    return (
+                      <div
+                        key={supplier.id}
+                        onClick={() => router.push(`/suppliers/${supplier.id}`)}
+                        className={`cursor-pointer select-none rounded-lg border bg-white p-3 transition-colors ${isSelected ? "border-blue-300 bg-blue-50" : ""}`}
+                      >
+                        <div className="flex items-start gap-2">
+                          <Checkbox
+                            checked={isSelected}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleSelect(supplier.id, e);
+                            }}
+                            className="mt-1"
+                            aria-label={`Select ${supplier.company || supplier.name}`}
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate font-semibold">
+                              {supplier.company || supplier.name}
+                            </p>
+                            {supplier.company && supplier.name && supplier.name !== supplier.company && (
+                              <p className="truncate text-xs text-muted-foreground">{supplier.name}</p>
+                            )}
+                            <div className="mt-1 space-y-0.5 text-sm text-muted-foreground">
+                              {supplier.email && (
+                                <p className="flex items-center gap-1.5 truncate">
+                                  <Mail className="h-3.5 w-3.5 shrink-0" />
+                                  {supplier.email}
+                                </p>
+                              )}
+                              {supplier.phone && (
+                                <p className="flex items-center gap-1.5">
+                                  <Phone className="h-3.5 w-3.5 shrink-0" />
+                                  {supplier.phone}
+                                </p>
+                              )}
+                            </div>
+                            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                              <Badge variant="secondary" className="gap-1">
+                                <FileText className="h-3 w-3" />
+                                {supplier.invoiceCount}{" "}
+                                {supplier.invoiceCount === 1 ? "invoice" : "invoices"}
+                              </Badge>
+                              {supplier.whatsappEnabled && <WhatsAppBadge />}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Desktop: full table */}
+                <div className="hidden overflow-x-auto rounded-md border md:block">
+                  <Table className="min-w-[760px]">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-10">
+                          <Checkbox
+                            checked={isAllSelected}
+                            onCheckedChange={toggleSelectAll}
+                            aria-label="Select all"
+                          />
+                        </TableHead>
+                        <TableHead>Supplier</TableHead>
+                        <TableHead>Contact</TableHead>
+                        <TableHead>Invoices</TableHead>
+                        <TableHead>Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {suppliers.map((supplier) => {
+                        const isSelected = selectedIds.has(supplier.id);
+                        return (
+                          <TableRow
+                            key={supplier.id}
+                            onClick={() => router.push(`/suppliers/${supplier.id}`)}
+                            className={`cursor-pointer select-none ${isSelected ? "bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/30" : ""}`}
+                          >
+                            <TableCell>
+                              <Checkbox
+                                checked={isSelected}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleSelect(supplier.id, e);
+                                }}
+                                aria-label={`Select ${supplier.company || supplier.name}`}
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <p className="font-medium">
+                                {supplier.company || supplier.name}
+                              </p>
+                              {supplier.company && supplier.name && supplier.name !== supplier.company && (
+                                <p className="text-xs text-muted-foreground">{supplier.name}</p>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <div className="space-y-0.5 text-sm text-muted-foreground">
+                                {supplier.email && (
+                                  <p className="flex items-center gap-1.5 truncate">
+                                    <Mail className="h-3.5 w-3.5 shrink-0" />
+                                    {supplier.email}
+                                  </p>
+                                )}
+                                {supplier.phone && (
+                                  <p className="flex items-center gap-1.5">
+                                    <Phone className="h-3.5 w-3.5 shrink-0" />
+                                    {supplier.phone}
+                                  </p>
+                                )}
+                                {!supplier.email && !supplier.phone && <span>—</span>}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="secondary" className="gap-1">
+                                <FileText className="h-3 w-3" />
+                                {supplier.invoiceCount}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              {supplier.whatsappEnabled ? (
+                                <WhatsAppBadge />
+                              ) : (
+                                <span className="text-sm text-muted-foreground">—</span>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              </>
+            )}
+
+            <TablePagination
+              page={page}
+              totalPages={totalPages}
+              totalCount={totalCount}
+              pageSize={PAGE_SIZE}
+              onPageChange={setPage}
+            />
+          </CardContent>
         </Card>
       )}
 
-      {!isLoading && data && data.suppliers.length > 0 && (
-        <>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {data.suppliers.map((supplier) => (
-              <Card
-                key={supplier.id}
-                onClick={() => router.push(`/suppliers/${supplier.id}`)}
-                className="cursor-pointer transition-shadow hover:shadow-md"
-              >
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between">
-                    <div className="min-w-0 flex-1">
-                      <CardTitle className="truncate text-lg">
-                        {supplier.company || supplier.name}
-                      </CardTitle>
-                      {supplier.company && supplier.name && supplier.company !== supplier.name && (
-                        <p className="truncate text-sm text-muted-foreground">
-                          {supplier.name}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-1.5 text-sm text-muted-foreground">
-                    {supplier.email && (
-                      <p className="flex items-center gap-2 truncate">
-                        <Mail className="h-3.5 w-3.5 shrink-0" />
-                        {supplier.email}
-                      </p>
-                    )}
-                    {supplier.phone && (
-                      <p className="flex items-center gap-2">
-                        <Phone className="h-3.5 w-3.5 shrink-0" />
-                        {supplier.phone}
-                      </p>
-                    )}
-                    {supplier.address && (
-                      <p className="flex items-center gap-2 truncate">
-                        <MapPin className="h-3.5 w-3.5 shrink-0" />
-                        {supplier.address}
-                      </p>
-                    )}
-                  </div>
-
-                  <Separator className="my-3" />
-
-                  <div className="flex items-center justify-between">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <Badge variant="secondary" className="gap-1">
-                        <FileText className="h-3 w-3" />
-                        {supplier.invoiceCount}{" "}
-                        {supplier.invoiceCount === 1 ? "invoice" : "invoices"}
-                      </Badge>
-                      {supplier.whatsappEnabled && (
-                        <Badge
-                          variant="outline"
-                          className="gap-1 border-green-300 bg-green-50 text-green-700"
-                          title="WhatsApp notifications enabled"
-                        >
-                          <MessageCircle className="h-3 w-3" />
-                          WhatsApp
-                        </Badge>
-                      )}
-                    </div>
-                    <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => openEditDialog(supplier)}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                        <span className="sr-only">Edit</span>
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive hover:text-destructive"
-                        onClick={() => openDeleteDialog(supplier.id)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                        <span className="sr-only">Delete</span>
-                      </Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-
-          {data.totalPages > 1 && (
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-muted-foreground">
-                Showing {(page - 1) * limit + 1} to{" "}
-                {Math.min(page * limit, data.totalCount)} of {data.totalCount}{" "}
-                suppliers
-              </p>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page === 1}
-                >
-                  <ChevronLeft className="mr-1 h-4 w-4" />
-                  Previous
-                </Button>
-                <span className="text-sm text-muted-foreground">
-                  Page {page} of {data.totalPages}
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPage((p) => Math.min(data.totalPages, p + 1))}
-                  disabled={page === data.totalPages}
-                >
-                  Next
-                  <ChevronRight className="ml-1 h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          )}
-        </>
-      )}
-
+      {/* Create / Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -464,24 +583,34 @@ export default function SuppliersPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <DialogContent className="sm:max-w-sm">
+      {/* Bulk Delete Confirmation Dialog */}
+      <Dialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete Supplier</DialogTitle>
+            <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-red-100">
+              <AlertTriangle className="h-5 w-5 text-red-600" />
+            </div>
+            <DialogTitle>Delete selected suppliers?</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete this supplier? Their invoices will not be removed.
+              {selectedIds.size} supplier{selectedIds.size === 1 ? "" : "s"} will be
+              permanently deleted. Their invoices will not be removed.
+              <span className="mt-2 block font-medium text-red-600">
+                This cannot be undone.
+              </span>
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setConfirmDeleteOpen(false)}>
               Cancel
             </Button>
             <Button
               variant="destructive"
-              onClick={handleDelete}
-              disabled={deleteMutation.isPending}
+              disabled={bulkDeleteMutation.isPending}
+              onClick={() =>
+                bulkDeleteMutation.mutate({ ids: Array.from(selectedIds) })
+              }
             >
-              {deleteMutation.isPending ? "Deleting..." : "Delete"}
+              {bulkDeleteMutation.isPending ? "Deleting..." : "Delete"}
             </Button>
           </DialogFooter>
         </DialogContent>

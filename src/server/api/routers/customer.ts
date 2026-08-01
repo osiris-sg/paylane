@@ -237,6 +237,20 @@ export const customerRouter = createTRPCRouter({
       return { success: true };
     }),
 
+  bulkDelete: protectedProcedure
+    .input(z.object({ ids: z.array(z.string()).min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      const user = ctx.user;
+      await requireSendAccess(ctx.db, user.companyId);
+
+      // Tenant-scoped: only rows this company owns are ever touched.
+      const { count } = await ctx.db.customer.deleteMany({
+        where: { id: { in: input.ids }, companyId: user.companyId },
+      });
+
+      return { count };
+    }),
+
   bulkCreate: protectedProcedure
     .input(
       z.object({
