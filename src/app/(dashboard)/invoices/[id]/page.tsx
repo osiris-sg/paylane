@@ -722,7 +722,10 @@ export default function InvoiceDetailPage() {
                   </Button>
                 )}
               </CardHeader>
-              <CardContent className="min-h-0 flex-1 overflow-auto rounded-b-xl bg-muted/20">
+              <CardContent
+                className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden rounded-b-xl bg-muted/20"
+                style={{ scrollbarGutter: "stable" }}
+              >
                 {invoice.fileUrl ? (
                   <DocumentViewer url={invoice.fileUrl} />
                 ) : (

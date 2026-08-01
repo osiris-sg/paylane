@@ -28,7 +28,14 @@ export default function DocumentView({ url }: { url: string }) {
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    const update = () => setWidth(el.clientWidth);
+    const update = () => {
+      const w = el.clientWidth;
+      // Ignore sub-scrollbar-width oscillations. When the parent's vertical
+      // scrollbar toggles it shifts clientWidth by ~15px; re-rendering the
+      // pages at the new width can toggle the scrollbar again — an infinite
+      // resize/blink loop. Only react to meaningful width changes.
+      setWidth((prev) => (prev > 0 && Math.abs(prev - w) < 24 ? prev : w));
+    };
     update();
     const ro = new ResizeObserver(update);
     ro.observe(el);
