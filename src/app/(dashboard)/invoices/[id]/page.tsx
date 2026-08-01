@@ -14,9 +14,6 @@ import {
   Clock,
   FileText,
   Download,
-  Calendar,
-  DollarSign,
-  Hash,
   Trash2,
   CalendarClock,
   Pencil,
@@ -82,22 +79,22 @@ function InvoiceStatusBadge({ sentAt }: { sentAt: Date | string | null }) {
   );
 }
 
-function DetailRow({
-  icon: Icon,
+// Compact label/value pair for the tightened desktop details grid.
+function Field({
   label,
   value,
+  className = "",
 }: {
-  icon: React.ElementType;
   label: string;
   value: React.ReactNode;
+  className?: string;
 }) {
   return (
-    <div className="flex items-start gap-3 py-3">
-      <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-      <div className="flex-1">
-        <p className="text-sm text-muted-foreground">{label}</p>
-        <p className="font-medium">{value || "-"}</p>
-      </div>
+    <div className={className}>
+      <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </p>
+      <p className="mt-0.5 truncate text-sm font-medium">{value || "-"}</p>
     </div>
   );
 }
@@ -442,31 +439,31 @@ export default function InvoiceDetailPage() {
   const hasActions = canSend || canSchedulePayment || canDelete || canEdit;
 
   return (
-    <div className="flex flex-col gap-4 p-3 pb-24 sm:gap-6 sm:p-6 sm:pb-6">
+    <div className="flex min-h-full flex-col">
       <OpenInAppBanner />
 
-      {/* Back Button */}
-      <div>
-        <Button variant="ghost" size="sm" asChild>
-          <Link href="/invoices">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Invoices
-          </Link>
-        </Button>
-      </div>
+      {/* ─────────────────────────── MOBILE ─────────────────────────── */}
+      <div className="flex flex-col gap-4 pb-24 sm:hidden">
+        <div>
+          <Button variant="ghost" size="sm" asChild>
+            <Link href="/invoices">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to Invoices
+            </Link>
+          </Button>
+        </div>
 
-      {isSender && sendAccess.state === "expired" && (
-        <ExpiredBanner message="Your free trial has ended. Upgrade to edit, send, or delete this invoice." />
-      )}
-      {isSender && sendAccess.state === "locked" && (
-        <LockedSendingCTA
-          title="This invoice is locked"
-          body="Start your free 14-day trial to send, edit, or delete this invoice."
-        />
-      )}
+        {isSender && sendAccess.state === "expired" && (
+          <ExpiredBanner message="Your free trial has ended. Upgrade to edit, send, or delete this invoice." />
+        )}
+        {isSender && sendAccess.state === "locked" && (
+          <LockedSendingCTA
+            title="This invoice is locked"
+            body="Start your free 14-day trial to send, edit, or delete this invoice."
+          />
+        )}
 
-      {/* Mobile Summary Card */}
-      <div className="sm:hidden">
+        {/* Mobile Summary Card */}
         <Card>
           <CardContent className="p-4">
             <div className="flex items-start justify-between">
@@ -515,196 +512,226 @@ export default function InvoiceDetailPage() {
             )}
           </CardContent>
         </Card>
-      </div>
 
-      {/* Desktop: Header */}
-      <div className="hidden flex-col gap-4 sm:flex sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-col gap-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-3xl font-bold tracking-tight">{invoice.invoiceNumber}</h1>
-            {isSender && <InvoiceStatusBadge sentAt={invoice.sentAt} />}
-          </div>
-          <p className="text-muted-foreground">
-            {isReceived ? `From ${invoice.senderCompany?.name ?? "Unknown"}` : `To ${invoice.customer?.company || invoice.customer?.name || "Unknown"}`}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {canEdit && (
-            <Button variant="outline" onClick={openEdit}>
-              <Pencil className="mr-2 h-4 w-4" />
-              Edit
-            </Button>
-          )}
-          {canSend && (
-            <Button
-              onClick={() => {
-                if (!invoice.customerId) {
-                  toast.error("Assign a customer before sending — click Edit to add one.");
-                  return;
-                }
-                askConfirm(
-                  "Send invoice?",
-                  `This will mark ${invoice.invoiceNumber} as sent and notify the recipient.`,
-                  "Send Invoice",
-                  () => sendInvoice.mutate({ id: invoice.id }),
-                );
-              }}
-              disabled={sendInvoice.isPending}
-            >
-              <Send className="mr-2 h-4 w-4" />
-              {sendInvoice.isPending ? "Sending..." : "Send Invoice"}
-            </Button>
-          )}
-          {canSchedulePayment && (
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="outline">
-                  <CalendarClock className="mr-2 h-4 w-4" />
-                  Schedule Payment
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-4" align="end">
-                <div className="space-y-3">
-                  <p className="text-sm font-medium">When will payment be made?</p>
-                  <Input
-                    type="date"
-                    value={scheduleDate}
-                    onChange={(e) => setScheduleDate(e.target.value)}
-                    min={dayjs().format("YYYY-MM-DD")}
-                  />
-                  <Button
-                    size="sm"
-                    className="w-full"
-                    disabled={!scheduleDate || schedulePayment.isPending}
-                    onClick={() => {
-                      schedulePayment.mutate({
-                        id: invoice.id,
-                        expectedPaymentDate: new Date(scheduleDate),
-                      });
-                    }}
-                  >
-                    {schedulePayment.isPending ? "Scheduling..." : "Confirm"}
-                  </Button>
-                </div>
-              </PopoverContent>
-            </Popover>
-          )}
-          {canDelete && (
-            <Button
-              variant="outline"
-              className="text-red-600 hover:bg-red-50 hover:text-red-700"
-              onClick={() =>
-                askConfirm(
-                  "Delete this invoice?",
-                  "This cannot be undone.",
-                  "Delete",
-                  () => deleteInvoice.mutate({ id: invoice.id }),
-                  true,
-                )
-              }
-              disabled={deleteInvoice.isPending}
-            >
-              <Trash2 className="mr-2 h-4 w-4" />
-              {deleteInvoice.isPending ? "Deleting..." : "Delete"}
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {/* Content Grid */}
-      <div className="grid gap-4 lg:grid-cols-3 lg:gap-6">
-        {/* Left: Invoice Details */}
-        <div className="space-y-4 sm:space-y-6 lg:col-span-2">
-          <Card className="hidden sm:block">
-            <CardHeader>
-              <CardTitle>Invoice Details</CardTitle>
-              <CardDescription>
-                Core invoice fields
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-0 divide-y">
-                <DetailRow icon={Hash} label="Invoice Number" value={invoice.invoiceNumber} />
-                <DetailRow
-                  icon={Calendar}
-                  label="Invoice Date"
-                  value={dayjs(invoice.invoicedDate).format("MMMM D, YYYY")}
-                />
-                <DetailRow
-                  icon={Calendar}
-                  label="Due Date"
-                  value={dayjs(invoice.dueDate).format("MMMM D, YYYY")}
-                />
-                <DetailRow
-                  icon={DollarSign}
-                  label="Invoice Price (before tax)"
-                  value={formatCurrency(invoice.subtotal, invoice.currency)}
-                />
-                <DetailRow
-                  icon={DollarSign}
-                  label="Tax Rate"
-                  value={`${Number(invoice.taxRate)}%`}
-                />
-                <DetailRow
-                  icon={DollarSign}
-                  label="Total after tax"
-                  value={
-                    <span className="text-lg font-semibold">
-                      {formatCurrency(invoice.amount, invoice.currency)}
-                    </span>
-                  }
-                />
+        {/* Mobile Timeline */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Activity Timeline</CardTitle>
+            <CardDescription>History of events for this invoice</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {sortedTimeline.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 py-8 text-center text-muted-foreground">
+                <Clock className="h-8 w-8" />
+                <p className="text-sm">No activity yet</p>
               </div>
-            </CardContent>
-          </Card>
+            ) : (
+              <div className="space-y-0">
+                {sortedTimeline.map((event) => (
+                  <TimelineItem key={event.id} event={event} />
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
-          {/* Line items are saved in DB but not displayed on the detail page */}
-          {/* Uploaded Invoice File — desktop only, mobile uses full-screen dialog */}
-          {invoice.fileUrl && (
-            <Card className="hidden sm:block">
-              <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
-                <div className="space-y-1.5">
-                  <CardTitle>Uploaded Invoice</CardTitle>
-                  <CardDescription>Original uploaded document</CardDescription>
-                </div>
-                <Button variant="outline" size="sm" onClick={handleDownload} disabled={downloading}>
-                  <Download className="mr-2 h-4 w-4" />
-                  {downloading ? "Preparing…" : "Download"}
-                </Button>
+      {/* ─────────────────────────── DESKTOP ─────────────────────────── */}
+      {/* Full-height, single-screen layout: compact details + timeline on the
+          left, the uploaded document filling the right. Columns scroll
+          internally so the page itself never scrolls. */}
+      <div className="hidden min-h-0 flex-1 flex-col gap-3 sm:flex">
+        {/* Compact header */}
+        <div className="flex shrink-0 items-start justify-between gap-4">
+          <div className="min-w-0">
+            <Button variant="ghost" size="sm" className="-ml-2 mb-0.5 h-7 text-muted-foreground" asChild>
+              <Link href="/invoices">
+                <ArrowLeft className="mr-1.5 h-4 w-4" />
+                Back to Invoices
+              </Link>
+            </Button>
+            <div className="flex items-center gap-2">
+              <h1 className="truncate text-2xl font-bold tracking-tight">{invoice.invoiceNumber}</h1>
+              {isSender && <InvoiceStatusBadge sentAt={invoice.sentAt} />}
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {isReceived ? `From ${invoice.senderCompany?.name ?? "Unknown"}` : `To ${invoice.customer?.company || invoice.customer?.name || "Unknown"}`}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {canEdit && (
+              <Button variant="outline" onClick={openEdit}>
+                <Pencil className="mr-2 h-4 w-4" />
+                Edit
+              </Button>
+            )}
+            {canSend && (
+              <Button
+                onClick={() => {
+                  if (!invoice.customerId) {
+                    toast.error("Assign a customer before sending — click Edit to add one.");
+                    return;
+                  }
+                  askConfirm(
+                    "Send invoice?",
+                    `This will mark ${invoice.invoiceNumber} as sent and notify the recipient.`,
+                    "Send Invoice",
+                    () => sendInvoice.mutate({ id: invoice.id }),
+                  );
+                }}
+                disabled={sendInvoice.isPending}
+              >
+                <Send className="mr-2 h-4 w-4" />
+                {sendInvoice.isPending ? "Sending..." : "Send Invoice"}
+              </Button>
+            )}
+            {canSchedulePayment && (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline">
+                    <CalendarClock className="mr-2 h-4 w-4" />
+                    Schedule Payment
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-4" align="end">
+                  <div className="space-y-3">
+                    <p className="text-sm font-medium">When will payment be made?</p>
+                    <Input
+                      type="date"
+                      value={scheduleDate}
+                      onChange={(e) => setScheduleDate(e.target.value)}
+                      min={dayjs().format("YYYY-MM-DD")}
+                    />
+                    <Button
+                      size="sm"
+                      className="w-full"
+                      disabled={!scheduleDate || schedulePayment.isPending}
+                      onClick={() => {
+                        schedulePayment.mutate({
+                          id: invoice.id,
+                          expectedPaymentDate: new Date(scheduleDate),
+                        });
+                      }}
+                    >
+                      {schedulePayment.isPending ? "Scheduling..." : "Confirm"}
+                    </Button>
+                  </div>
+                </PopoverContent>
+              </Popover>
+            )}
+            {canDelete && (
+              <Button
+                variant="outline"
+                className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                onClick={() =>
+                  askConfirm(
+                    "Delete this invoice?",
+                    "This cannot be undone.",
+                    "Delete",
+                    () => deleteInvoice.mutate({ id: invoice.id }),
+                    true,
+                  )
+                }
+                disabled={deleteInvoice.isPending}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                {deleteInvoice.isPending ? "Deleting..." : "Delete"}
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {(isSender && sendAccess.state === "expired") && (
+          <div className="shrink-0">
+            <ExpiredBanner message="Your free trial has ended. Upgrade to edit, send, or delete this invoice." />
+          </div>
+        )}
+        {(isSender && sendAccess.state === "locked") && (
+          <div className="shrink-0">
+            <LockedSendingCTA
+              title="This invoice is locked"
+              body="Start your free 14-day trial to send, edit, or delete this invoice."
+            />
+          </div>
+        )}
+
+        {/* Two-column body fills the remaining height */}
+        <div className="flex min-h-0 flex-1 gap-4">
+          {/* Left: compact details + timeline */}
+          <div className="flex w-[340px] shrink-0 flex-col gap-4">
+            <Card className="shrink-0">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Invoice Details</CardTitle>
               </CardHeader>
-              <CardContent>
-                <div className="max-h-[70vh] overflow-auto">
-                  <DocumentViewer url={invoice.fileUrl} />
+              <CardContent className="grid grid-cols-2 gap-x-4 gap-y-3">
+                <Field label="Invoice Number" value={invoice.invoiceNumber} />
+                <Field
+                  label={isReceived ? "From" : "To"}
+                  value={isReceived ? (invoice.senderCompany?.name ?? "Unknown") : (invoice.customer?.company || invoice.customer?.name || "Unknown")}
+                />
+                <Field label="Invoice Date" value={dayjs(invoice.invoicedDate).format("MMM D, YYYY")} />
+                <Field label="Due Date" value={dayjs(invoice.dueDate).format("MMM D, YYYY")} />
+                <Field label="Price (before tax)" value={formatCurrency(invoice.subtotal, invoice.currency)} />
+                <Field label="Tax Rate" value={`${Number(invoice.taxRate)}%`} />
+                {invoice.reference && <Field label="Reference" value={invoice.reference} />}
+                {invoice.expectedPaymentDate && (
+                  <Field
+                    label="Expected Payment"
+                    value={<span className="text-blue-600">{dayjs(invoice.expectedPaymentDate).format("MMM D, YYYY")}</span>}
+                  />
+                )}
+                <div className="col-span-2 mt-1 flex items-center justify-between border-t pt-3">
+                  <span className="text-sm text-muted-foreground">Total after tax</span>
+                  <span className="text-lg font-bold">{formatCurrency(invoice.amount, invoice.currency)}</span>
                 </div>
               </CardContent>
             </Card>
-          )}
-        </div>
 
-        {/* Right: Timeline */}
-        <div>
-          <Card>
-            <CardHeader>
-              <CardTitle>Activity Timeline</CardTitle>
-              <CardDescription>
-                History of events for this invoice
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {sortedTimeline.length === 0 ? (
-                <div className="flex flex-col items-center gap-2 py-8 text-center text-muted-foreground">
-                  <Clock className="h-8 w-8" />
-                  <p className="text-sm">No activity yet</p>
-                </div>
-              ) : (
-                <div className="space-y-0">
-                  {sortedTimeline.map((event) => (
-                    <TimelineItem key={event.id} event={event} />
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+            <Card className="flex min-h-0 flex-1 flex-col">
+              <CardHeader className="shrink-0 pb-3">
+                <CardTitle className="text-base">Activity Timeline</CardTitle>
+              </CardHeader>
+              <CardContent className="min-h-0 flex-1 overflow-y-auto">
+                {sortedTimeline.length === 0 ? (
+                  <div className="flex flex-col items-center gap-2 py-8 text-center text-muted-foreground">
+                    <Clock className="h-8 w-8" />
+                    <p className="text-sm">No activity yet</p>
+                  </div>
+                ) : (
+                  <div className="space-y-0">
+                    {sortedTimeline.map((event) => (
+                      <TimelineItem key={event.id} event={event} />
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Right: uploaded document fills the rest */}
+          <div className="min-h-0 flex-1">
+            <Card className="flex h-full flex-col">
+              <CardHeader className="flex shrink-0 flex-row items-center justify-between gap-2 space-y-0 pb-3">
+                <CardTitle className="text-base">Uploaded Invoice</CardTitle>
+                {invoice.fileUrl && (
+                  <Button variant="outline" size="sm" onClick={handleDownload} disabled={downloading}>
+                    <Download className="mr-2 h-4 w-4" />
+                    {downloading ? "Preparing…" : "Download"}
+                  </Button>
+                )}
+              </CardHeader>
+              <CardContent className="min-h-0 flex-1 overflow-auto rounded-b-xl bg-muted/20">
+                {invoice.fileUrl ? (
+                  <DocumentViewer url={invoice.fileUrl} />
+                ) : (
+                  <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-muted-foreground">
+                    <FileText className="h-10 w-10" />
+                    <p className="text-sm">No document was uploaded for this invoice</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </div>
 
