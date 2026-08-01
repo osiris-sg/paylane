@@ -439,11 +439,13 @@ export default function InvoiceDetailPage() {
   const hasActions = canSend || canSchedulePayment || canDelete || canEdit;
 
   return (
-    <div className="flex min-h-full flex-col">
+    <div className="flex h-full flex-col">
       <OpenInAppBanner />
 
       {/* ─────────────────────────── MOBILE ─────────────────────────── */}
-      <div className="flex flex-col gap-4 pb-24 sm:hidden">
+      {/* shrink-0 keeps this at natural height so it overflows the fixed-height
+          root and scrolls via the pull-to-refresh container (desktop hides it). */}
+      <div className="flex shrink-0 flex-col gap-4 pb-24 sm:hidden">
         <div>
           <Button variant="ghost" size="sm" asChild>
             <Link href="/invoices">
