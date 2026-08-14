@@ -10,6 +10,13 @@ import { api } from "~/trpc/react";
 const PAGE_LOAD_ID = Math.random().toString(36).slice(2, 8);
 const PAGE_LOAD_AT = Date.now();
 
+// Which deployment this bundle came from — lets a diagnostics screenshot show
+// whether the client is on the fixed build. Inlined at build time by Vercel
+// ("Automatically expose System Environment Variables" must be on; falls back
+// to "unknown" locally).
+const BUILD_ID =
+  process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? "unknown";
+
 // Module-level counters survive component remounts within the same page load.
 let renderCount = 0;
 let mountCount = 0;
@@ -206,7 +213,7 @@ export function OnboardingGuard({ children }: { children: React.ReactNode }) {
         ? `⚠ device clock is off by ~${Math.round(Math.abs(skewMs) / 60_000)} min — likely the cause\n`
         : "";
     const summary =
-      `pageLoad=${PAGE_LOAD_ID} trip#${tripCount} renders(${WINDOW_MS / 1000}s)=${renderTimes.length} totalRenders=${renderCount} mounts=${mountCount}\n` +
+      `build=${BUILD_ID} pageLoad=${PAGE_LOAD_ID} trip#${tripCount} renders(${WINDOW_MS / 1000}s)=${renderTimes.length} totalRenders=${renderCount} mounts=${mountCount}\n` +
       `${skewLine} online=${typeof navigator !== "undefined" ? String(navigator.onLine) : "?"}\n` +
       clockVerdict +
       `ua=${typeof navigator !== "undefined" ? navigator.userAgent : "?"}`;
@@ -214,6 +221,7 @@ export function OnboardingGuard({ children }: { children: React.ReactNode }) {
     const copyDiagnostics = () => {
       const dump = JSON.stringify(
         {
+          build: BUILD_ID,
           pageLoadId: PAGE_LOAD_ID,
           at: new Date().toISOString(),
           tripCount,
