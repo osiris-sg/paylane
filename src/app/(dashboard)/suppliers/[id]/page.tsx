@@ -102,6 +102,28 @@ export default function SupplierDetailPage() {
         {s.company && s.name && s.name !== s.company && (
           <p className="text-sm text-muted-foreground">{s.name}</p>
         )}
+        {(s.email || s.phone || s.address) && (
+          <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-sm text-muted-foreground">
+            {s.email && (
+              <span className="flex items-center gap-1.5">
+                <Mail className="h-4 w-4 shrink-0" />
+                <span className="truncate">{s.email}</span>
+              </span>
+            )}
+            {s.phone && (
+              <span className="flex items-center gap-1.5">
+                <Phone className="h-4 w-4 shrink-0" />
+                {s.phone}
+              </span>
+            )}
+            {s.address && (
+              <span className="flex items-center gap-1.5">
+                <MapPin className="h-4 w-4 shrink-0" />
+                <span className="truncate">{s.address}</span>
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {incoming.data && (
@@ -168,28 +190,6 @@ export default function SupplierDetailPage() {
         )}
       </div>
 
-      <Card>
-        <CardContent className="grid gap-3 p-4 text-sm sm:grid-cols-3">
-          {s.email && (
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Mail className="h-4 w-4 shrink-0" />
-              <span className="truncate">{s.email}</span>
-            </div>
-          )}
-          {s.phone && (
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Phone className="h-4 w-4 shrink-0" />
-              <span>{s.phone}</span>
-            </div>
-          )}
-          {s.address && (
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <MapPin className="h-4 w-4 shrink-0" />
-              <span className="truncate">{s.address}</span>
-            </div>
-          )}
-        </CardContent>
-      </Card>
     </div>
   );
 }
