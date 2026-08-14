@@ -41,8 +41,8 @@ const formatCurrency = (value: number | { toNumber?: () => number } | unknown) =
   new Intl.NumberFormat("en-SG", {
     style: "currency",
     currency: "SGD",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(Number(value));
 
 function SkeletonCard() {
