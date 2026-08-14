@@ -378,13 +378,9 @@ function SentStatementsTable() {
                   }}
                   aria-label="Select statement"
                 />
-                <Link
-                  href={`/customers/${s.customer.id}`}
-                  onClick={(e) => e.stopPropagation()}
-                  className="min-w-0 font-semibold text-blue-600 hover:underline"
-                >
+                <p className="min-w-0 truncate font-semibold">
                   {s.customer.company || s.customer.name}
-                </Link>
+                </p>
               </div>
               <span className="shrink-0 inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-950/40 dark:text-green-300">
                 Sent
@@ -440,11 +436,7 @@ function SentStatementsTable() {
                       />
                     </TableCell>
                     <TableCell>
-                      <Link
-                        href={`/customers/${s.customer.id}`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="hover:underline"
-                      >
+                      <div>
                         <p className="font-medium">
                           {s.customer.company || s.customer.name}
                         </p>
@@ -454,7 +446,7 @@ function SentStatementsTable() {
                               {s.customer.name}
                             </p>
                           )}
-                      </Link>
+                      </div>
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
