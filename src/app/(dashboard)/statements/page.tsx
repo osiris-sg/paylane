@@ -168,6 +168,7 @@ export default function StatementsPage() {
 }
 
 function SentStatementsTable() {
+  const router = useRouter();
   const access = useSendAccess();
   const utils = api.useUtils();
   const [page, setPage] = useState(1);
@@ -262,15 +263,14 @@ function SentStatementsTable() {
               </span>
           {singleSelected && (
             <>
-              <Button size="sm" variant="outline" className="shrink-0" asChild>
-                <a
-                  href={singleSelected.fileUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
-                  View
-                </a>
+              <Button
+                size="sm"
+                variant="outline"
+                className="shrink-0"
+                onClick={() => router.push(`/statements/${singleSelected.id}`)}
+              >
+                <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+                View
               </Button>
               <Button
                 size="sm"
@@ -365,7 +365,7 @@ function SentStatementsTable() {
           return (
           <div
             key={s.id}
-            onClick={() => window.open(s.fileUrl, "_blank", "noopener,noreferrer")}
+            onClick={() => router.push(`/statements/${s.id}`)}
             className={`cursor-pointer select-none rounded-lg border bg-white p-3 transition-colors ${isSelected ? "border-blue-300 bg-blue-50" : ""}`}
           >
             <div className="flex items-start justify-between gap-2">
@@ -426,7 +426,7 @@ function SentStatementsTable() {
                   return (
                   <TableRow
                     key={s.id}
-                    onClick={() => window.open(s.fileUrl, "_blank", "noopener,noreferrer")}
+                    onClick={() => router.push(`/statements/${s.id}`)}
                     className={`cursor-pointer select-none ${isSelected ? "bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/30" : ""}`}
                   >
                     <TableCell>
@@ -540,7 +540,7 @@ function SentStatementsTable() {
 }
 
 function ReceivedStatementsTable() {
-  const utils = api.useUtils();
+  const router = useRouter();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -568,11 +568,7 @@ function ReceivedStatementsTable() {
     { placeholderData: keepPreviousData },
   );
   const { data: supplierOptions } = api.statement.incomingSuppliers.useQuery();
-  const markViewed = api.statement.markViewed.useMutation({
-    onSuccess: async () => {
-      await utils.statement.listIncoming.invalidate();
-    },
-  });
+  // Viewed-marking happens on the statement detail page now (rows navigate there).
 
   const rows = useMemo(() => list.data?.statements ?? [], [list.data]);
   const totalCount = list.data?.totalCount ?? 0;
@@ -640,7 +636,11 @@ function ReceivedStatementsTable() {
       {/* Mobile: card per statement */}
       <div className="space-y-3 md:hidden">
         {rows.map((s) => (
-          <div key={s.id} className="rounded-lg border bg-white p-3">
+          <div
+            key={s.id}
+            onClick={() => router.push(`/statements/${s.id}`)}
+            className="cursor-pointer select-none rounded-lg border bg-white p-3"
+          >
             <div className="flex items-start justify-between gap-2">
               <p className="min-w-0 font-semibold">{s.senderCompany.name}</p>
             </div>
@@ -656,22 +656,6 @@ function ReceivedStatementsTable() {
             <p className="mt-1 text-xs text-muted-foreground">
               Updated {dayjs(s.sentAt).fromNow()} · {dayjs(s.sentAt).format("D MMM YYYY, HH:mm")}
             </p>
-            <div className="mt-3">
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full"
-                asChild
-                onClick={() => {
-                  if (!s.viewedAt) markViewed.mutate({ id: s.id });
-                }}
-              >
-                <a href={s.fileUrl} target="_blank" rel="noopener noreferrer">
-                  <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
-                  View
-                </a>
-              </Button>
-            </div>
           </div>
         ))}
       </div>
@@ -684,12 +668,15 @@ function ReceivedStatementsTable() {
                 <TableHead>Supplier</TableHead>
                 <TableHead>File</TableHead>
                 <TableHead>Last updated</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.map((s) => (
-                <TableRow key={s.id}>
+                <TableRow
+                  key={s.id}
+                  onClick={() => router.push(`/statements/${s.id}`)}
+                  className="cursor-pointer select-none"
+                >
                   <TableCell>
                     <p className="font-medium">{s.senderCompany.name}</p>
                   </TableCell>
@@ -708,27 +695,6 @@ function ReceivedStatementsTable() {
                     <div className="text-sm">{dayjs(s.sentAt).fromNow()}</div>
                     <div className="text-xs text-muted-foreground">
                       {dayjs(s.sentAt).format("D MMM YYYY, HH:mm")}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex justify-end">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        asChild
-                        onClick={() => {
-                          if (!s.viewedAt) markViewed.mutate({ id: s.id });
-                        }}
-                      >
-                        <a
-                          href={s.fileUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
-                          View
-                        </a>
-                      </Button>
                     </div>
                   </TableCell>
                 </TableRow>

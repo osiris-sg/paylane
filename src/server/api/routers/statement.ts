@@ -6,7 +6,7 @@ import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
 import { requireSendAccess } from "~/server/api/lib/sending-access";
 import { sendPushToCompany } from "~/lib/push-notifications";
 import { sendWhatsAppToCompany } from "~/server/notifications/dispatch";
-import { resolveFileUrl } from "~/lib/storage";
+import { resolveFileUrl, isInlineOrExternal, presignDownload } from "~/lib/storage";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const FROM_EMAIL = process.env.EMAIL_FROM ?? "E-StatementNow <onboarding@resend.dev>";
@@ -402,6 +402,39 @@ export const statementRouter = createTRPCRouter({
         throw new TRPCError({ code: "NOT_FOUND" });
       }
       return { ...stmt, fileUrl: await resolveFileUrl(stmt.fileUrl) };
+    }),
+
+  /** Download the statement file — presigned with attachment disposition for S3
+   *  keys, passthrough for legacy inline/data URLs. Sender or receiver only. */
+  getDownloadUrl: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const user = ctx.user;
+      const stmt = await ctx.db.statement.findUnique({
+        where: { id: input.id },
+        select: {
+          fileUrl: true,
+          fileName: true,
+          senderCompanyId: true,
+          receiverCompanyId: true,
+        },
+      });
+      if (
+        !stmt ||
+        (stmt.senderCompanyId !== user.companyId &&
+          stmt.receiverCompanyId !== user.companyId)
+      ) {
+        throw new TRPCError({ code: "NOT_FOUND" });
+      }
+
+      const filename =
+        stmt.fileName.replace(/[^a-zA-Z0-9._ -]+/g, "-") || "statement.pdf";
+
+      if (isInlineOrExternal(stmt.fileUrl)) {
+        return { url: stmt.fileUrl, filename };
+      }
+      const url = await presignDownload(stmt.fileUrl, 300, { filename });
+      return { url, filename };
     }),
 
   markViewed: protectedProcedure
