@@ -532,7 +532,11 @@ export function InvoiceTable({ type, initialSearch, initialCustomerId, initialSe
           const displayTotals = showingSelected ? selectedTotals : totalsByCurrency;
           const displayCount = showingSelected ? selectedInvoices.length : totalCount;
           const filtersActive = customerId || debouncedSearch || dateFilter.preset !== "all";
-          if (displayTotals.length === 0) return null;
+          // Amounts only appear for a deliberate slice — a filter/search or an
+          // explicit selection. Unfiltered, the banner just shows the count.
+          const showAmounts =
+            (showingSelected || !!filtersActive) && displayTotals.length > 0;
+          if (displayCount === 0) return null;
           return (
             <div
               className={`mb-3 overflow-hidden rounded-xl border-2 px-4 py-3 shadow-sm transition-colors ${
@@ -562,7 +566,9 @@ export function InvoiceTable({ type, initialSearch, initialCustomerId, initialSe
                     >
                       {showingSelected
                         ? "Selected total"
-                        : `Total ${type === "sent" ? "billed" : "received"}`}
+                        : showAmounts
+                          ? `Total ${type === "sent" ? "billed" : "received"}`
+                          : "Total invoices"}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {displayCount} invoice{displayCount === 1 ? "" : "s"}
@@ -570,20 +576,22 @@ export function InvoiceTable({ type, initialSearch, initialCustomerId, initialSe
                     </p>
                   </div>
                 </div>
-                <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1 sm:justify-end">
-                  {displayTotals.map((t) => (
-                    <span
-                      key={t.currency}
-                      className={`text-xl font-bold tabular-nums tracking-tight sm:text-2xl ${
-                        showingSelected
-                          ? "text-amber-900 dark:text-amber-100"
-                          : "text-blue-900 dark:text-blue-100"
-                      }`}
-                    >
-                      {formatCurrency(t.amount, t.currency)}
-                    </span>
-                  ))}
-                </div>
+                {showAmounts && (
+                  <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1 sm:justify-end">
+                    {displayTotals.map((t) => (
+                      <span
+                        key={t.currency}
+                        className={`text-xl font-bold tabular-nums tracking-tight sm:text-2xl ${
+                          showingSelected
+                            ? "text-amber-900 dark:text-amber-100"
+                            : "text-blue-900 dark:text-blue-100"
+                        }`}
+                      >
+                        {formatCurrency(t.amount, t.currency)}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           );
