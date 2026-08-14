@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { useAuth, useClerk } from "@clerk/nextjs";
+import { useClerk } from "@clerk/nextjs";
 import { api } from "~/trpc/react";
 
 // Set ONCE per full page load (module evaluation). If this value DIFFERS
@@ -37,8 +37,12 @@ const MAX_CONSECUTIVE_TRIPS = 3;
 export function OnboardingGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  // NOTE: deliberately NOT useAuth() here. Subscribing to session state means a
+  // Clerk token-refresh loop (wrong device clock, blocked cookies) re-renders
+  // this guard — and the whole page tree under it — on every flap. The guard's
+  // logic only needs the onboarding query; auth fields below are read
+  // imperatively off the clerk instance for diagnostics, without subscribing.
   const clerk = useClerk();
-  const { isLoaded: authLoaded, isSignedIn, sessionId, orgId } = useAuth();
   const q = api.onboarding.getStatus.useQuery();
   const { data: status, isLoading, error } = q;
   const needsOnboarding = !!status && !status.onboarded;
@@ -84,11 +88,11 @@ export function OnboardingGuard({ children }: { children: React.ReactNode }) {
     renderCount,
     mountCount,
     pathname,
-    // Clerk auth state — if these flip every render, the session is flapping.
-    authLoaded,
-    isSignedIn,
-    sessionId,
-    orgId,
+    // Clerk auth state, read imperatively (no subscription) — if sessionId
+    // differs between lines, the session is flapping.
+    authLoaded: clerk.loaded,
+    isSignedIn: !!clerk.session,
+    sessionId: clerk.session?.id ?? null,
     isLoading,
     isFetching: q.isFetching,
     fetchStatus: q.fetchStatus,
