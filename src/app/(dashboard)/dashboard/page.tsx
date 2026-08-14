@@ -5,12 +5,16 @@ import { DashboardClient } from "./dashboard-client";
 // prefetch needs request headers/auth, so it can't be prerendered at build).
 export const dynamic = "force-dynamic";
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
   // Prefetch the above-the-fold queries on the server so the summary cards
   // render with data on first paint instead of after a client round-trip.
-  // (Non-blocking `void` — results stream into the hydration boundary.)
-  void api.dashboard.getSummary.prefetch();
-  void api.onboarding.getStatus.prefetch();
+  // AWAITED on purpose: only settled queries are dehydrated now — streaming
+  // pending promises into the hydration boundary broke inside the installed
+  // PWA and caused the render-storm behind the session recovery screen.
+  await Promise.all([
+    api.dashboard.getSummary.prefetch(),
+    api.onboarding.getStatus.prefetch(),
+  ]);
 
   return (
     <HydrateClient>
