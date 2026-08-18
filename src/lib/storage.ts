@@ -52,11 +52,14 @@ const EXT_BY_TYPE: Record<string, string> = {
   "image/jpg": "jpg",
   "image/webp": "webp",
   "image/gif": "gif",
+  "text/csv": "csv",
+  "application/vnd.ms-excel": "xls",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
 };
 
 /** Namespaced, unguessable object key, e.g. `invoices/<companyId>/<uuid>.pdf`. */
 export function buildKey(
-  kind: "invoices" | "statements" | "delivery-orders",
+  kind: "invoices" | "statements" | "delivery-orders" | "imports",
   companyId: string,
   contentType: string,
 ): string {

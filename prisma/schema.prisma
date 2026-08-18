@@ -8,53 +8,55 @@ datasource db {
 }
 
 model Company {
-  id        String   @id @default(cuid())
-  clerkOrgId String? @unique
-  name      String
-  email     String?
-  phone     String?
-  address   String?
-  module    CompanyModule?
-  onboarded Boolean  @default(false)
-  isStub    Boolean  @default(false)  // Auto-created placeholder for vendors discovered via email ingestion; not user-facing
-  deliveryOrdersEnabled Boolean @default(true)  // Per-company gate for Delivery Orders. Default ON for now (rollout to all); flip to false to return to opt-in.
-  sendingPlan    SendingPlan @default(LOCKED)
-  trialStartedAt DateTime?
-  trialEndsAt    DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                    String         @id @default(cuid())
+  clerkOrgId            String?        @unique
+  name                  String
+  email                 String?
+  phone                 String?
+  address               String?
+  module                CompanyModule?
+  onboarded             Boolean        @default(false)
+  isStub                Boolean        @default(false) // Auto-created placeholder for vendors discovered via email ingestion; not user-facing
+  deliveryOrdersEnabled Boolean        @default(true) // Per-company gate for Delivery Orders. Default ON for now (rollout to all); flip to false to return to opt-in.
+  sendingPlan           SendingPlan    @default(LOCKED)
+  trialStartedAt        DateTime?
+  trialEndsAt           DateTime?
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
 
-  users         User[]
-  customers     Customer[]
-  suppliers     Supplier[]
-  linkedFrom    Customer[]   @relation("LinkedCompany") // other companies that added us as their customer
-  linkedAsSupplierFor Supplier[] @relation("SupplierLinkedCompany")
-  sentInvoices  Invoice[] @relation("SentInvoices")
-  receivedInvoices Invoice[] @relation("ReceivedInvoices")
-  sentInvitations Invitation[]
-  sentStatements     Statement[] @relation("SentStatements")
-  receivedStatements Statement[] @relation("ReceivedStatements")
-  sentDeliveryOrders     DeliveryOrder[] @relation("SentDeliveryOrders")
-  receivedDeliveryOrders DeliveryOrder[] @relation("ReceivedDeliveryOrders")
-  emailIntegration   EmailIntegration?
+  users                  User[]
+  customers              Customer[]
+  suppliers              Supplier[]
+  linkedFrom             Customer[]        @relation("LinkedCompany") // other companies that added us as their customer
+  linkedAsSupplierFor    Supplier[]        @relation("SupplierLinkedCompany")
+  sentInvoices           Invoice[]         @relation("SentInvoices")
+  receivedInvoices       Invoice[]         @relation("ReceivedInvoices")
+  sentInvitations        Invitation[]
+  sentStatements         Statement[]       @relation("SentStatements")
+  receivedStatements     Statement[]       @relation("ReceivedStatements")
+  sentDeliveryOrders     DeliveryOrder[]   @relation("SentDeliveryOrders")
+  receivedDeliveryOrders DeliveryOrder[]   @relation("ReceivedDeliveryOrders")
+  emailIntegration       EmailIntegration?
+  importJobs             ImportJob[]
 }
 
 model User {
-  id        String   @id @default(cuid())
-  clerkId   String   @unique
-  email     String
-  name      String?
-  role      UserRole @default(USER)
-  companyId String
-  company   Company  @relation(fields: [companyId], references: [id])
-  whatsappNumber String?  // E.164 format, e.g. +6591234567
+  id             String   @id @default(cuid())
+  clerkId        String   @unique
+  email          String
+  name           String?
+  role           UserRole @default(USER)
+  companyId      String
+  company        Company  @relation(fields: [companyId], references: [id])
+  whatsappNumber String? // E.164 format, e.g. +6591234567
   whatsappOptIn  Boolean  @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  createdInvoices Invoice[]
+  createdInvoices       Invoice[]
   createdDeliveryOrders DeliveryOrder[]
-  notifications   Notification[]
+  notifications         Notification[]
+  importJobs            ImportJob[]
 }
 
 model Customer {
@@ -63,7 +65,7 @@ model Customer {
   email           String?
   phone           String?
   address         String?
-  company         String?    // Display name of the customer's company
+  company         String? // Display name of the customer's company
   companyId       String
   owner           Company  @relation(fields: [companyId], references: [id])
   linkedCompanyId String?
@@ -71,8 +73,8 @@ model Customer {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  invoices  Invoice[]
-  statement Statement?
+  invoices       Invoice[]
+  statement      Statement?
   deliveryOrders DeliveryOrder[]
 
   @@index([companyId])
@@ -80,14 +82,14 @@ model Customer {
 
 model Supplier {
   id              String   @id @default(cuid())
-  name            String              // Contact name (legacy / required)
+  name            String // Contact name (legacy / required)
   email           String?
   phone           String?
   address         String?
-  company         String?             // Display name of the supplier's company
-  companyId       String              // The company that "owns" this supplier record (the receiver)
+  company         String? // Display name of the supplier's company
+  companyId       String // The company that "owns" this supplier record (the receiver)
   owner           Company  @relation(fields: [companyId], references: [id])
-  linkedCompanyId String?             // The supplier's actual Company on PayLane (set when they're a real PayLane company that has invoiced us)
+  linkedCompanyId String? // The supplier's actual Company on PayLane (set when they're a real PayLane company that has invoiced us)
   linkedCompany   Company? @relation("SupplierLinkedCompany", fields: [linkedCompanyId], references: [id])
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -96,50 +98,50 @@ model Supplier {
 }
 
 model Invoice {
-  id             String        @id @default(cuid())
-  invoiceNumber  String
-  reference      String?
-  invoicedDate   DateTime
-  dueDate        DateTime
-  paymentTerms   Int           @default(30) // days
-  amount         Decimal       @db.Decimal(12, 2)
-  currency       String        @default("SGD")
-  routingStatus  RoutingStatus @default(PENDING)
-  source         InvoiceSource @default(MANUAL)
-  expectedPaymentDate DateTime?  // Receiver's promised payment date
-  fromAddress    String?
-  toAddress      String?
-  description    String?
-  fileUrl        String?
-  config         Json?
-  pinned         Boolean       @default(false)
+  id                  String        @id @default(cuid())
+  invoiceNumber       String
+  reference           String?
+  invoicedDate        DateTime
+  dueDate             DateTime
+  paymentTerms        Int           @default(30) // days
+  amount              Decimal       @db.Decimal(12, 2)
+  currency            String        @default("SGD")
+  routingStatus       RoutingStatus @default(PENDING)
+  source              InvoiceSource @default(MANUAL)
+  expectedPaymentDate DateTime? // Receiver's promised payment date
+  fromAddress         String?
+  toAddress           String?
+  description         String?
+  fileUrl             String?
+  config              Json?
+  pinned              Boolean       @default(false)
 
-  customerId     String?
-  customer       Customer?     @relation(fields: [customerId], references: [id])
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id])
 
-  senderCompanyId   String
-  senderCompany     Company   @relation("SentInvoices", fields: [senderCompanyId], references: [id])
+  senderCompanyId String
+  senderCompany   Company @relation("SentInvoices", fields: [senderCompanyId], references: [id])
 
   receiverCompanyId String?
-  receiverCompany   Company?  @relation("ReceivedInvoices", fields: [receiverCompanyId], references: [id])
+  receiverCompany   Company? @relation("ReceivedInvoices", fields: [receiverCompanyId], references: [id])
 
-  createdById    String?
-  createdBy      User?         @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdById String?
+  createdBy   User?   @relation(fields: [createdById], references: [id], onDelete: SetNull)
 
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-  sentAt         DateTime?
-  viewedAt       DateTime?     // first time the receiver opened it
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  sentAt    DateTime?
+  viewedAt  DateTime? // first time the receiver opened it
 
-  items          InvoiceItem[]
-  notifications  Notification[]
-  timelineItems  TimelineItem[]
-  ingestedEmail  IngestedEmail?
+  items         InvoiceItem[]
+  notifications Notification[]
+  timelineItems TimelineItem[]
+  ingestedEmail IngestedEmail?
 
-  subtotal       Decimal       @default(0) @db.Decimal(12, 2)
-  taxRate        Decimal       @default(9) @db.Decimal(5, 2)
-  taxAmount      Decimal       @default(0) @db.Decimal(12, 2)
-  notes          String?
+  subtotal  Decimal @default(0) @db.Decimal(12, 2)
+  taxRate   Decimal @default(9) @db.Decimal(5, 2)
+  taxAmount Decimal @default(0) @db.Decimal(12, 2)
+  notes     String?
 
   @@unique([invoiceNumber, senderCompanyId])
   // Tenant-scoped lookups: every query filters by sender/receiver company.
@@ -153,49 +155,49 @@ model Invoice {
 }
 
 model EmailIntegration {
-  id             String   @id @default(cuid())
-  companyId      String   @unique
-  company        Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  id        String  @id @default(cuid())
+  companyId String  @unique
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   // Per-company plus-address token. The user forwards invoices to
   // `<CLOUDMAILIN_INBOUND_ADDRESS_LOCAL>+<inboundToken>@cloudmailin.net`
   // and the webhook resolves the token back to this company.
-  inboundToken   String   @unique
+  inboundToken String @unique
 
   // Phase 2 — Gmail OAuth fields (kept null in Phase 1, forwarding-only setup).
-  provider       EmailProvider?
-  providerEmail  String?
-  refreshToken   String?  // encrypted at rest before storing
-  gmailFilterId  String?
+  provider      EmailProvider?
+  providerEmail String?
+  refreshToken  String? // encrypted at rest before storing
+  gmailFilterId String?
 
-  status         EmailIntegrationStatus @default(ACTIVE)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  status    EmailIntegrationStatus @default(ACTIVE)
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
 
   ingestedEmails IngestedEmail[]
 }
 
 model IngestedEmail {
-  id                  String   @id @default(cuid())
-  emailIntegrationId  String
-  emailIntegration    EmailIntegration @relation(fields: [emailIntegrationId], references: [id], onDelete: Cascade)
+  id                 String           @id @default(cuid())
+  emailIntegrationId String
+  emailIntegration   EmailIntegration @relation(fields: [emailIntegrationId], references: [id], onDelete: Cascade)
 
-  fromAddress         String
-  subject             String?
-  messageId           String?  @unique  // RFC 5322 Message-ID for dedup
-  receivedAt          DateTime @default(now())
+  fromAddress String
+  subject     String?
+  messageId   String?  @unique // RFC 5322 Message-ID for dedup
+  receivedAt  DateTime @default(now())
 
-  status              IngestedEmailStatus  @default(RECEIVED)
-  failureReason       String?
+  status        IngestedEmailStatus @default(RECEIVED)
+  failureReason String?
 
   // Stored for CONFIRMATION emails so we can render the link/code in-app.
-  plainBody           String?  @db.Text
-  htmlBody            String?  @db.Text
-  confirmationLink    String?
-  confirmationCode    String?
+  plainBody        String? @db.Text
+  htmlBody         String? @db.Text
+  confirmationLink String?
+  confirmationCode String?
 
-  invoiceId           String?  @unique
-  invoice             Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  invoiceId String?  @unique
+  invoice   Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
 
   @@index([emailIntegrationId])
 }
@@ -217,11 +219,11 @@ enum EmailIntegrationStatus {
 }
 
 enum IngestedEmailStatus {
-  RECEIVED       // just arrived, queued for parsing
-  PARSED         // AI extracted invoice + Invoice row created
-  IGNORED        // AI said this isn't an invoice / no PDF attached
-  FAILED         // parser error
-  CONFIRMATION   // Gmail/Outlook forwarding-verification email; link/code shown in UI
+  RECEIVED // just arrived, queued for parsing
+  PARSED // AI extracted invoice + Invoice row created
+  IGNORED // AI said this isn't an invoice / no PDF attached
+  FAILED // parser error
+  CONFIRMATION // Gmail/Outlook forwarding-verification email; link/code shown in UI
 }
 
 model InvoiceItem {
@@ -240,19 +242,21 @@ model InvoiceItem {
 }
 
 model Notification {
-  id        String           @id @default(cuid())
-  message   String
-  read      Boolean          @default(false)
-  type      NotificationType @default(GENERAL)
-  userId    String
-  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  invoiceId String?
-  invoice   Invoice?         @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
-  statementId String?
-  statement   Statement?     @relation(fields: [statementId], references: [id], onDelete: SetNull)
+  id              String           @id @default(cuid())
+  message         String
+  read            Boolean          @default(false)
+  type            NotificationType @default(GENERAL)
+  userId          String
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  invoiceId       String?
+  invoice         Invoice?         @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  statementId     String?
+  statement       Statement?       @relation(fields: [statementId], references: [id], onDelete: SetNull)
   deliveryOrderId String?
-  deliveryOrder   DeliveryOrder? @relation(fields: [deliveryOrderId], references: [id], onDelete: SetNull)
-  createdAt DateTime         @default(now())
+  deliveryOrder   DeliveryOrder?   @relation(fields: [deliveryOrderId], references: [id], onDelete: SetNull)
+  importJobId     String?
+  importJob       ImportJob?       @relation(fields: [importJobId], references: [id], onDelete: SetNull)
+  createdAt       DateTime         @default(now())
 
   @@index([userId, read])
 }
@@ -275,16 +279,16 @@ model Statement {
   customer          Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
   receiverCompanyId String?
   receiverCompany   Company?  @relation("ReceivedStatements", fields: [receiverCompanyId], references: [id])
-  fileUrl           String    @db.Text   // data URL or external URL — same convention as Invoice.fileUrl
+  fileUrl           String    @db.Text // data URL or external URL — same convention as Invoice.fileUrl
   fileName          String
   fileType          String
   notes             String?
   sentAt            DateTime  @default(now())
   viewedAt          DateTime?
 
-  notifications     Notification[]
+  notifications Notification[]
 
-  @@unique([customerId])               // latest-only — a new SOA replaces the previous one
+  @@unique([customerId]) // latest-only — a new SOA replaces the previous one
   @@index([senderCompanyId])
   @@index([receiverCompanyId])
 }
@@ -297,14 +301,14 @@ model DeliveryOrder {
   id                String    @id @default(cuid())
   doNumber          String
   reference         String?
-  doDate            DateTime?                 // date shown on the DO document
+  doDate            DateTime? // date shown on the DO document
   senderCompanyId   String
   senderCompany     Company   @relation("SentDeliveryOrders", fields: [senderCompanyId], references: [id])
   customerId        String?
   customer          Customer? @relation(fields: [customerId], references: [id])
   receiverCompanyId String?
   receiverCompany   Company?  @relation("ReceivedDeliveryOrders", fields: [receiverCompanyId], references: [id])
-  fileUrl           String    @db.Text   // S3 object key (or legacy data URI) — same convention as Invoice.fileUrl
+  fileUrl           String    @db.Text // S3 object key (or legacy data URI) — same convention as Invoice.fileUrl
   fileName          String
   fileType          String
   notes             String?
@@ -315,7 +319,7 @@ model DeliveryOrder {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
-  notifications     Notification[]
+  notifications Notification[]
 
   @@index([senderCompanyId, createdAt])
   @@index([receiverCompanyId, createdAt])
@@ -335,16 +339,16 @@ model PushSubscription {
 }
 
 enum CompanyModule {
-  RECEIVE  // Company A — receives invoices from suppliers, adds suppliers
-  SEND     // Suppliers — sends invoices to their customers
-  BOTH     // Can both send and receive
+  RECEIVE // Company A — receives invoices from suppliers, adds suppliers
+  SEND // Suppliers — sends invoices to their customers
+  BOTH // Can both send and receive
 }
 
 enum SendingPlan {
-  LOCKED   // Never trialed; SEND features hidden behind trial CTA
-  TRIAL    // Inside 14-day window; full SEND access
-  EXPIRED  // Trial ended; SEND read-only, awaiting upgrade
-  PAID     // Direct sale or post-Airwallex; full SEND access, no expiry
+  LOCKED // Never trialed; SEND features hidden behind trial CTA
+  TRIAL // Inside 14-day window; full SEND access
+  EXPIRED // Trial ended; SEND read-only, awaiting upgrade
+  PAID // Direct sale or post-Airwallex; full SEND access, no expiry
 }
 
 enum UserRole {
@@ -361,7 +365,7 @@ enum RoutingStatus {
 model Invitation {
   id              String           @id @default(cuid())
   email           String
-  companyName     String           // The name they provided for the supplier
+  companyName     String // The name they provided for the supplier
   status          InvitationStatus @default(PENDING)
   senderCompanyId String
   senderCompany   Company          @relation(fields: [senderCompanyId], references: [id])
@@ -386,6 +390,57 @@ enum NotificationType {
   INVOICE_ACKNOWLEDGED
   STATEMENT_RECEIVED
   DELIVERY_ORDER_RECEIVED
+  IMPORT_READY
+  IMPORT_FAILED
+}
+
+// Background contact-import job. Large documents (hundreds of pages) can't be
+// extracted inside one HTTP request — Claude caps PDFs at 100 pages and the
+// serverless function times out — so the upload is stored to S3, a job row is
+// created, and an Inngest function splits the file into ≤100-page chunks and
+// extracts each as a durable step. Progress lives on the row (chunksDone /
+// chunksTotal); the extracted contacts land in `result` for the user to review
+// and confirm on the import page. Users are notified when it finishes.
+model ImportJob {
+  id          String          @id @default(cuid())
+  kind        ImportKind
+  status      ImportJobStatus @default(PENDING)
+  companyId   String
+  company     Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdById String
+  createdBy   User            @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  fileKey   String // S3 object key of the uploaded document
+  fileName  String
+  fileType  String
+  pageCount Int? // set once the worker inspects the PDF
+
+  chunksTotal Int     @default(0)
+  chunksDone  Int     @default(0)
+  result      Json? // Contact[] once DONE
+  error       String? // set when FAILED
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  startedAt  DateTime?
+  finishedAt DateTime?
+
+  notifications Notification[]
+
+  @@index([companyId, createdAt])
+  @@index([status])
+}
+
+enum ImportKind {
+  CUSTOMERS
+  SUPPLIERS
+}
+
+enum ImportJobStatus {
+  PENDING // queued, worker not started
+  RUNNING // chunks in progress
+  DONE // result ready for review
+  FAILED // see `error`
 }
 
 model FeatureFlag {

@@ -12,6 +12,7 @@ import { statementRouter } from "./routers/statement";
 import { deliveryOrderRouter } from "./routers/deliveryOrder";
 import { emailIntegrationRouter } from "./routers/emailIntegration";
 import { storageRouter } from "./routers/storage";
+import { importJobRouter } from "./routers/importJob";
 
 export const appRouter = createTRPCRouter({
   invoice: invoiceRouter,
@@ -27,6 +28,7 @@ export const appRouter = createTRPCRouter({
   deliveryOrder: deliveryOrderRouter,
   emailIntegration: emailIntegrationRouter,
   storage: storageRouter,
+  importJob: importJobRouter,
 });
 
 export type AppRouter = typeof appRouter;

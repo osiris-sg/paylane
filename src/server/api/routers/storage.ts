@@ -11,6 +11,10 @@ const ALLOWED_TYPES = [
   "image/jpg",
   "image/webp",
   "image/gif",
+  // Contact imports (spreadsheets)
+  "text/csv",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 ] as const;
 
 export const storageRouter = createTRPCRouter({
@@ -22,7 +26,7 @@ export const storageRouter = createTRPCRouter({
   createUploadUrl: protectedProcedure
     .input(
       z.object({
-        kind: z.enum(["invoices", "statements", "delivery-orders"]),
+        kind: z.enum(["invoices", "statements", "delivery-orders", "imports"]),
         contentType: z.string(),
       }),
     )

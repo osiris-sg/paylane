@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import { ImportContacts } from "~/components/contacts/import-contacts";
 import { useSendAccess } from "~/lib/use-send-access";
 import { LockedSendingCTA } from "~/components/subscription/locked-sending-cta";
@@ -31,5 +32,10 @@ export default function ImportCustomersPage() {
     );
   }
 
-  return <ImportContacts kind="customers" />;
+  // ImportContacts reads ?job=<id> via useSearchParams → needs Suspense.
+  return (
+    <Suspense fallback={null}>
+      <ImportContacts kind="customers" />
+    </Suspense>
+  );
 }

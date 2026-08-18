@@ -5,9 +5,9 @@
  */
 export async function uploadViaPresignedPut(
   file: File,
-  kind: "invoices" | "statements" | "delivery-orders",
+  kind: "invoices" | "statements" | "delivery-orders" | "imports",
   createUploadUrl: (input: {
-    kind: "invoices" | "statements" | "delivery-orders";
+    kind: "invoices" | "statements" | "delivery-orders" | "imports";
     contentType: string;
   }) => Promise<{ key: string; url: string }>,
 ): Promise<string> {

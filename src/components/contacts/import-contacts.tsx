@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
   Upload,
@@ -13,12 +13,17 @@ import {
   ArrowLeft,
   Loader2,
   Copy,
+  Clock,
+  CheckCircle2,
+  XCircle,
+  Bell,
 } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Card, CardContent } from "~/components/ui/card";
 import { Checkbox } from "~/components/ui/checkbox";
 import { api } from "~/trpc/react";
+import { uploadViaPresignedPut } from "~/lib/upload-file";
 
 interface DraftContact {
   id: string;
@@ -48,7 +53,33 @@ const draftStorageKey = (kind: "customers" | "suppliers") =>
 
 export function ImportContacts({ kind }: Props) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const utils = api.useUtils();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // ── Background import job (large files) ────────────────────────────────
+  // Files too big to extract inline are uploaded to S3 and processed by a
+  // background worker. We track the job here, poll its progress while it
+  // runs, and load its result into the review table when it finishes —
+  // either live (user stayed on the page) or via the ?job=<id> deep-link
+  // from the "import ready" notification.
+  const [jobId, setJobId] = useState<string | null>(searchParams.get("job"));
+  const loadedJobRef = useRef<string | null>(null);
+  const createUploadUrl = api.storage.createUploadUrl.useMutation();
+  const createJob = api.importJob.create.useMutation();
+  const job = api.importJob.get.useQuery(
+    { id: jobId ?? "" },
+    {
+      enabled: !!jobId,
+      // Poll while the worker is busy; stop once it settles.
+      refetchInterval: (q) => {
+        const st = q.state.data?.status;
+        return st === "PENDING" || st === "RUNNING" ? 2000 : false;
+      },
+    },
+  );
+  const jobKindMatches =
+    !job.data || job.data.kind === (kind === "customers" ? "CUSTOMERS" : "SUPPLIERS");
   const [drafts, setDrafts] = useState<DraftContact[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [extracting, setExtracting] = useState(false);
@@ -110,6 +141,28 @@ export function ImportContacts({ kind }: Props) {
 
   const isSubmitting = customerBulk.isPending || supplierBulk.isPending;
 
+  // Hand a file to the background worker: upload to S3, create the job,
+  // and start polling. The user is free to leave — they'll be notified.
+  const startBackgroundImport = async (file: File) => {
+    const contentType = file.type || "application/pdf";
+    const fileKey = await uploadViaPresignedPut(file, "imports", (input) =>
+      createUploadUrl.mutateAsync(input),
+    );
+    const { id } = await createJob.mutateAsync({
+      kind: kind === "customers" ? "CUSTOMERS" : "SUPPLIERS",
+      fileKey,
+      fileName: file.name,
+      fileType: contentType,
+    });
+    loadedJobRef.current = null;
+    setJobId(id);
+    // Put the job in the URL so a reload (or the notification link) lands here.
+    router.replace(`/${kind}/import?job=${id}`);
+    toast.info("Large file — extracting in the background. We'll notify you when it's ready.", {
+      duration: 6000,
+    });
+  };
+
   const handleFile = async (file: File) => {
     setExtracting(true);
     setFilename(file.name);
@@ -121,7 +174,15 @@ export function ImportContacts({ kind }: Props) {
         body: formData,
       });
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
+        const err = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          tooLarge?: boolean;
+        };
+        if (err.tooLarge) {
+          // Too big for inline extraction → background job instead.
+          await startBackgroundImport(file);
+          return;
+        }
         throw new Error(err.error || "Extraction failed");
       }
       const { contacts } = (await res.json()) as {
@@ -146,6 +207,39 @@ export function ImportContacts({ kind }: Props) {
     } finally {
       setExtracting(false);
     }
+  };
+
+  // When the background job completes, load its contacts into the review
+  // table exactly once (guarded by loadedJobRef so polling doesn't re-add).
+  useEffect(() => {
+    const j = job.data;
+    if (!j || j.status !== "DONE" || !jobKindMatches) return;
+    if (loadedJobRef.current === j.id) return;
+    loadedJobRef.current = j.id;
+    const next = (j.result ?? []).map((c) => ({
+      id: newId(),
+      company: c.company || "",
+      name: c.name || "",
+      email: c.email || "",
+      phone: c.phone || "",
+      address: c.address || "",
+    }));
+    setFilename(j.fileName);
+    if (next.length === 0) {
+      toast.error("No contacts were found in that file");
+    } else {
+      toast.success(`Loaded ${next.length} contact${next.length === 1 ? "" : "s"} from ${j.fileName}`);
+      // Replace (not append) — a re-visit via the notification link shouldn't
+      // stack the same contacts on top of already-loaded ones.
+      setDrafts(next);
+    }
+    // Mark the matching "import ready" notification read, if any.
+    void utils.notification.getUnreadCount.invalidate();
+  }, [job.data, jobKindMatches, utils]);
+
+  const dismissJob = () => {
+    setJobId(null);
+    router.replace(`/${kind}/import`);
   };
 
   const updateDraft = (id: string, patch: Partial<DraftContact>) => {
@@ -324,8 +418,20 @@ export function ImportContacts({ kind }: Props) {
           <p className="text-xs text-muted-foreground">
             Supported: .xlsx, .xls, .csv, .pdf, .png, .jpg
           </p>
+          <p className="text-xs text-muted-foreground">
+            Big PDFs (statements with hundreds of pages) are processed in the
+            background — you can leave this page and we&apos;ll notify you when
+            they&apos;re ready to review.
+          </p>
         </CardContent>
       </Card>
+
+      {jobId && job.data && jobKindMatches && (
+        <ImportJobCard
+          job={job.data}
+          onDismiss={dismissJob}
+        />
+      )}
 
       {drafts.length > 0 && (
         <>
@@ -542,5 +648,94 @@ function FieldInput({
         }
       />
     </label>
+  );
+}
+
+// ─── Background job progress card ────────────────────────────────────────────
+
+type JobView = {
+  id: string;
+  status: "PENDING" | "RUNNING" | "DONE" | "FAILED";
+  fileName: string;
+  pageCount: number | null;
+  chunksTotal: number;
+  chunksDone: number;
+  error: string | null;
+  result: unknown[] | null;
+};
+
+function ImportJobCard({ job, onDismiss }: { job: JobView; onDismiss: () => void }) {
+  const running = job.status === "PENDING" || job.status === "RUNNING";
+  const pct =
+    job.chunksTotal > 0 ? Math.round((job.chunksDone / job.chunksTotal) * 100) : 0;
+  const found = Array.isArray(job.result) ? job.result.length : 0;
+
+  const tone =
+    job.status === "DONE"
+      ? "border-green-300 bg-green-50 dark:border-green-700 dark:bg-green-950/30"
+      : job.status === "FAILED"
+        ? "border-red-300 bg-red-50 dark:border-red-700 dark:bg-red-950/30"
+        : "border-blue-300 bg-blue-50 dark:border-blue-700 dark:bg-blue-950/30";
+
+  return (
+    <Card className={`border-2 ${tone}`}>
+      <CardContent className="flex flex-col gap-3 p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-start gap-3">
+            <div className="mt-0.5 shrink-0">
+              {job.status === "DONE" ? (
+                <CheckCircle2 className="h-5 w-5 text-green-600" />
+              ) : job.status === "FAILED" ? (
+                <XCircle className="h-5 w-5 text-red-600" />
+              ) : (
+                <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+              )}
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold">
+                {job.status === "PENDING" && "Queued — starting extraction…"}
+                {job.status === "RUNNING" && "Extracting contacts in the background"}
+                {job.status === "DONE" &&
+                  `Extraction complete — ${found} contact${found === 1 ? "" : "s"} loaded below`}
+                {job.status === "FAILED" && "Extraction failed"}
+              </p>
+              <p className="truncate text-xs text-muted-foreground">
+                {job.fileName}
+                {job.pageCount ? ` · ${job.pageCount} pages` : ""}
+                {running && job.chunksTotal > 1
+                  ? ` · part ${Math.min(job.chunksDone + 1, job.chunksTotal)} of ${job.chunksTotal}`
+                  : ""}
+              </p>
+              {job.status === "FAILED" && job.error && (
+                <p className="mt-1 text-xs text-red-700">{job.error}</p>
+              )}
+            </div>
+          </div>
+          <Button variant="ghost" size="sm" className="shrink-0" onClick={onDismiss}>
+            {running ? "Hide" : "Dismiss"}
+          </Button>
+        </div>
+
+        {running && (
+          <>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-blue-200/70 dark:bg-blue-900/50">
+              <div
+                className="h-full rounded-full bg-blue-600 transition-all duration-500"
+                style={{ width: `${Math.max(pct, job.status === "RUNNING" ? 4 : 0)}%` }}
+              />
+            </div>
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Bell className="h-3.5 w-3.5" />
+              You can leave this page — we&apos;ll send you a notification when it&apos;s
+              ready to review.
+              <span className="ml-auto flex items-center gap-1 tabular-nums">
+                <Clock className="h-3.5 w-3.5" />
+                {pct}%
+              </span>
+            </p>
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }

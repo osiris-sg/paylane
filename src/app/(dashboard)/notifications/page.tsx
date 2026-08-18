@@ -21,6 +21,8 @@ import {
   ChevronRight,
   ExternalLink,
   BellOff,
+  Upload,
+  XCircle,
 } from "lucide-react";
 
 dayjs.extend(relativeTime);
@@ -31,6 +33,8 @@ type NotificationType =
   | "PAYMENT_OVERDUE"
   | "INVOICE_PAID"
   | "INVOICE_ACKNOWLEDGED"
+  | "IMPORT_READY"
+  | "IMPORT_FAILED"
   | "GENERAL";
 
 const typeConfig: Record<
@@ -58,6 +62,16 @@ const typeConfig: Record<
   INVOICE_ACKNOWLEDGED: {
     icon: CheckCircle,
     iconColor: "text-emerald-500",
+  },
+  IMPORT_READY: {
+    icon: Upload,
+    borderColor: "border-l-green-500",
+    iconColor: "text-green-600",
+  },
+  IMPORT_FAILED: {
+    icon: XCircle,
+    borderColor: "border-l-red-500",
+    iconColor: "text-red-500",
   },
   GENERAL: {
     icon: Bell,
@@ -223,6 +237,22 @@ export default function NotificationsPage() {
                             >
                               <ExternalLink className="h-3 w-3" />
                               {notification.invoice.invoiceNumber}
+                            </Link>
+                          </>
+                        )}
+                        {notification.importJob && (
+                          <>
+                            <Separator
+                              orientation="vertical"
+                              className="h-3"
+                            />
+                            <Link
+                              href={`/${notification.importJob.kind === "CUSTOMERS" ? "customers" : "suppliers"}/import?job=${notification.importJob.id}`}
+                              className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <ExternalLink className="h-3 w-3" />
+                              {notification.importJob.status === "DONE" ? "Review import" : "View import"}
                             </Link>
                           </>
                         )}

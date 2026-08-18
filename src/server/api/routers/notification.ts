@@ -22,7 +22,7 @@ export const notificationRouter = createTRPCRouter({
           orderBy: { createdAt: "desc" },
           skip: (input.page - 1) * input.limit,
           take: input.limit,
-          include: { invoice: true },
+          include: { invoice: true, importJob: { select: { id: true, kind: true, status: true } } },
         }),
         ctx.db.notification.count({ where: { userId: user.id } }),
       ]);
