@@ -2,7 +2,8 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
 import { requireSendAccess } from "~/server/api/lib/sending-access";
-import { inngest } from "~/inngest/client";
+import { waitUntil } from "@vercel/functions";
+import { kickImportWorker, processImportJob } from "~/server/import/worker";
 import type { Contact } from "~/server/import/extract-contacts";
 
 const kindSchema = z.enum(["CUSTOMERS", "SUPPLIERS"]);
@@ -10,8 +11,10 @@ const kindSchema = z.enum(["CUSTOMERS", "SUPPLIERS"]);
 export const importJobRouter = createTRPCRouter({
   /**
    * Queue a background import for a file already uploaded to S3 (via
-   * storage.createUploadUrl → presigned PUT). Returns immediately; the
-   * Inngest worker does the extraction and notifies the user when done.
+   * storage.createUploadUrl → presigned PUT). Returns immediately, but the
+   * worker starts RIGHT NOW (fire-and-forget via waitUntil) — the user never
+   * waits for a cron tick. The every-minute cron only resumes/finishes jobs
+   * this kick couldn't complete within one function's budget.
    */
   create: protectedProcedure
     .input(
@@ -40,7 +43,18 @@ export const importJobRouter = createTRPCRouter({
         select: { id: true },
       });
 
-      await inngest.send({ name: "import/contacts.requested", data: { jobId: job.id } });
+      // Kick the worker immediately, without holding up this response.
+      // waitUntil keeps the serverless invocation alive until the promise
+      // settles (Vercel); locally it just runs in the background like SAS's
+      // in-process fallback. Errors are already recorded on the job row.
+      waitUntil(
+        processImportJob(job.id, {
+          budgetMs: 250_000,
+          continueOnProgress: kickImportWorker,
+        }).catch((err) =>
+          console.error(`[import ${job.id}] kick-off failed:`, err),
+        ),
+      );
       return { id: job.id };
     }),
 

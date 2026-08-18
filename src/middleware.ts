@@ -6,6 +6,9 @@ const isPublicRoute = createRouteMatcher([
   "/sign-up(.*)",
   "/api/webhooks(.*)",
   "/api/cloudmailin/(.*)",
+  // Vercel Cron has no Clerk session; the route authenticates itself with
+  // the CRON_SECRET bearer token instead.
+  "/api/cron/(.*)",
   "/manifest.json",
   "/sw.js",
   "/push-sw.js",

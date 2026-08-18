@@ -396,11 +396,13 @@ enum NotificationType {
 
 // Background contact-import job. Large documents (hundreds of pages) can't be
 // extracted inside one HTTP request — Claude caps PDFs at 100 pages and the
-// serverless function times out — so the upload is stored to S3, a job row is
-// created, and an Inngest function splits the file into ≤100-page chunks and
-// extracts each as a durable step. Progress lives on the row (chunksDone /
-// chunksTotal); the extracted contacts land in `result` for the user to review
-// and confirm on the import page. Users are notified when it finishes.
+// serverless function times out — so the upload is stored to S3 and this row
+// becomes the queue entry. A worker (kicked off immediately on create, with a
+// Vercel Cron as the safety net) atomically claims the job, splits the file
+// into ≤50-page chunks and extracts them one at a time, persisting each
+// chunk's result so it can resume across ticks/crashes. Progress lives on the
+// row (chunksDone / chunksTotal); merged contacts land in `result` for review
+// on the import page. Users are notified when it finishes or fails.
 model ImportJob {
   id          String          @id @default(cuid())
   kind        ImportKind
@@ -415,10 +417,19 @@ model ImportJob {
   fileType  String
   pageCount Int? // set once the worker inspects the PDF
 
-  chunksTotal Int     @default(0)
-  chunksDone  Int     @default(0)
-  result      Json? // Contact[] once DONE
+  chunksTotal Int       @default(0)
+  chunksDone  Int       @default(0)
+  // Per-chunk results accumulated as the worker goes (Contact[][]). Lets a
+  // job resume from the next unprocessed chunk after a crash / timeout /
+  // cron tick boundary instead of restarting from page 1.
+  partial     Json?
+  result      Json? // merged Contact[] once DONE
   error       String? // set when FAILED
+  attempts    Int       @default(0) // failed chunk attempts; FAILED after MAX
+  // Worker lease. A worker sets lockedAt when it claims the job and refreshes
+  // it per chunk (heartbeat); a lease older than the stale threshold is
+  // reclaimable, so a worker that died mid-job doesn't strand it forever.
+  lockedAt    DateTime?
 
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
