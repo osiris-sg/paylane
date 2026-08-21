@@ -225,6 +225,7 @@ export const deliveryOrderRouter = createTRPCRouter({
         include: {
           customer: true,
           senderCompany: { select: { id: true, name: true } },
+          timelineItems: true,
         },
       });
       if (
@@ -267,6 +268,9 @@ export const deliveryOrderRouter = createTRPCRouter({
           notes: input.notes,
           senderCompanyId: user.companyId,
           createdById: user.id,
+          timelineItems: {
+            create: { message: "Delivery order created" },
+          },
         },
       });
     }),
@@ -323,6 +327,14 @@ export const deliveryOrderRouter = createTRPCRouter({
       const order = await ctx.db.deliveryOrder.update({
         where: { id: existing.id },
         data: { sentAt: existing.sentAt ?? new Date(), receiverCompanyId },
+      });
+      await ctx.db.timelineItem.create({
+        data: {
+          deliveryOrderId: order.id,
+          message: existing.sentAt
+            ? "Delivery order re-sent to customer"
+            : "Delivery order sent to customer",
+        },
       });
 
       // On-platform receiver → in-app + push + WhatsApp + email.
@@ -446,10 +458,14 @@ export const deliveryOrderRouter = createTRPCRouter({
         throw new TRPCError({ code: "NOT_FOUND" });
       }
       if (order.viewedAt) return order;
-      return ctx.db.deliveryOrder.update({
+      const updated = await ctx.db.deliveryOrder.update({
         where: { id: input.id },
         data: { viewedAt: new Date() },
       });
+      await ctx.db.timelineItem.create({
+        data: { deliveryOrderId: input.id, message: "Delivery order viewed by receiver" },
+      });
+      return updated;
     }),
 
   /** Presigned download URL for the uploaded DO file. */

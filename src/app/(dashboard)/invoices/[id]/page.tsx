@@ -8,19 +8,15 @@ import { toast } from "sonner";
 import {
   ArrowLeft,
   Send,
-  CheckCircle,
-  CreditCard,
   AlertTriangle,
-  Clock,
   FileText,
   Download,
   Trash2,
   CalendarClock,
   Pencil,
 } from "lucide-react";
-// NOTE: AlertTriangle is still used by the timeline icon logic and the shared
-// confirmation dialog; Clock is still used by the empty-timeline placeholder.
-// Both are intentionally retained.
+
+import { TimelineList, type TimelineEvent } from "~/components/activity-timeline";
 
 import { api } from "~/trpc/react";
 import { Button } from "~/components/ui/button";
@@ -99,46 +95,6 @@ function Field({
   );
 }
 
-interface TimelineEvent {
-  id: string;
-  message: string;
-  createdAt: string | Date;
-  invoiceId: string;
-}
-
-function TimelineItem({ event }: { event: TimelineEvent }) {
-  // Determine icon based on message content
-  const msg = event.message.toLowerCase();
-  let Icon = FileText;
-  let color = "text-muted-foreground";
-  if (msg.includes("created")) { Icon = FileText; color = "text-blue-500"; }
-  else if (msg.includes("sent")) { Icon = Send; color = "text-blue-500"; }
-  else if (msg.includes("acknowledged")) { Icon = CheckCircle; color = "text-green-500"; }
-  else if (msg.includes("paid")) { Icon = CreditCard; color = "text-green-500"; }
-  else if (msg.includes("overdue")) { Icon = AlertTriangle; color = "text-red-500"; }
-
-  return (
-    <div className="relative flex gap-3 pb-6 last:pb-0">
-      {/* Vertical line */}
-      <div className="absolute left-[15px] top-8 h-[calc(100%-16px)] w-px bg-border last:hidden" />
-
-      {/* Icon dot */}
-      <div
-        className={`relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border bg-background ${color}`}
-      >
-        <Icon className="h-4 w-4" />
-      </div>
-
-      {/* Content */}
-      <div className="flex-1 pt-0.5">
-        <p className="text-sm font-medium">{event.message}</p>
-        <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
-          <span>{dayjs(event.createdAt).format("MMM D, YYYY [at] h:mm A")}</span>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export default function InvoiceDetailPage() {
   const params = useParams<{ id: string }>();
@@ -432,9 +388,6 @@ export default function InvoiceDetailPage() {
   ) => setConfirmAction({ title, description, confirmLabel, onConfirm, destructive });
 
   const timeline: TimelineEvent[] = (invoice.timelineItems as TimelineEvent[]) ?? [];
-  const sortedTimeline = [...timeline].sort(
-    (a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf()
-  );
 
   const hasActions = canSend || canSchedulePayment || canDelete || canEdit;
 
@@ -522,18 +475,7 @@ export default function InvoiceDetailPage() {
             <CardDescription>History of events for this invoice</CardDescription>
           </CardHeader>
           <CardContent>
-            {sortedTimeline.length === 0 ? (
-              <div className="flex flex-col items-center gap-2 py-8 text-center text-muted-foreground">
-                <Clock className="h-8 w-8" />
-                <p className="text-sm">No activity yet</p>
-              </div>
-            ) : (
-              <div className="space-y-0">
-                {sortedTimeline.map((event) => (
-                  <TimelineItem key={event.id} event={event} />
-                ))}
-              </div>
-            )}
+            <TimelineList events={timeline} />
           </CardContent>
         </Card>
       </div>
@@ -694,18 +636,7 @@ export default function InvoiceDetailPage() {
                 <CardTitle className="text-base">Activity Timeline</CardTitle>
               </CardHeader>
               <CardContent className="min-h-0 flex-1 overflow-y-auto">
-                {sortedTimeline.length === 0 ? (
-                  <div className="flex flex-col items-center gap-2 py-8 text-center text-muted-foreground">
-                    <Clock className="h-8 w-8" />
-                    <p className="text-sm">No activity yet</p>
-                  </div>
-                ) : (
-                  <div className="space-y-0">
-                    {sortedTimeline.map((event) => (
-                      <TimelineItem key={event.id} event={event} />
-                    ))}
-                  </div>
-                )}
+                <TimelineList events={timeline} />
               </CardContent>
             </Card>
           </div>

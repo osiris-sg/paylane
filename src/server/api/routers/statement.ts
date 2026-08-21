@@ -77,6 +77,15 @@ async function persistAndDispatch({
     },
   });
 
+  await ctx.db.timelineItem.create({
+    data: {
+      statementId: statement.id,
+      message: isUpdate
+        ? "Statement replaced with a new version"
+        : "Statement sent to customer",
+    },
+  });
+
   // Notify receiver across every channel they've opted into.
   if (customer.linkedCompanyId) {
     const receiverUsers = await ctx.db.user.findMany({
@@ -392,6 +401,7 @@ export const statementRouter = createTRPCRouter({
         include: {
           senderCompany: { select: { id: true, name: true } },
           customer: { select: { id: true, company: true, name: true } },
+          timelineItems: true,
         },
       });
       if (
@@ -449,10 +459,14 @@ export const statementRouter = createTRPCRouter({
         throw new TRPCError({ code: "NOT_FOUND" });
       }
       if (stmt.viewedAt) return stmt;
-      return ctx.db.statement.update({
+      const updated = await ctx.db.statement.update({
         where: { id: input.id },
         data: { viewedAt: new Date() },
       });
+      await ctx.db.timelineItem.create({
+        data: { statementId: input.id, message: "Statement viewed by receiver" },
+      });
+      return updated;
     }),
 
   /**

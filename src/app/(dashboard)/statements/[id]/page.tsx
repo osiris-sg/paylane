@@ -11,6 +11,7 @@ import { api } from "~/trpc/react";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { DocumentViewer } from "~/components/document-viewer";
+import { TimelineList, type TimelineEvent } from "~/components/activity-timeline";
 
 // Compact label/value pair — same style as the invoice detail page.
 function Field({
@@ -114,6 +115,30 @@ export default function StatementDetailPage() {
   }
 
   const isSender = statement.senderCompanyId === myCompanyId;
+
+  // Statements created before the timeline existed have no stored rows —
+  // derive a baseline history from the row's own timestamps so the card is
+  // never empty. Newer statements accumulate real rows (sent / replaced /
+  // viewed) written by the router.
+  const timelineEvents: TimelineEvent[] =
+    statement.timelineItems.length > 0
+      ? statement.timelineItems
+      : [
+          {
+            id: "derived-sent",
+            message: "Statement sent to customer",
+            createdAt: statement.sentAt,
+          },
+          ...(statement.viewedAt
+            ? [
+                {
+                  id: "derived-viewed",
+                  message: "Statement viewed by receiver",
+                  createdAt: statement.viewedAt,
+                },
+              ]
+            : []),
+        ];
   const backHref = isSender ? "/statements?tab=sent" : "/statements?tab=received";
   const partyLabel = isSender ? "Customer" : "From";
   const partyName = isSender
@@ -189,6 +214,15 @@ export default function StatementDetailPage() {
                   <p className="mt-0.5 text-sm">{statement.notes}</p>
                 </div>
               )}
+            </CardContent>
+          </Card>
+
+          <Card className="flex min-h-0 flex-1 flex-col">
+            <CardHeader className="shrink-0 pb-3">
+              <CardTitle className="text-base">Activity Timeline</CardTitle>
+            </CardHeader>
+            <CardContent className="min-h-0 flex-1 overflow-y-auto">
+              <TimelineList events={timelineEvents} />
             </CardContent>
           </Card>
         </div>

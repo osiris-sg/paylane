@@ -9,6 +9,7 @@ import { api } from "~/trpc/react";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { DocumentViewer } from "~/components/document-viewer";
+import { TimelineList, type TimelineEvent } from "~/components/activity-timeline";
 
 export default function DeliveryOrderDetailPage() {
   const params = useParams<{ id: string }>();
@@ -65,6 +66,38 @@ export default function DeliveryOrderDetailPage() {
 
   const isSender = order.senderCompanyId === myCompanyId;
 
+  // DOs created before the timeline existed have no stored rows — derive a
+  // baseline history from the row's timestamps so the card is never empty.
+  // Newer DOs accumulate real rows (created / sent / viewed) from the router.
+  const timelineEvents: TimelineEvent[] =
+    order.timelineItems.length > 0
+      ? order.timelineItems
+      : [
+          {
+            id: "derived-created",
+            message: "Delivery order created",
+            createdAt: order.createdAt,
+          },
+          ...(order.sentAt
+            ? [
+                {
+                  id: "derived-sent",
+                  message: "Delivery order sent to customer",
+                  createdAt: order.sentAt,
+                },
+              ]
+            : []),
+          ...(order.viewedAt
+            ? [
+                {
+                  id: "derived-viewed",
+                  message: "Delivery order viewed by receiver",
+                  createdAt: order.viewedAt,
+                },
+              ]
+            : []),
+        ];
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-2">
@@ -88,19 +121,36 @@ export default function DeliveryOrderDetailPage() {
         </Button>
       </div>
 
-      {order.fileUrl && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Delivery Order</CardTitle>
-            <CardDescription>Uploaded document</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="max-h-[75vh] overflow-auto">
-              <DocumentViewer url={order.fileUrl} />
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* Timeline beside the document on desktop, stacked on mobile —
+          matches the invoice/statement detail layout. */}
+      <div className="flex flex-col gap-4 md:flex-row">
+        <div className="w-full shrink-0 md:w-[340px]">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Activity Timeline</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <TimelineList events={timelineEvents} />
+            </CardContent>
+          </Card>
+        </div>
+
+        {order.fileUrl && (
+          <div className="min-w-0 flex-1">
+            <Card>
+              <CardHeader>
+                <CardTitle>Delivery Order</CardTitle>
+                <CardDescription>Uploaded document</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="max-h-[75vh] overflow-auto">
+                  <DocumentViewer url={order.fileUrl} />
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

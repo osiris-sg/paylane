@@ -261,14 +261,23 @@ model Notification {
   @@index([userId, read])
 }
 
+// Activity history shown on the invoice / statement / delivery-order detail
+// pages. Exactly one of the parent FKs is set per row (same pattern as
+// Notification); parents cascade-delete their history.
 model TimelineItem {
-  id        String   @id @default(cuid())
-  message   String
-  invoiceId String
-  invoice   Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
+  id              String         @id @default(cuid())
+  message         String
+  invoiceId       String?
+  invoice         Invoice?       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  statementId     String?
+  statement       Statement?     @relation(fields: [statementId], references: [id], onDelete: Cascade)
+  deliveryOrderId String?
+  deliveryOrder   DeliveryOrder? @relation(fields: [deliveryOrderId], references: [id], onDelete: Cascade)
+  createdAt       DateTime       @default(now())
 
   @@index([invoiceId])
+  @@index([statementId])
+  @@index([deliveryOrderId])
 }
 
 model Statement {
@@ -287,6 +296,7 @@ model Statement {
   viewedAt          DateTime?
 
   notifications Notification[]
+  timelineItems TimelineItem[]
 
   @@unique([customerId]) // latest-only — a new SOA replaces the previous one
   @@index([senderCompanyId])
@@ -320,6 +330,7 @@ model DeliveryOrder {
   updatedAt         DateTime  @updatedAt
 
   notifications Notification[]
+  timelineItems TimelineItem[]
 
   @@index([senderCompanyId, createdAt])
   @@index([receiverCompanyId, createdAt])
