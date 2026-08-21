@@ -1,3 +1,4 @@
+import { appBaseUrl } from "~/lib/app-url";
 import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
 import { z } from "zod";
 import { Resend } from "resend";
@@ -15,7 +16,7 @@ async function sendInviteEmail({
   supplierCompanyName: string;
   senderCompanyName: string;
 }) {
-  const signupUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/sign-up?email=${encodeURIComponent(to)}`;
+  const signupUrl = `${appBaseUrl()}/sign-up?email=${encodeURIComponent(to)}`;
 
   try {
     await resend.emails.send({

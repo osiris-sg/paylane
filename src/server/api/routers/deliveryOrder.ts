@@ -1,3 +1,4 @@
+import { appBaseUrl } from "~/lib/app-url";
 import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
@@ -371,7 +372,7 @@ export const deliveryOrderRouter = createTRPCRouter({
 
       // Email the customer (priority) when we have an address.
       if (existing.customer.email) {
-        const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+        const baseUrl = appBaseUrl();
         const viewUrl = `${baseUrl}/delivery-orders/${order.id}`;
         try {
           await resend.emails.send({

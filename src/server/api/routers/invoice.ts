@@ -3,6 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { Resend } from "resend";
+import { appBaseUrl } from "~/lib/app-url";
 import { sendPushToCompany } from "~/lib/push-notifications";
 import { sendWhatsAppToCompany } from "~/server/notifications/dispatch";
 import { sendWhatsAppTemplate } from "~/server/notifications/whatsapp";
@@ -817,8 +818,7 @@ export const invoiceRouter = createTRPCRouter({
 
         // They're on E-StatementNow — email them that a new invoice is waiting.
         if (existing.customer?.email) {
-          const baseUrl =
-            process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+          const baseUrl = appBaseUrl();
           const viewUrl = `${baseUrl}/invoices/${invoice.id}`;
           try {
             await resend.emails.send({
@@ -871,7 +871,7 @@ export const invoiceRouter = createTRPCRouter({
           invoiceId: invoice.id,
           email: existing.customer.email,
         });
-        const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+        const baseUrl = appBaseUrl();
         const signupUrl = `${baseUrl}/sign-up?email=${encodeURIComponent(existing.customer.email)}&invite=${inviteToken}`;
 
         try {
