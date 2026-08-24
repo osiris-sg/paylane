@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 
 import { TimelineList, type TimelineEvent } from "~/components/activity-timeline";
+import { Field } from "~/components/detail-field";
 
 import { api } from "~/trpc/react";
 import { Button } from "~/components/ui/button";
@@ -75,25 +76,6 @@ function InvoiceStatusBadge({ sentAt }: { sentAt: Date | string | null }) {
   );
 }
 
-// Compact label/value pair for the tightened desktop details grid.
-function Field({
-  label,
-  value,
-  className = "",
-}: {
-  label: string;
-  value: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <div className={className}>
-      <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-        {label}
-      </p>
-      <p className="mt-0.5 truncate text-sm font-medium">{value || "-"}</p>
-    </div>
-  );
-}
 
 
 export default function InvoiceDetailPage() {
@@ -602,7 +584,7 @@ export default function InvoiceDetailPage() {
         {/* Two-column body fills the remaining height */}
         <div className="flex min-h-0 flex-1 gap-4">
           {/* Left: compact details + timeline */}
-          <div className="flex w-[340px] shrink-0 flex-col gap-4">
+          <div className="flex min-h-0 w-[340px] shrink-0 flex-col gap-4 overflow-y-auto">
             <Card className="shrink-0">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">Invoice Details</CardTitle>
@@ -631,11 +613,11 @@ export default function InvoiceDetailPage() {
               </CardContent>
             </Card>
 
-            <Card className="flex min-h-0 flex-1 flex-col">
-              <CardHeader className="shrink-0 pb-3">
+            <Card className="shrink-0">
+              <CardHeader className="pb-3">
                 <CardTitle className="text-base">Activity Timeline</CardTitle>
               </CardHeader>
-              <CardContent className="min-h-0 flex-1 overflow-y-auto">
+              <CardContent>
                 <TimelineList events={timeline} />
               </CardContent>
             </Card>

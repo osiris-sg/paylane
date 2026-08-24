@@ -10,6 +10,7 @@ import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { DocumentViewer } from "~/components/document-viewer";
 import { TimelineList, type TimelineEvent } from "~/components/activity-timeline";
+import { Field } from "~/components/detail-field";
 
 export default function DeliveryOrderDetailPage() {
   const params = useParams<{ id: string }>();
@@ -124,8 +125,48 @@ export default function DeliveryOrderDetailPage() {
       {/* Timeline beside the document on desktop, stacked on mobile —
           matches the invoice/statement detail layout. */}
       <div className="flex flex-col gap-4 md:flex-row">
-        <div className="w-full shrink-0 md:w-[340px]">
-          <Card>
+        <div className="flex w-full shrink-0 flex-col gap-4 md:w-[340px]">
+          <Card className="shrink-0">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Delivery Order Details</CardTitle>
+            </CardHeader>
+            <CardContent className="grid grid-cols-2 gap-x-4 gap-y-3">
+              <Field label="DO Number" value={order.doNumber} />
+              <Field
+                label={isSender ? "To" : "From"}
+                value={
+                  isSender
+                    ? order.customer
+                      ? order.customer.company || order.customer.name
+                      : "No customer assigned"
+                    : order.senderCompany.name
+                }
+              />
+              <Field
+                label="DO Date"
+                value={order.doDate ? dayjs(order.doDate).format("MMM D, YYYY") : "-"}
+              />
+              <Field
+                label="Sent"
+                value={order.sentAt ? dayjs(order.sentAt).format("MMM D, YYYY") : "Not sent"}
+              />
+              <Field
+                label="Viewed"
+                value={order.viewedAt ? dayjs(order.viewedAt).format("MMM D, YYYY") : "Not yet"}
+              />
+              {order.reference && <Field label="Reference" value={order.reference} />}
+              {order.notes && (
+                <div className="col-span-2">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Notes
+                  </p>
+                  <p className="mt-0.5 text-sm">{order.notes}</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="shrink-0">
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Activity Timeline</CardTitle>
             </CardHeader>

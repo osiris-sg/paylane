@@ -12,26 +12,8 @@ import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { DocumentViewer } from "~/components/document-viewer";
 import { TimelineList, type TimelineEvent } from "~/components/activity-timeline";
+import { Field } from "~/components/detail-field";
 
-// Compact label/value pair — same style as the invoice detail page.
-function Field({
-  label,
-  value,
-  className = "",
-}: {
-  label: string;
-  value: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <div className={className}>
-      <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-        {label}
-      </p>
-      <p className="mt-0.5 truncate text-sm font-medium">{value || "-"}</p>
-    </div>
-  );
-}
 
 export default function StatementDetailPage() {
   const params = useParams<{ id: string }>();
@@ -172,7 +154,7 @@ export default function StatementDetailPage() {
 
       {/* ── Body: details left, document right (single screen on desktop) ── */}
       <div className="mt-3 flex min-h-0 flex-1 flex-col gap-4 sm:flex-row">
-        <div className="flex w-full shrink-0 flex-col gap-4 sm:w-[340px]">
+        <div className="flex min-h-0 w-full shrink-0 flex-col gap-4 overflow-y-auto sm:w-[340px]">
           <Card className="shrink-0">
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Statement Details</CardTitle>
@@ -217,11 +199,11 @@ export default function StatementDetailPage() {
             </CardContent>
           </Card>
 
-          <Card className="flex min-h-0 flex-1 flex-col">
-            <CardHeader className="shrink-0 pb-3">
+          <Card className="shrink-0">
+            <CardHeader className="pb-3">
               <CardTitle className="text-base">Activity Timeline</CardTitle>
             </CardHeader>
-            <CardContent className="min-h-0 flex-1 overflow-y-auto">
+            <CardContent>
               <TimelineList events={timelineEvents} />
             </CardContent>
           </Card>
