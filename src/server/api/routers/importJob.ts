@@ -5,7 +5,8 @@ import { requireSendAccess } from "~/server/api/lib/sending-access";
 import { waitUntil } from "@vercel/functions";
 import { kickImportWorker } from "~/server/import/worker";
 import type { Contact } from "~/server/import/extract-contacts";
-import type { StatementsResult } from "~/server/import/extract-statements";
+import { slicePdf, type StatementsResult } from "~/server/import/extract-statements";
+import { getObjectBuffer, putObject, presignDownload } from "~/lib/storage";
 
 const kindSchema = z.enum(["CUSTOMERS", "SUPPLIERS", "STATEMENTS"]);
 
@@ -65,6 +66,31 @@ export const importJobRouter = createTRPCRouter({
         ...job,
         result: (job.result as Contact[] | StatementsResult | null) ?? null,
       };
+    }),
+
+  /**
+   * STATEMENTS: preview exactly the pages one segment (customer) will be
+   * sent. Slices them out of the source PDF, stores the slice under a
+   * deterministic key (re-previewing overwrites, so nothing piles up), and
+   * returns a short-lived URL the document viewer can render.
+   */
+  previewSegment: protectedProcedure
+    .input(z.object({ id: z.string(), index: z.number().int().min(0) }))
+    .query(async ({ ctx, input }) => {
+      const job = await ctx.db.importJob.findUnique({ where: { id: input.id } });
+      if (!job || job.companyId !== ctx.user.companyId || job.kind !== "STATEMENTS") {
+        throw new TRPCError({ code: "NOT_FOUND" });
+      }
+      const result = job.result as StatementsResult | null;
+      const seg = result?.segments?.find((s) => s.index === input.index);
+      if (!seg) throw new TRPCError({ code: "NOT_FOUND", message: "Segment not found" });
+
+      const source = await getObjectBuffer(job.fileKey);
+      const bytes = await slicePdf(source, seg.from, seg.to);
+      const key = `imports/${job.companyId}/previews/${job.id}-${seg.index}.pdf`;
+      await putObject(key, Buffer.from(bytes), "application/pdf");
+      const url = await presignDownload(key, 600);
+      return { url, from: seg.from, to: seg.to, customerName: seg.customerName, currency: seg.currency };
     }),
 
   /**

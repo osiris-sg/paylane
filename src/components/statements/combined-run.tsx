@@ -11,9 +11,10 @@ import {
   AlertCircle,
   Send,
   Bell,
-  FileText,
   UserPlus,
   SkipForward,
+  Eye,
+  ExternalLink,
 } from "lucide-react";
 
 import { api } from "~/trpc/react";
@@ -28,6 +29,14 @@ import {
   SelectValue,
 } from "~/components/ui/select";
 import { cn } from "~/lib/utils";
+import { DocumentViewer } from "~/components/document-viewer";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "~/components/ui/dialog";
 import { uploadViaPresignedPut } from "~/lib/upload-file";
 import type { StatementsResult, StatementSegmentRow } from "~/server/import/extract-statements";
 
@@ -47,6 +56,8 @@ export function CombinedRun({ jobId, onJobChange }: { jobId: string | null; onJo
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [onlyAttention, setOnlyAttention] = useState(false);
+  // Which segment is open in the preview dialog (null = closed).
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
 
   const createUploadUrl = api.storage.createUploadUrl.useMutation();
   const createJob = api.importJob.create.useMutation();
@@ -64,6 +75,10 @@ export function CombinedRun({ jobId, onJobChange }: { jobId: string | null; onJo
     },
   );
   const data = job.data;
+  const preview = api.importJob.previewSegment.useQuery(
+    { id: jobId ?? "", index: previewIndex ?? 0 },
+    { enabled: !!jobId && previewIndex !== null, staleTime: 5 * 60_000 },
+  );
   const result =
     data?.result && typeof data.result === "object" && !Array.isArray(data.result) && (data.result as StatementsResult).kind === "statements"
       ? (data.result as StatementsResult)
@@ -259,10 +274,23 @@ export function CombinedRun({ jobId, onJobChange }: { jobId: string | null; onJo
                   return (
                     <div key={seg.index} className={cn("flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between", attention && "bg-amber-50/50")}>
                       <div className="flex min-w-0 items-start gap-3">
-                        <FileText className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+                        <button
+                          type="button"
+                          onClick={() => setPreviewIndex(seg.index)}
+                          title="Preview the pages this customer will receive"
+                          className="mt-0.5 shrink-0 rounded p-0.5 text-blue-600 hover:bg-blue-100"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </button>
                         <div className="min-w-0">
                           <p className="truncate text-sm font-medium">
-                            {seg.customerName}
+                            <button
+                              type="button"
+                              onClick={() => setPreviewIndex(seg.index)}
+                              className="text-left hover:underline"
+                            >
+                              {seg.customerName}
+                            </button>
                             <span className="ml-1.5 rounded border px-1.5 py-0.5 align-middle text-[10px] font-medium text-muted-foreground">{seg.currency}</span>
                           </p>
                           <p className="text-xs text-muted-foreground">
@@ -373,6 +401,46 @@ export function CombinedRun({ jobId, onJobChange }: { jobId: string | null; onJo
           </CardContent>
         </Card>
       )}
+
+      {/* Preview: exactly the pages one customer will receive */}
+      <Dialog open={previewIndex !== null} onOpenChange={(o) => { if (!o) setPreviewIndex(null); }}>
+        <DialogContent className="flex max-h-[90vh] flex-col sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="flex flex-wrap items-center gap-2">
+              {preview.data?.customerName ?? segs.find((s) => s.index === previewIndex)?.customerName ?? "Statement preview"}
+              {preview.data && (
+                <span className="rounded border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">{preview.data.currency}</span>
+              )}
+            </DialogTitle>
+            <DialogDescription>
+              {preview.data
+                ? `This is what they'll receive — ${preview.data.from === preview.data.to ? `page ${preview.data.from}` : `pages ${preview.data.from}–${preview.data.to}`} of the run, as its own PDF.`
+                : "Slicing this customer's pages out of the run…"}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="min-h-[300px] flex-1 overflow-auto rounded-md border bg-muted/20 p-2">
+            {preview.isLoading || !preview.data ? (
+              <div className="flex h-full min-h-[300px] items-center justify-center text-muted-foreground">
+                {preview.error ? (
+                  <span className="flex items-center gap-2 text-red-700"><AlertCircle className="h-4 w-4" /> {preview.error.message}</span>
+                ) : (
+                  <Loader2 className="h-6 w-6 animate-spin" />
+                )}
+              </div>
+            ) : (
+              <DocumentViewer url={preview.data.url} />
+            )}
+          </div>
+          {preview.data && (
+            <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+              <span>Preview links expire after 10 minutes.</span>
+              <a href={preview.data.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-600 hover:underline">
+                <ExternalLink className="h-3.5 w-3.5" /> Open in new tab
+              </a>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
