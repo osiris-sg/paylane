@@ -1,7 +1,10 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { Suspense, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Tabs, TabsList, TabsTrigger } from "~/components/ui/tabs";
+import { CombinedRun } from "~/components/statements/combined-run";
 import { toast } from "sonner";
 import {
   Upload,
@@ -123,8 +126,70 @@ export default function SendStatementsBulkPage() {
       lockedBody="Start your free 14-day trial to send statements of account to your customers."
       expiredMessage="Your free trial has ended. Upgrade to send statements again."
     >
-      <BulkInner />
+      <Suspense fallback={null}>
+        <ModeSwitch />
+      </Suspense>
     </SendAccessGuard>
+  );
+}
+
+/**
+ * Two ways to send statements:
+ *  - Combined run: ONE PDF where every page is a different customer's statement
+ *    (the accounting export). Read in the background, reviewed, split + sent.
+ *  - Individual files: one PDF per customer, matched and sent right here.
+ * `?job=<id>` (from the "ready to review" notification) opens the combined
+ * flow on that job.
+ */
+function ModeSwitch() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const jobParam = searchParams.get("job");
+  const [mode, setMode] = useState<"combined" | "individual">(
+    jobParam || searchParams.get("mode") === "combined" ? "combined" : "individual",
+  );
+  const [jobId, setJobId] = useState<string | null>(jobParam);
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div>
+        <Button variant="ghost" size="sm" asChild className="mb-3">
+          <Link href="/customers">
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Customers
+          </Link>
+        </Button>
+        <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight md:text-3xl">
+          <Sparkles className="h-6 w-6 text-blue-600" />
+          Upload statements
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          Send each customer their statement of account. Pick how your statements come.
+        </p>
+      </div>
+
+      <Tabs
+        value={mode}
+        onValueChange={(v) => {
+          const m = v as "combined" | "individual";
+          setMode(m);
+          router.replace(m === "combined" ? `/customers/send-statements?mode=combined${jobId ? `&job=${jobId}` : ""}` : "/customers/send-statements");
+        }}
+      >
+        <TabsList className="h-auto p-1">
+          <TabsTrigger value="combined" className="flex-col items-start gap-0.5 px-4 py-2 text-left">
+            <span className="font-semibold">Combined statement run</span>
+            <span className="text-xs font-normal text-muted-foreground">One PDF, one customer per page</span>
+          </TabsTrigger>
+          <TabsTrigger value="individual" className="flex-col items-start gap-0.5 px-4 py-2 text-left">
+            <span className="font-semibold">Individual files</span>
+            <span className="text-xs font-normal text-muted-foreground">One PDF per customer</span>
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {mode === "combined" ? <CombinedRun jobId={jobId} onJobChange={setJobId} /> : <BulkInner />}
+    </div>
   );
 }
 
@@ -133,7 +198,7 @@ function BulkInner() {
   const [rows, setRows] = useState<Row[]>([]);
   const [dragOver, setDragOver] = useState(false);
 
-  const customers = api.customer.list.useQuery({ page: 1, limit: 100 });
+  const customers = api.customer.list.useQuery({ page: 1, limit: 500 });
   const customerOptions = useMemo<CustomerOption[]>(
     () =>
       (customers.data?.customers ?? []).map((c) => ({
@@ -293,7 +358,7 @@ function BulkInner() {
           // Match against a fresh list, not the one captured when the file was
           // dropped — dropping before the customer list finished loading used
           // to match against an empty list and report everything unmatched.
-          const freshList = await utils.customer.list.fetch({ page: 1, limit: 100 });
+          const freshList = await utils.customer.list.fetch({ page: 1, limit: 500 });
           const freshOptions: CustomerOption[] = (freshList.customers ?? []).map((c) => ({
             id: c.id, company: c.company, name: c.name, currency: c.currency,
           }));
@@ -412,23 +477,6 @@ function BulkInner() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <Button variant="ghost" size="sm" asChild className="mb-3">
-          <Link href="/customers">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Customers
-          </Link>
-        </Button>
-        <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight md:text-3xl">
-          <Sparkles className="h-6 w-6 text-blue-600" />
-          Upload statements
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          One PDF per customer. We read who each statement is for, match it to your
-          customers, and you confirm before anything is sent.
-        </p>
-      </div>
-
       {/* ── Stepper ── */}
       <ol className="grid grid-cols-3 gap-2 text-sm">
         {[

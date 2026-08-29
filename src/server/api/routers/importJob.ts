@@ -5,8 +5,9 @@ import { requireSendAccess } from "~/server/api/lib/sending-access";
 import { waitUntil } from "@vercel/functions";
 import { kickImportWorker, processImportJob } from "~/server/import/worker";
 import type { Contact } from "~/server/import/extract-contacts";
+import type { StatementsResult } from "~/server/import/extract-statements";
 
-const kindSchema = z.enum(["CUSTOMERS", "SUPPLIERS"]);
+const kindSchema = z.enum(["CUSTOMERS", "SUPPLIERS", "STATEMENTS"]);
 
 export const importJobRouter = createTRPCRouter({
   /**
@@ -27,9 +28,9 @@ export const importJobRouter = createTRPCRouter({
     )
     .mutation(async ({ ctx, input }) => {
       const user = ctx.user;
-      // Importing customers is a SEND-side feature (gated like customer.create);
-      // suppliers can be imported by anyone.
-      if (input.kind === "CUSTOMERS") await requireSendAccess(ctx.db, user.companyId);
+      // Importing customers / sending statements are SEND-side features
+      // (gated like customer.create); suppliers can be imported by anyone.
+      if (input.kind !== "SUPPLIERS") await requireSendAccess(ctx.db, user.companyId);
 
       const job = await ctx.db.importJob.create({
         data: {
@@ -68,8 +69,89 @@ export const importJobRouter = createTRPCRouter({
       }
       return {
         ...job,
-        result: (job.result as Contact[] | null) ?? null,
+        result: (job.result as Contact[] | StatementsResult | null) ?? null,
       };
+    }),
+
+  /**
+   * STATEMENTS: the user confirmed the review screen. Record per-segment
+   * decisions, flip to SENDING, and kick the worker so sending starts now.
+   */
+  startStatementSend: protectedProcedure
+    .input(
+      z.object({
+        id: z.string(),
+        decisions: z
+          .array(
+            z.object({
+              index: z.number().int().min(0),
+              action: z.enum(["send", "skip"]),
+              /** Existing customer to send to; null = create from the statement. */
+              customerId: z.string().nullable().optional(),
+            }),
+          )
+          .min(1),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const user = ctx.user;
+      await requireSendAccess(ctx.db, user.companyId);
+      const job = await ctx.db.importJob.findUnique({ where: { id: input.id } });
+      if (!job || job.companyId !== user.companyId || job.kind !== "STATEMENTS") {
+        throw new TRPCError({ code: "NOT_FOUND" });
+      }
+      if (job.status !== "REVIEW") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: `This run is ${job.status.toLowerCase()}, not awaiting review.` });
+      }
+      const result = job.result as StatementsResult | null;
+      if (!result?.segments?.length) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Nothing to send." });
+      }
+
+      // Chosen customers must belong to this company.
+      const chosen = input.decisions
+        .map((d) => d.customerId)
+        .filter((id): id is string => !!id);
+      if (chosen.length) {
+        const owned = await ctx.db.customer.count({
+          where: { id: { in: chosen }, companyId: user.companyId },
+        });
+        if (owned !== new Set(chosen).size) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "One of the chosen customers isn't yours." });
+        }
+      }
+
+      const byIndex = new Map(input.decisions.map((d) => [d.index, d]));
+      for (const seg of result.segments) {
+        const d = byIndex.get(seg.index);
+        seg.decision =
+          !d || d.action === "skip"
+            ? { action: "skip" }
+            : { action: "send", customerId: d.customerId ?? null };
+        seg.status = "pending";
+      }
+      const sendTotal = result.segments.filter((s) => s.decision?.action === "send").length;
+      if (sendTotal === 0) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Every statement is marked skip — nothing to send." });
+      }
+
+      await ctx.db.importJob.update({
+        where: { id: job.id },
+        data: {
+          status: "SENDING",
+          result: result as unknown as object,
+          sendTotal,
+          sendDone: 0,
+          lockedAt: null,
+          error: null,
+        },
+      });
+      waitUntil(
+        processImportJob(job.id, { budgetMs: 250_000, continueOnProgress: kickImportWorker }).catch(
+          (err) => console.error(`[import ${job.id}] send kick-off failed:`, err),
+        ),
+      );
+      return { sendTotal };
     }),
 
   /** Recent jobs for this company, newest first (for an "in progress" list). */

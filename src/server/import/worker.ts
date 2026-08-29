@@ -1,8 +1,19 @@
 import "server-only";
 
+import { randomUUID } from "node:crypto";
+import type { ImportKind } from "@prisma/client";
 import { db } from "~/lib/db";
-import { getObjectBuffer } from "~/lib/storage";
+import { getObjectBuffer, putObject } from "~/lib/storage";
 import { sendPushToCompany } from "~/lib/push-notifications";
+import { persistAndDispatch } from "~/server/statements/send";
+import {
+  extractStatementPages,
+  segmentStatementPages,
+  slicePdf,
+  type StatementPage,
+  type StatementSegmentRow,
+  type StatementsResult,
+} from "~/server/import/extract-statements";
 import {
   extractFromDocument,
   extractFromSpreadsheet,
@@ -51,15 +62,25 @@ const staleBefore = () => new Date(Date.now() - STALE_LEASE_MS);
  * one sees count === 1 (the SAS `queued → ongoing` claim).
  */
 async function claim(jobId: string): Promise<boolean> {
-  const { count } = await db.importJob.updateMany({
+  // Conditional UPDATE is the atomic part (two workers can't both pass the
+  // WHERE). Confirmation reads our token back rather than trusting the
+  // returned row count, which was observed reporting 0 for a row it had
+  // just updated — a false negative would strand the job; a false positive
+  // could double-send statements. The token makes both impossible.
+  const token = randomUUID();
+  await db.importJob.updateMany({
     where: {
       id: jobId,
-      status: { in: ["PENDING", "RUNNING"] },
+      status: { in: ["PENDING", "RUNNING", "SENDING"] },
       OR: [{ lockedAt: null }, { lockedAt: { lt: staleBefore() } }],
     },
-    data: { lockedAt: new Date(), status: "RUNNING" },
+    data: { lockedAt: new Date(), lockToken: token },
   });
-  return count === 1;
+  const mine = await db.importJob.findFirst({
+    where: { id: jobId, lockToken: token },
+    select: { id: true },
+  });
+  return !!mine;
 }
 
 /**
@@ -76,7 +97,13 @@ export async function processImportJob(
     continueOnProgress?: (jobId: string) => void | Promise<void>;
   } = {},
 ): Promise<WorkerOutcome> {
-  const outcome = await runImportJob(jobId, opts);
+  let outcome: WorkerOutcome;
+  try {
+    outcome = await runImportJob(jobId, opts);
+  } catch (err) {
+    console.error(`[import ${jobId}] run threw outside the chunk loop:`, err);
+    throw err;
+  }
   // Self-continue: if this run stopped for budget with work left, kick a
   // fresh run immediately rather than waiting for the next cron tick. The
   // lease was released, so the new run claims it cleanly. Fire-and-forget;
@@ -95,19 +122,31 @@ async function runImportJob(
   const budgetMs = opts.budgetMs ?? 250_000;
   const timeLeft = () => budgetMs - (Date.now() - started);
 
+  const runId = Math.random().toString(36).slice(2, 8);
   if (!opts.force && !(await claim(jobId))) {
+    console.log(`[import ${jobId}] run ${runId}: not claimable`);
     return { status: "skipped", jobId, reason: "not claimable (done, failed, or leased by another worker)" };
   }
+  console.log(`[import ${jobId}] run ${runId}: claimed`);
 
   const job = await db.importJob.findUnique({ where: { id: jobId } });
   if (!job) return { status: "skipped", jobId, reason: "not found" };
-  if (job.status === "DONE" || job.status === "FAILED") {
+  console.log(`[import ${jobId}] run ${runId}: kind=${job.kind} status=${job.status} chunks=${job.chunksDone}/${job.chunksTotal}`);
+  if (job.status === "DONE" || job.status === "FAILED" || job.status === "REVIEW") {
     return { status: "skipped", jobId, reason: `already ${job.status}` };
+  }
+  if (job.status === "PENDING") {
+    await db.importJob.update({ where: { id: jobId }, data: { status: "RUNNING" } });
+  }
+  if (job.kind === "STATEMENTS" && job.status === "SENDING") {
+    return sendStatementSegments(job, { budgetMs, timeLeft });
   }
 
   try {
     // ── Plan (first run only) ────────────────────────────────────────────
+    console.log(`[import ${jobId}] run ${runId}: fetching ${job.fileKey}`);
     const bytes = await getObjectBuffer(job.fileKey);
+    console.log(`[import ${jobId}] run ${runId}: fetched ${bytes.length} bytes`);
     const sheet = isSpreadsheet(job.fileName, job.fileType);
     const isPdf =
       job.fileType === "application/pdf" || job.fileName.toLowerCase().endsWith(".pdf");
@@ -147,8 +186,19 @@ async function runImportJob(
 
       const i = chunksDone;
       const chunkStart = Date.now();
-      let out: Contact[];
-      if (sheet) {
+      let out: Contact[] | StatementPage[];
+      if (job.kind === "STATEMENTS") {
+        // Statement run: read every page's customer. Chunks are page ranges,
+        // so pass the offset to keep page numbers document-global.
+        if (pdfChunks) {
+          const chunk = pdfChunks[i];
+          if (!chunk) throw new Error(`Chunk ${i + 1} out of range`);
+          console.log(`[import ${jobId}] statements chunk ${i + 1}/${chunksTotal} pages ${chunk.from}-${chunk.to}`);
+          out = await extractStatementPages(chunk.bytes, chunk.from - 1);
+        } else {
+          out = await extractStatementPages(bytes, 0);
+        }
+      } else if (sheet) {
         out = await extractFromSpreadsheet(Buffer.from(bytes));
       } else if (pdfChunks) {
         const chunk = pdfChunks[i];
@@ -167,7 +217,7 @@ async function runImportJob(
       measuredCount += 1;
       estimateMs = Math.round((measuredTotal / measuredCount) * 1.25);
 
-      partial[i] = out;
+      partial[i] = out as Contact[];
       chunksDone = i + 1;
       // Persist progress + refresh the lease (heartbeat) after every chunk.
       await db.importJob.update({
@@ -177,6 +227,54 @@ async function runImportJob(
     }
 
     // ── Finish + notify ──────────────────────────────────────────────────
+    if (job.kind === "STATEMENTS") {
+      const pages = (partial as unknown as StatementPage[][]).flat();
+      const segments = segmentStatementPages(pages);
+      const existing = await db.customer.findMany({
+        where: { companyId: job.companyId },
+        select: { id: true, company: true, name: true, currency: true },
+      });
+      const norm = (v: string | null | undefined) => (v ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+      const rows: StatementSegmentRow[] = segments.map((seg, index) => {
+        const target = norm(seg.customerName);
+        const pool = existing.filter((c) => c.currency === seg.currency);
+        const exact = pool.find((c) => norm(c.company) === target || norm(c.name) === target);
+        const fuzzy = exact
+          ? null
+          : pool.find((c) => {
+              const co = norm(c.company);
+              const na = norm(c.name);
+              return (
+                (co && (co.includes(target) || target.includes(co))) ||
+                (na && (na.includes(target) || target.includes(na)))
+              );
+            });
+        const hit = exact ?? fuzzy ?? null;
+        return {
+          ...seg,
+          index,
+          suggestedCustomerId: hit?.id ?? null,
+          matchConfidence: exact ? "exact" : fuzzy ? "fuzzy" : null,
+          decision: null,
+          status: "pending",
+        };
+      });
+      const result: StatementsResult = { kind: "statements", pageCount: pageCount ?? pages.length, segments: rows };
+      const review = await db.importJob.update({
+        where: { id: jobId },
+        data: {
+          status: "REVIEW",
+          result: result as unknown as object,
+          chunksDone: chunksTotal,
+          sendTotal: rows.length,
+          lockedAt: null,
+        },
+        select: { id: true, kind: true, companyId: true, createdById: true, fileName: true },
+      });
+      await notify(review, "ready", rows.length);
+      return { status: "done", jobId, contacts: rows.length };
+    }
+
     const merged = mergeContacts(partial);
     const done = await db.importJob.update({
       where: { id: jobId },
@@ -217,7 +315,7 @@ async function runImportJob(
 export async function processNextImportJob(budgetMs?: number): Promise<WorkerOutcome> {
   const next = await db.importJob.findFirst({
     where: {
-      status: { in: ["PENDING", "RUNNING"] },
+      status: { in: ["PENDING", "RUNNING", "SENDING"] },
       OR: [{ lockedAt: null }, { lockedAt: { lt: staleBefore() } }],
     },
     orderBy: { createdAt: "asc" },
@@ -228,28 +326,35 @@ export async function processNextImportJob(budgetMs?: number): Promise<WorkerOut
 }
 
 async function notify(
-  job: { id: string; kind: "CUSTOMERS" | "SUPPLIERS"; companyId: string; createdById: string; fileName: string },
-  outcome: "ready" | "failed",
+  job: { id: string; kind: ImportKind; companyId: string; createdById: string; fileName: string },
+  outcome: "ready" | "failed" | "sent",
   count: number,
   error?: string,
 ) {
-  const kindLabel = job.kind === "CUSTOMERS" ? "customers" : "suppliers";
-  const url = `/${kindLabel}/import?job=${job.id}`;
+  const isStatements = job.kind === "STATEMENTS";
+  const kindLabel = job.kind === "CUSTOMERS" ? "customers" : job.kind === "SUPPLIERS" ? "suppliers" : "statements";
+  const url = isStatements
+    ? `/customers/send-statements?job=${job.id}`
+    : `/${kindLabel}/import?job=${job.id}`;
   const message =
-    outcome === "ready"
-      ? `Your ${kindLabel} import (${job.fileName}) is ready to review — ${count} contact${count === 1 ? "" : "s"} found`
-      : `Your ${kindLabel} import (${job.fileName}) couldn't be processed: ${error ?? "extraction failed"}`;
+    outcome === "sent"
+      ? `Statement run ${job.fileName}: ${count} statement${count === 1 ? "" : "s"} sent to your customers`
+      : outcome === "ready"
+        ? isStatements
+          ? `Statement run ${job.fileName} is ready to review — ${count} customer statement${count === 1 ? "" : "s"} found`
+          : `Your ${kindLabel} import (${job.fileName}) is ready to review — ${count} contact${count === 1 ? "" : "s"} found`
+        : `Your ${kindLabel} import (${job.fileName}) couldn't be processed: ${error ?? "extraction failed"}`;
 
   await db.notification.create({
     data: {
       message,
-      type: outcome === "ready" ? "IMPORT_READY" : "IMPORT_FAILED",
+      type: outcome === "failed" ? "IMPORT_FAILED" : "IMPORT_READY",
       userId: job.createdById,
       importJobId: job.id,
     },
   });
   void sendPushToCompany(job.companyId, {
-    title: outcome === "ready" ? "Import ready to review" : "Import failed",
+    title: outcome === "sent" ? "Statements sent" : outcome === "ready" ? (isStatements ? "Statement run ready to review" : "Import ready to review") : "Import failed",
     body: message,
     url,
     tag: `import-${job.id}`,
@@ -287,4 +392,134 @@ export function kickImportWorker(jobId: string): void {
       console.warn(`[import ${jobId}] chain request failed (cron will resume):`, err);
     }
   });
+}
+
+
+// ─── STATEMENTS: send phase ──────────────────────────────────────────────────
+
+/**
+ * After the user confirms on the review screen (status → SENDING), split
+ * each confirmed segment out of the source PDF, upload it, resolve its
+ * customer (existing, or create — never duplicating on name + currency), and
+ * send it through the same path as a manual statement send. Resumable:
+ * every segment's outcome is written to `result` as it completes.
+ */
+async function sendStatementSegments(
+  job: { id: string; companyId: string; fileKey: string; result: unknown; sendDone: number; sendTotal: number },
+  budget: { budgetMs: number; timeLeft: () => number },
+): Promise<WorkerOutcome> {
+  const jobId = job.id;
+  const result = job.result as StatementsResult | null;
+  if (!result || result.kind !== "statements") {
+    await db.importJob.update({
+      where: { id: jobId },
+      data: { status: "FAILED", error: "No review result to send", lockedAt: null, finishedAt: new Date() },
+    });
+    return { status: "failed", jobId, error: "No review result to send" };
+  }
+
+  const source = await getObjectBuffer(job.fileKey);
+  const segments = result.segments;
+  let estimateMs = 8_000;
+  let measured = 0;
+  let measuredCount = 0;
+
+  const persist = async (extra: Partial<{ status: "SENDING" | "DONE" }> = {}) => {
+    const sendDone = segments.filter((s) => s.status === "sent" || s.status === "skipped" || s.status === "error").length;
+    await db.importJob.update({
+      where: { id: jobId },
+      data: { result: result as unknown as object, sendDone, lockedAt: new Date(), ...extra },
+    });
+    return sendDone;
+  };
+
+  for (const seg of segments) {
+    if (seg.status !== "pending") continue;
+    if (!seg.decision || seg.decision.action === "skip") {
+      seg.status = "skipped";
+      continue;
+    }
+    if (budget.timeLeft() < estimateMs) {
+      await persist();
+      await db.importJob.update({ where: { id: jobId }, data: { lockedAt: null } });
+      const done = segments.filter((s) => s.status !== "pending").length;
+      return { status: "progress", jobId, chunksDone: done, chunksTotal: segments.length };
+    }
+
+    const t0 = Date.now();
+    try {
+      // 1. Resolve the customer.
+      let customerId = seg.decision.customerId;
+      if (!customerId) {
+        const dup = await db.customer.findFirst({
+          where: {
+            companyId: job.companyId,
+            currency: seg.currency,
+            OR: [
+              { company: { equals: seg.customerName, mode: "insensitive" } },
+              { company: null, name: { equals: seg.customerName, mode: "insensitive" } },
+            ],
+          },
+          select: { id: true },
+        });
+        if (dup) {
+          customerId = dup.id;
+        } else {
+          if (!seg.phone && !seg.email) {
+            throw new Error("No phone or email on the statement — pick or create the customer manually");
+          }
+          const created = await db.customer.create({
+            data: {
+              company: seg.customerName,
+              name: seg.customerName,
+              phone: seg.phone,
+              email: seg.email,
+              address: seg.address,
+              currency: seg.currency,
+              companyId: job.companyId,
+            },
+            select: { id: true },
+          });
+          customerId = created.id;
+        }
+      }
+
+      // 2. Split this customer's pages out and store them as their statement.
+      const bytes = await slicePdf(source, seg.from, seg.to);
+      const key = `statements/${job.companyId}/${randomUUID()}.pdf`;
+      await putObject(key, Buffer.from(bytes), "application/pdf");
+      const safeName = seg.customerName.replace(/[^a-zA-Z0-9._() -]+/g, "-").trim() || "customer";
+
+      // 3. Send exactly like a manual statement send (upsert + notify).
+      const stmt = await persistAndDispatch({
+        ctx: { db },
+        user: { companyId: job.companyId },
+        customerId,
+        fileDataUrl: key,
+        fileName: `SOA ${safeName}.pdf`,
+        fileType: "application/pdf",
+      });
+      seg.status = "sent";
+      seg.customerId = customerId;
+      seg.statementId = stmt.id;
+    } catch (err) {
+      seg.status = "error";
+      seg.error = err instanceof Error ? err.message : String(err);
+      console.error(`[import ${jobId}] segment ${seg.index + 1} (${seg.customerName}) failed:`, seg.error);
+    }
+    measured += Date.now() - t0;
+    measuredCount += 1;
+    estimateMs = Math.round((measured / measuredCount) * 1.5);
+    await persist();
+  }
+
+  const sentCount = segments.filter((s) => s.status === "sent").length;
+  await persist({ status: "DONE" });
+  const done = await db.importJob.update({
+    where: { id: jobId },
+    data: { finishedAt: new Date(), lockedAt: null },
+    select: { id: true, kind: true, companyId: true, createdById: true, fileName: true },
+  });
+  await notify(done, "sent", sentCount);
+  return { status: "done", jobId, contacts: sentCount };
 }

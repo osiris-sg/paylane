@@ -219,7 +219,7 @@ export function ImportContacts({ kind }: Props) {
     if (!j || j.status !== "DONE" || !jobKindMatches) return;
     if (loadedJobRef.current === j.id) return;
     loadedJobRef.current = j.id;
-    const next = (j.result ?? []).map((c) => ({
+    const next = (Array.isArray(j.result) ? j.result : []).map((c) => ({
       id: newId(),
       company: c.company || "",
       name: c.name || "",
@@ -671,13 +671,13 @@ function FieldInput({
 
 type JobView = {
   id: string;
-  status: "PENDING" | "RUNNING" | "DONE" | "FAILED";
+  status: "PENDING" | "RUNNING" | "REVIEW" | "SENDING" | "DONE" | "FAILED";
   fileName: string;
   pageCount: number | null;
   chunksTotal: number;
   chunksDone: number;
   error: string | null;
-  result: unknown[] | null;
+  result: unknown;
 };
 
 function ImportJobCard({ job, onDismiss }: { job: JobView; onDismiss: () => void }) {

@@ -447,10 +447,16 @@ model ImportJob {
   result      Json? // merged Contact[] once DONE
   error       String? // set when FAILED
   attempts    Int       @default(0) // failed chunk attempts; FAILED after MAX
+  // (STATEMENTS) send-phase progress: segments sent / segments to send.
+  sendDone    Int       @default(0)
+  sendTotal   Int       @default(0)
   // Worker lease. A worker sets lockedAt when it claims the job and refreshes
   // it per chunk (heartbeat); a lease older than the stale threshold is
   // reclaimable, so a worker that died mid-job doesn't strand it forever.
   lockedAt    DateTime?
+  // Random token written with lockedAt; a claim is confirmed by reading it
+  // back, never by trusting updateMany's row count.
+  lockToken   String?
 
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
@@ -466,11 +472,14 @@ model ImportJob {
 enum ImportKind {
   CUSTOMERS
   SUPPLIERS
+  STATEMENTS // combined SOA run: one statement per page, split + sent per customer
 }
 
 enum ImportJobStatus {
   PENDING // queued, worker not started
   RUNNING // chunks in progress
+  REVIEW // (STATEMENTS) extraction finished; awaiting the user's confirm-and-send
+  SENDING // (STATEMENTS) splitting + sending per customer; sendDone / sendTotal
   DONE // result ready for review
   FAILED // see `error`
 }
