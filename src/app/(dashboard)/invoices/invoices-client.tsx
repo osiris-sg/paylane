@@ -61,27 +61,27 @@ function InvoicesContent() {
           <div className="flex flex-wrap items-center gap-2">
             {sendDisabled ? (
               <Button variant="outline" disabled>
-                <Upload className="mr-2 h-4 w-4" />
-                Upload Invoice
+                <Plus className="mr-2 h-4 w-4" />
+                Create Invoice
               </Button>
             ) : (
               <Button variant="outline" asChild>
-                <Link href="/invoices/upload">
-                  <Upload className="mr-2 h-4 w-4" />
-                  Upload Invoice
+                <Link href="/invoices/new">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Create Invoice
                 </Link>
               </Button>
             )}
             {sendDisabled ? (
               <Button disabled>
-                <Plus className="mr-2 h-4 w-4" />
-                Create Invoice
+                <Upload className="mr-2 h-4 w-4" />
+                Upload Invoice
               </Button>
             ) : (
               <Button asChild>
-                <Link href="/invoices/new">
-                  <Plus className="mr-2 h-4 w-4" />
-                  Create Invoice
+                <Link href="/invoices/upload">
+                  <Upload className="mr-2 h-4 w-4" />
+                  Upload Invoice
                 </Link>
               </Button>
             )}
