@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { waitUntil } from "@vercel/functions";
 import {
   kickImportWorker,
   processImportJob,
@@ -26,10 +27,13 @@ export async function GET(req: NextRequest) {
   // ?job=<id> targets a specific job — that's how a run continues itself
   // (see kickImportWorker). Without it, take the oldest claimable job.
   const jobId = req.nextUrl.searchParams.get("job");
+  // Chain kicks go through waitUntil so the request is actually dispatched
+  // before Vercel freezes this invocation after the response.
+  const chain = (id: string) => waitUntil(kickImportWorker(id));
   const outcome = jobId
-    ? await processImportJob(jobId, { budgetMs: 240_000, continueOnProgress: kickImportWorker })
+    ? await processImportJob(jobId, { budgetMs: 240_000, continueOnProgress: chain })
     : await processNextImportJob(240_000);
   // A cron tick that finished one job with work left should also chain it.
-  if (!jobId && outcome.status === "progress") kickImportWorker(outcome.jobId);
+  if (!jobId && outcome.status === "progress") chain(outcome.jobId);
   return NextResponse.json(outcome);
 }

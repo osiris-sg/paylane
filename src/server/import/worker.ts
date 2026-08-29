@@ -362,12 +362,14 @@ async function notify(
 }
 
 /**
- * Kick a fresh worker invocation for a job by calling our own cron route.
- * Each HTTP call is a new serverless invocation with a full time budget, so
- * chaining these lets a job of any size finish without waiting on cron ticks.
+ * Start (or continue) a worker run for a job by calling our own cron route.
+ * Each HTTP call is a new serverless invocation with the route's full
+ * maxDuration budget — which is why EVERY run goes through here, including
+ * the very first one after upload: the tRPC mutation that created the job
+ * has a much shorter default timeout and must not run chunks itself.
  * Best-effort: if it fails, the every-minute cron resumes the job anyway.
  */
-export function kickImportWorker(jobId: string): void {
+export function kickImportWorker(jobId: string): Promise<void> {
   // Target THIS deployment, not the canonical public domain: on Vercel,
   // VERCEL_URL is the current deployment (so previews chain to themselves,
   // never to production); locally there's no VERCEL_URL so we hit localhost.
@@ -377,21 +379,23 @@ export function kickImportWorker(jobId: string): void {
     : `http://localhost:${process.env.PORT ?? 3000}`;
   const secret = process.env.CRON_SECRET;
   const url = `${base}/api/cron/process-imports?job=${encodeURIComponent(jobId)}`;
-  console.log(`[import ${jobId}] chaining next run → ${url}`);
-  fetch(url, {
+  console.log(`[import ${jobId}] kicking worker run → ${url}`);
+  return fetch(url, {
     method: "GET",
     headers: secret ? { authorization: `Bearer ${secret}` } : {},
     // Don't hold this invocation open on the whole next run — we only need
     // the request to be *sent*. Abort our side after a short grace period.
     signal: AbortSignal.timeout(5_000),
-  }).catch((err: unknown) => {
-    // A timeout abort is EXPECTED (the next run is long-lived); anything
-    // else means the chain didn't fire and the cron will resume the job.
-    const name = err instanceof Error ? err.name : "";
-    if (name !== "TimeoutError" && name !== "AbortError") {
-      console.warn(`[import ${jobId}] chain request failed (cron will resume):`, err);
-    }
-  });
+  })
+    .then(() => undefined)
+    .catch((err: unknown) => {
+      // A timeout abort is EXPECTED (the next run is long-lived); anything
+      // else means the kick didn't fire and the cron will resume the job.
+      const name = err instanceof Error ? err.name : "";
+      if (name !== "TimeoutError" && name !== "AbortError") {
+        console.warn(`[import ${jobId}] worker kick failed (cron will resume):`, err);
+      }
+    });
 }
 
 

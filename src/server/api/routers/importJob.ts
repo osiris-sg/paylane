@@ -3,7 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
 import { requireSendAccess } from "~/server/api/lib/sending-access";
 import { waitUntil } from "@vercel/functions";
-import { kickImportWorker, processImportJob } from "~/server/import/worker";
+import { kickImportWorker } from "~/server/import/worker";
 import type { Contact } from "~/server/import/extract-contacts";
 import type { StatementsResult } from "~/server/import/extract-statements";
 
@@ -44,18 +44,12 @@ export const importJobRouter = createTRPCRouter({
         select: { id: true },
       });
 
-      // Kick the worker immediately, without holding up this response.
-      // waitUntil keeps the serverless invocation alive until the promise
-      // settles (Vercel); locally it just runs in the background like SAS's
-      // in-process fallback. Errors are already recorded on the job row.
-      waitUntil(
-        processImportJob(job.id, {
-          budgetMs: 250_000,
-          continueOnProgress: kickImportWorker,
-        }).catch((err) =>
-          console.error(`[import ${job.id}] kick-off failed:`, err),
-        ),
-      );
+      // Kick the worker immediately, without holding up this response. The
+      // run itself happens in the worker route (maxDuration 300) — NOT in
+      // this tRPC invocation, whose default timeout would kill a chunk
+      // mid-way. waitUntil keeps this invocation alive just long enough for
+      // the kick request to be dispatched.
+      waitUntil(kickImportWorker(job.id));
       return { id: job.id };
     }),
 
@@ -146,11 +140,8 @@ export const importJobRouter = createTRPCRouter({
           error: null,
         },
       });
-      waitUntil(
-        processImportJob(job.id, { budgetMs: 250_000, continueOnProgress: kickImportWorker }).catch(
-          (err) => console.error(`[import ${job.id}] send kick-off failed:`, err),
-        ),
-      );
+      // Same as create: run in the worker route, not here.
+      waitUntil(kickImportWorker(job.id));
       return { sendTotal };
     }),
 
