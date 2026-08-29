@@ -94,6 +94,119 @@ export const importJobRouter = createTRPCRouter({
     }),
 
   /**
+   * STATEMENTS: create customers from review rows WITHOUT sending anything.
+   * Each row becomes (or reuses, on name+currency) a customer with the phone /
+   * email / address read off its page — or the contact typed on the review
+   * screen. The run's result is updated so those rows now show as matched.
+   */
+  createCustomersFromRun: protectedProcedure
+    .input(
+      z.object({
+        id: z.string(),
+        items: z
+          .array(
+            z.object({
+              index: z.number().int().min(0),
+              email: z.string().trim().email().optional(),
+              phone: z.string().trim().min(3).optional(),
+            }),
+          )
+          .min(1),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const user = ctx.user;
+      await requireSendAccess(ctx.db, user.companyId);
+      const job = await ctx.db.importJob.findUnique({ where: { id: input.id } });
+      if (!job || job.companyId !== user.companyId || job.kind !== "STATEMENTS") {
+        throw new TRPCError({ code: "NOT_FOUND" });
+      }
+      const result = job.result as StatementsResult | null;
+      if (!result?.segments?.length) throw new TRPCError({ code: "BAD_REQUEST", message: "Nothing to create." });
+
+      const created: Array<{ index: number; customerId: string }> = [];
+      const reused: Array<{ index: number; customerId: string }> = [];
+      const skipped: Array<{ index: number; reason: string }> = [];
+
+      for (const item of input.items) {
+        const seg = result.segments.find((sg) => sg.index === item.index);
+        if (!seg) { skipped.push({ index: item.index, reason: "row not found" }); continue; }
+        // Email is mandatory for statement recipients. Phone is only ever a
+        // WhatsApp number the user typed — the page's TEL line is not used.
+        const email = item.email ?? seg.email ?? null;
+        const phone = item.phone ?? null;
+        if (!email) { skipped.push({ index: seg.index, reason: "no email" }); continue; }
+
+        const dup = await ctx.db.customer.findFirst({
+          where: {
+            companyId: user.companyId,
+            currency: seg.currency,
+            OR: [
+              { company: { equals: seg.customerName, mode: "insensitive" } },
+              { company: null, name: { equals: seg.customerName, mode: "insensitive" } },
+            ],
+          },
+          select: { id: true },
+        });
+        let customerId: string;
+        if (dup) {
+          customerId = dup.id;
+          reused.push({ index: seg.index, customerId });
+        } else {
+          const c = await ctx.db.customer.create({
+            data: {
+              company: seg.customerName,
+              name: seg.customerName,
+              email,
+              phone,
+              address: seg.address,
+              currency: seg.currency,
+              companyId: user.companyId,
+            },
+            select: { id: true },
+          });
+          customerId = c.id;
+          created.push({ index: seg.index, customerId });
+        }
+        seg.email = email;
+        seg.phone = phone;
+        seg.suggestedCustomerId = customerId;
+        seg.matchConfidence = "exact";
+      }
+
+      await ctx.db.importJob.update({ where: { id: job.id }, data: { result: result as unknown as object } });
+      return { created, reused, skipped };
+    }),
+
+  /**
+   * STATEMENTS: push the phone / email / address read off a row's page onto
+   * the customer that row is matched to (statement data is authoritative).
+   */
+  updateCustomerFromRun: protectedProcedure
+    .input(z.object({ id: z.string(), index: z.number().int().min(0), customerId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const user = ctx.user;
+      await requireSendAccess(ctx.db, user.companyId);
+      const job = await ctx.db.importJob.findUnique({ where: { id: input.id } });
+      if (!job || job.companyId !== user.companyId || job.kind !== "STATEMENTS") {
+        throw new TRPCError({ code: "NOT_FOUND" });
+      }
+      const seg = (job.result as StatementsResult | null)?.segments?.find((sg) => sg.index === input.index);
+      if (!seg) throw new TRPCError({ code: "NOT_FOUND", message: "Row not found" });
+      const owned = await ctx.db.customer.findFirst({ where: { id: input.customerId, companyId: user.companyId }, select: { id: true } });
+      if (!owned) throw new TRPCError({ code: "FORBIDDEN" });
+
+      const data: { email?: string; address?: string } = {};
+      if (seg.email) data.email = seg.email;
+      if (seg.address) data.address = seg.address;
+      if (Object.keys(data).length === 0) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "This page has no contact details to save." });
+      }
+      await ctx.db.customer.update({ where: { id: input.customerId }, data });
+      return { updated: Object.keys(data) };
+    }),
+
+  /**
    * STATEMENTS: the user confirmed the review screen. Record per-segment
    * decisions, flip to SENDING, and kick the worker so sending starts now.
    */
@@ -152,10 +265,17 @@ export const importJobRouter = createTRPCRouter({
           !d || d.action === "skip"
             ? { action: "skip" }
             : { action: "send", customerId: d.customerId ?? null };
-        // Contact typed by the user overrides what was read off the page.
+        // Contact typed by the user overrides what was read off the page;
+        // the page's TEL is never used as a phone.
         if (d?.action === "send" && !d.customerId) {
           if (d.email) seg.email = d.email;
-          if (d.phone) seg.phone = d.phone;
+          seg.phone = d.phone ?? null;
+          if (!seg.email) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: `"${seg.customerName}" (page ${seg.from}) has no email — add one, pick an existing customer, or skip it.`,
+            });
+          }
         }
         seg.status = "pending";
       }

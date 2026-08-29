@@ -280,8 +280,8 @@ function BulkInner() {
   const submitCreate = async () => {
     if (!createFor) return;
     if (!createForm.company.trim()) { toast.error("Company name is required"); return; }
-    if (!createForm.email.trim() && !createForm.phone.trim()) {
-      toast.error("Add an email or phone so the customer can be reached");
+    if (!createForm.email.trim()) {
+      toast.error("An email is required for statement recipients");
       return;
     }
     try {
@@ -647,8 +647,8 @@ function BulkInner() {
           <DialogHeader>
             <DialogTitle>Create customer</DialogTitle>
             <DialogDescription>
-              This statement is for a customer you don&apos;t have yet. Add an email or
-              phone so they can be reached, and we&apos;ll assign the statement to them.
+              This statement is for a customer you don&apos;t have yet. Statements are delivered
+              by email, so an email is required; a WhatsApp number is optional.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-3 py-2">
@@ -668,19 +668,19 @@ function BulkInner() {
               </Select>
             </div>
             <div className="grid gap-1.5">
-              <Label htmlFor="bulk-cust-email">Email</Label>
+              <Label htmlFor="bulk-cust-email">Email <span className="text-red-600">*</span></Label>
               <Input id="bulk-cust-email" type="email" value={createForm.email} onChange={(e) => setCreateForm({ ...createForm, email: e.target.value })} placeholder="accounts@acme.com" />
             </div>
             <div className="grid gap-1.5">
-              <Label htmlFor="bulk-cust-phone">Phone</Label>
-              <Input id="bulk-cust-phone" value={createForm.phone} onChange={(e) => setCreateForm({ ...createForm, phone: e.target.value })} placeholder="+65 1234 5678" />
+              <Label htmlFor="bulk-cust-phone">WhatsApp number <span className="text-muted-foreground">(optional)</span></Label>
+              <Input id="bulk-cust-phone" value={createForm.phone} onChange={(e) => setCreateForm({ ...createForm, phone: e.target.value })} placeholder="+65 9123 4567" />
             </div>
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setCreateFor(null)}>Cancel</Button>
             <Button
               onClick={submitCreate}
-              disabled={createCustomer.isPending || !createForm.company.trim() || (!createForm.email.trim() && !createForm.phone.trim())}
+              disabled={createCustomer.isPending || !createForm.company.trim() || !createForm.email.trim()}
             >
               {createCustomer.isPending ? "Creating…" : "Create & assign"}
             </Button>

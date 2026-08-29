@@ -14,6 +14,7 @@ export interface StatementPage {
   statementPage: number;
   currency: string;
   accountCode: string | null;
+  /** Never read off the page — only a WhatsApp number the user types on review. */
   phone: string | null;
   email: string | null;
   address: string | null;
@@ -76,8 +77,7 @@ For EVERY page, in order, return ONLY a JSON object (no markdown, no commentary)
       "statementPage": 1,
       "currency": "3-letter code from the CURRENCY field, e.g. SGD",
       "accountCode": "string or null - the ACCN CODE / account number",
-      "phone": "string or null - the customer's telephone (TEL), digits as printed",
-      "email": "string or null",
+      "email": "string or null - the customer's email address if printed anywhere on the page",
       "address": "string or null - the customer's address lines joined with ', '"
     }
   ]
@@ -105,7 +105,7 @@ Rules:
       typeof p.statementPage === "number" && p.statementPage > 0 ? p.statementPage : 1,
     currency: normCur(p.currency),
     accountCode: str(p.accountCode),
-    phone: str(p.phone),
+    phone: null,
     email: str(p.email),
     address: str(p.address),
   }));

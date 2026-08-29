@@ -469,8 +469,8 @@ async function sendStatementSegments(
         if (dup) {
           customerId = dup.id;
         } else {
-          if (!seg.phone && !seg.email) {
-            throw new Error("No phone or email on the statement — pick or create the customer manually");
+          if (!seg.email) {
+            throw new Error("No email for this customer — add one on the review screen");
           }
           const created = await db.customer.create({
             data: {
