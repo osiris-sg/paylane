@@ -126,7 +126,7 @@ function NewInvoicePageInner() {
       invoiceNumber: invoiceNumber.trim(),
       invoicedDate: new Date(invoicedDate),
       paymentTerms,
-      currency: "SGD",
+      currency: selectedCustomer?.currency ?? "SGD",
       customerId: customerId || undefined,
       taxRate: taxNum,
       totalAmount: totalPreview,
@@ -251,7 +251,10 @@ function NewInvoicePageInner() {
                                 }}
                               >
                                 <div className="min-w-0 flex-1">
-                                  <p className="truncate">{primary}</p>
+                                  <p className="truncate">
+                                    {primary}
+                                    <span className="ml-1.5 text-xs text-muted-foreground">· {c.currency}</span>
+                                  </p>
                                   {secondary && (
                                     <p className="truncate text-xs text-muted-foreground">{secondary}</p>
                                   )}

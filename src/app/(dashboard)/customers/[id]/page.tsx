@@ -82,6 +82,9 @@ export default function CustomerDetailPage() {
           <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight md:text-3xl">
             <Building2 className="h-6 w-6 text-blue-600" />
             {c.company || c.name}
+            <span className="rounded-full border px-2 py-0.5 text-xs font-medium text-muted-foreground">
+              {c.currency}
+            </span>
           </h1>
           {c.company && c.name && c.name !== c.company && (
             <p className="text-sm text-muted-foreground">{c.name}</p>

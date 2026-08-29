@@ -1,9 +1,52 @@
 import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { requireSendAccess } from "~/server/api/lib/sending-access";
 import { aggregateByBucket } from "~/server/api/lib/time-series";
 import { syncCustomerReceivers } from "~/server/api/lib/customer-routing";
 import type { PrismaClient } from "@prisma/client";
+
+/** ISO 4217 code, normalised. Defaults to SGD when omitted. */
+const currencySchema = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .regex(/^[A-Z]{3}$/, "Currency must be a 3-letter code")
+  .default("SGD");
+
+/**
+ * Customer identity is (owner company, business name, currency). The same
+ * business billed in two currencies is two records; the same name in the
+ * same currency is a duplicate. Matched case-insensitively on `company`
+ * (falling back to `name` for legacy rows that only set `name`).
+ */
+async function findDuplicateCustomer(
+  db: PrismaClient,
+  companyId: string,
+  business: string,
+  currency: string,
+  excludeId?: string,
+) {
+  return db.customer.findFirst({
+    where: {
+      companyId,
+      currency,
+      ...(excludeId ? { id: { not: excludeId } } : {}),
+      OR: [
+        { company: { equals: business, mode: "insensitive" } },
+        { company: null, name: { equals: business, mode: "insensitive" } },
+      ],
+    },
+    select: { id: true, company: true, name: true },
+  });
+}
+
+function duplicateError(business: string, currency: string) {
+  return new TRPCError({
+    code: "CONFLICT",
+    message: `"${business}" already exists as a ${currency} customer. Pick a different currency or edit the existing one.`,
+  });
+}
 
 export const customerRouter = createTRPCRouter({
   list: protectedProcedure
@@ -149,6 +192,7 @@ export const customerRouter = createTRPCRouter({
           email: z.string().email().optional(),
           phone: z.string().optional(),
           address: z.string().optional(),
+          currency: currencySchema,
         })
         // At least one contact channel is required: an off-platform customer
         // can only be reached by email or by WhatsApp (phone).
@@ -161,12 +205,18 @@ export const customerRouter = createTRPCRouter({
       const user = ctx.user;
       await requireSendAccess(ctx.db, user.companyId);
 
+      const business = input.company.trim();
+      if (await findDuplicateCustomer(ctx.db as unknown as PrismaClient, user.companyId, business, input.currency)) {
+        throw duplicateError(business, input.currency);
+      }
+
       // The DB still requires `name` (legacy column). Fall back to company name when
       // the user didn't provide a contact name.
       const customer = await ctx.db.customer.create({
         data: {
           ...input,
-          name: input.name?.trim() || input.company,
+          company: business,
+          name: input.name?.trim() || business,
           companyId: user.companyId,
         },
       });
@@ -183,6 +233,7 @@ export const customerRouter = createTRPCRouter({
         phone: z.string().optional(),
         address: z.string().optional(),
         company: z.string().optional(),
+        currency: currencySchema.optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -190,6 +241,19 @@ export const customerRouter = createTRPCRouter({
       await requireSendAccess(ctx.db, user.companyId);
 
       const { id, ...data } = input;
+
+      // Renaming or re-currencying must not collide with another customer.
+      if (data.company !== undefined || data.currency !== undefined) {
+        const current = await ctx.db.customer.findUniqueOrThrow({
+          where: { id, companyId: user.companyId },
+          select: { company: true, name: true, currency: true },
+        });
+        const business = (data.company ?? current.company ?? current.name).trim();
+        const currency = data.currency ?? current.currency;
+        if (await findDuplicateCustomer(ctx.db as unknown as PrismaClient, user.companyId, business, currency, id)) {
+          throw duplicateError(business, currency);
+        }
+      }
 
       // If the email is being changed, find the new linked company (if any)
       // and rewrite linkedCompanyId so future sends + historical rows match.
@@ -263,6 +327,7 @@ export const customerRouter = createTRPCRouter({
                 email: z.string().optional(),
                 phone: z.string().optional(),
                 address: z.string().optional(),
+                currency: currencySchema,
               })
               // Same reachability rule as single create — every imported
               // customer needs an email or phone.
@@ -279,18 +344,36 @@ export const customerRouter = createTRPCRouter({
       const user = ctx.user;
       await requireSendAccess(ctx.db, user.companyId);
 
+      // Skip rows that already exist as (name, currency) for this company —
+      // and de-dupe within the batch itself — so a re-import never doubles up.
+      const existing = await ctx.db.customer.findMany({
+        where: { companyId: user.companyId },
+        select: { company: true, name: true, currency: true },
+      });
+      const key = (business: string, currency: string) =>
+        `${business.trim().toLowerCase()}|${currency}`;
+      const seen = new Set(existing.map((c) => key(c.company ?? c.name, c.currency)));
+
+      const fresh = input.customers.filter((c) => {
+        const k = key(c.company, c.currency);
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      });
+
       const result = await ctx.db.customer.createMany({
-        data: input.customers.map((c) => ({
-          company: c.company,
-          name: c.name?.trim() || c.company,
+        data: fresh.map((c) => ({
+          company: c.company.trim(),
+          name: c.name?.trim() || c.company.trim(),
           email: c.email?.trim() || null,
           phone: c.phone || null,
           address: c.address || null,
+          currency: c.currency,
           companyId: user.companyId,
         })),
         skipDuplicates: true,
       });
 
-      return { count: result.count };
+      return { count: result.count, skipped: input.customers.length - fresh.length };
     }),
 });

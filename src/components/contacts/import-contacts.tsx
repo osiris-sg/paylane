@@ -32,6 +32,7 @@ interface DraftContact {
   email: string;
   phone: string;
   address: string;
+  currency: string;
 }
 
 const newId = () => Math.random().toString(36).slice(2, 11);
@@ -119,9 +120,10 @@ export function ImportContacts({ kind }: Props) {
     }
   }, [drafts, hydrated, kind]);
 
-  const handleImported = (count: number, importedIds: Set<string>) => {
+  const handleImported = (count: number, importedIds: Set<string>, skipped = 0) => {
     toast.success(
-      `Imported ${count} ${kind === "customers" ? "customer" : "supplier"}${count === 1 ? "" : "s"}`,
+      `Imported ${count} ${kind === "customers" ? "customer" : "supplier"}${count === 1 ? "" : "s"}` +
+        (skipped > 0 ? ` · ${skipped} already existed (same name + currency)` : ""),
     );
     setDrafts((prev) => prev.filter((d) => !importedIds.has(d.id)));
     setSelectedIds(new Set());
@@ -195,6 +197,7 @@ export function ImportContacts({ kind }: Props) {
         email: c.email || "",
         phone: c.phone || "",
         address: c.address || "",
+      currency: (c.currency || "SGD").toUpperCase(),
       }));
       if (next.length === 0) {
         toast.error("No contacts found in this file");
@@ -223,6 +226,7 @@ export function ImportContacts({ kind }: Props) {
       email: c.email || "",
       phone: c.phone || "",
       address: c.address || "",
+      currency: (c.currency || "SGD").toUpperCase(),
     }));
     setFilename(j.fileName);
     if (next.length === 0) {
@@ -251,11 +255,15 @@ export function ImportContacts({ kind }: Props) {
   };
 
   const normaliseCompany = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
+  // A customer is (company, currency): the same business in two currencies
+  // is two rows, but the same business in the same currency is a duplicate.
+  const draftKey = (d: DraftContact): string =>
+    `${normaliseCompany(d.company)}|${(d.currency || "SGD").trim().toUpperCase()}`;
 
   const duplicateKeys = (() => {
     const counts = new Map<string, number>();
     for (const d of drafts) {
-      const key = normaliseCompany(d.company);
+      const key = draftKey(d);
       if (!key) continue;
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
@@ -263,7 +271,7 @@ export function ImportContacts({ kind }: Props) {
   })();
 
   const isDuplicate = (d: DraftContact) => {
-    const key = normaliseCompany(d.company);
+    const key = draftKey(d);
     return key !== "" && duplicateKeys.has(key);
   };
 
@@ -281,7 +289,7 @@ export function ImportContacts({ kind }: Props) {
     }
 
     // Block if any targeted row collides with another (selected or not)
-    const blockingDup = targets.find((d) => duplicateKeys.has(normaliseCompany(d.company)));
+    const blockingDup = targets.find((d) => duplicateKeys.has(draftKey(d)));
     if (blockingDup) {
       toast.error("Resolve duplicate companies before importing");
       return;
@@ -305,13 +313,14 @@ export function ImportContacts({ kind }: Props) {
       email: d.email.trim() || undefined,
       phone: d.phone.trim() || undefined,
       address: d.address.trim() || undefined,
+      currency: d.currency.trim().toUpperCase() || "SGD",
     }));
     const importedIds = new Set(targets.map((d) => d.id));
 
     if (kind === "customers") {
       customerBulk.mutate(
         { customers: payload },
-        { onSuccess: ({ count }) => handleImported(count, importedIds) },
+        { onSuccess: ({ count, skipped }) => handleImported(count, importedIds, skipped) },
       );
     } else {
       supplierBulk.mutate(
@@ -326,7 +335,7 @@ export function ImportContacts({ kind }: Props) {
     REQUIRED_FIELDS.filter((f) => !d[f].trim()).length;
 
   const importableIds = drafts
-    .filter((d) => d.company.trim() && !duplicateKeys.has(normaliseCompany(d.company)))
+    .filter((d) => d.company.trim() && !duplicateKeys.has(draftKey(d)))
     .map((d) => d.id);
 
   const allImportableSelected =
@@ -471,6 +480,7 @@ export function ImportContacts({ kind }: Props) {
                       email: "",
                       phone: "",
                       address: "",
+                      currency: "SGD",
                     },
                   ])
                 }
@@ -521,6 +531,12 @@ export function ImportContacts({ kind }: Props) {
                         value={d.company}
                         onChange={(v) => updateDraft(d.id, { company: v })}
                         invalid={companyMissing}
+                      />
+                      <FieldInput
+                        label="Currency"
+                        value={d.currency}
+                        onChange={(v) => updateDraft(d.id, { currency: v.toUpperCase() })}
+                        invalid={!/^[A-Z]{3}$/.test(d.currency.trim().toUpperCase())}
                       />
                       <FieldInput
                         label="Contact Name"

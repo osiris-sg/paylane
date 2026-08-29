@@ -66,6 +66,12 @@ model Customer {
   phone           String?
   address         String?
   company         String? // Display name of the customer's company
+  // Billing currency. Identity is (owner, name, currency): the same business
+  // billed in two currencies is two customer records. Enforced
+  // case-insensitively in the customer router (create / update / bulkCreate)
+  // rather than by a DB unique index, since `company` is nullable and legacy
+  // rows vary in casing.
+  currency        String   @default("SGD")
   companyId       String
   owner           Company  @relation(fields: [companyId], references: [id])
   linkedCompanyId String?

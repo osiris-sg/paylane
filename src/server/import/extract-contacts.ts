@@ -30,9 +30,18 @@ export interface Contact {
   email?: string;
   phone?: string;
   address?: string;
+  /** ISO 4217 code the customer is billed in; callers default to SGD. */
+  currency?: string;
 }
 
-type Field = "company" | "name" | "email" | "phone" | "address";
+type Field = "company" | "name" | "email" | "phone" | "address" | "currency";
+
+/** Keep only a clean 3-letter code; anything else → undefined (→ SGD default). */
+export function normaliseContactCurrency(raw: unknown): string | undefined {
+  if (typeof raw !== "string") return undefined;
+  const v = raw.trim().toUpperCase();
+  return /^[A-Z]{3}$/.test(v) ? v : undefined;
+}
 type ColumnMapping = Record<string, Field | "ignore">;
 
 const stripFences = (t: string) =>
@@ -122,13 +131,14 @@ Return ONLY a JSON object (no markdown, no commentary) mapping each column to on
 - "email"    — an email address
 - "phone"    — a phone or mobile number
 - "address"  — a postal / street address
-- "ignore"   — anything else (IDs, dates, internal codes, totals, currency, etc.)
+- "currency" — the billing currency code (SGD, USD, IDR, …)
+- "ignore"   — anything else (IDs, dates, internal codes, totals, etc.)
 
 Use semantic understanding, not just header text. For example a column called "Startup" or "Brand" full of business names should map to "company". A column "Mobile" or "Cell" should map to "phone". When values look like emails it's "email" regardless of header.
 
 Shape:
 {
-  "<exact header name>": "company" | "name" | "email" | "phone" | "address" | "ignore"
+  "<exact header name>": "company" | "name" | "email" | "phone" | "address" | "currency" | "ignore"
 }
 
 Map every header. If two columns claim the same field, pick the one with the better data and "ignore" the other.`,
@@ -179,6 +189,7 @@ export async function extractFromSpreadsheet(buffer: Buffer): Promise<Contact[]>
           email: contact.email,
           phone: contact.phone,
           address: contact.address,
+          currency: normaliseContactCurrency(contact.currency),
         });
       }
     }
@@ -200,7 +211,8 @@ Extract every distinct contact and return ONLY a JSON object (no markdown, no co
       "name": "string or null - contact person name",
       "email": "string or null",
       "phone": "string or null",
-      "address": "string or null"
+      "address": "string or null",
+      "currency": "string or null - 3-letter ISO code (SGD, USD, IDR…) this customer is billed in, if the document shows it"
     }
   ]
 }
@@ -246,7 +258,10 @@ export async function extractFromDocument(
     throw new Error("No response from AI");
   }
   const parsed = JSON.parse(stripFences(textBlock.text)) as { contacts?: Contact[] };
-  return parsed.contacts ?? [];
+  return (parsed.contacts ?? []).map((c) => ({
+    ...c,
+    currency: normaliseContactCurrency(c.currency),
+  }));
 }
 
 export function imageMediaType(fileType: string): ImageType {
@@ -259,7 +274,8 @@ export function imageMediaType(fileType: string): ImageType {
 /**
  * Merge chunk results. Chunks are page-ranges of one document, so the same
  * customer can straddle a boundary or appear on several pages — dedupe by
- * normalised company name, keeping the entry that carries the most detail.
+ * normalised company name + currency (a business billed in two currencies is
+ * two customers), keeping the entry that carries the most detail.
  */
 export function mergeContacts(chunks: Contact[][]): Contact[] {
   const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
@@ -268,7 +284,7 @@ export function mergeContacts(chunks: Contact[][]): Contact[] {
   const byKey = new Map<string, Contact>();
   for (const c of chunks.flat()) {
     if (!c?.company) continue;
-    const key = norm(c.company);
+    const key = `${norm(c.company)}|${c.currency ?? "SGD"}`;
     const prev = byKey.get(key);
     if (!prev || score(c) > score(prev)) byKey.set(key, c);
   }

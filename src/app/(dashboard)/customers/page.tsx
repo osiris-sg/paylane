@@ -45,6 +45,14 @@ import { useRowSelection } from "~/lib/use-row-selection";
 import { LockedSendingCTA } from "~/components/subscription/locked-sending-cta";
 import { ExpiredBanner } from "~/components/subscription/expired-banner";
 import { TablePagination } from "~/components/table-pagination";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "~/components/ui/select";
+import { COMMON_CURRENCIES } from "~/lib/currency";
 
 const PAGE_SIZE = 10;
 
@@ -131,6 +139,7 @@ interface CustomerFormData {
   phone: string;
   address: string;
   company: string;
+  currency: string;
 }
 
 const emptyForm: CustomerFormData = {
@@ -139,6 +148,7 @@ const emptyForm: CustomerFormData = {
   phone: "",
   address: "",
   company: "",
+  currency: "SGD",
 };
 
 export default function CustomersPage() {
@@ -233,6 +243,7 @@ export default function CustomersPage() {
     phone: string | null;
     address: string | null;
     company: string | null;
+    currency: string;
   }) => {
     setEditingId(customer.id);
     setFormData({
@@ -241,6 +252,7 @@ export default function CustomersPage() {
       phone: customer.phone ?? "",
       address: customer.address ?? "",
       company: customer.company ?? "",
+      currency: customer.currency,
     });
     setDialogOpen(true);
   };
@@ -262,6 +274,7 @@ export default function CustomersPage() {
       email: formData.email.trim() || undefined,
       phone: formData.phone.trim() || undefined,
       address: formData.address.trim() || undefined,
+      currency: formData.currency,
     };
 
     if (editingId) {
@@ -444,6 +457,9 @@ export default function CustomersPage() {
                           <div className="min-w-0 flex-1">
                             <p className="truncate font-semibold">
                               {customer.company || customer.name}
+                              <span className="ml-1.5 rounded border px-1.5 py-0.5 align-middle text-[10px] font-medium text-muted-foreground">
+                                {customer.currency}
+                              </span>
                             </p>
                             {customer.company && customer.name && customer.name !== customer.company && (
                               <p className="truncate text-xs text-muted-foreground">{customer.name}</p>
@@ -520,6 +536,9 @@ export default function CustomersPage() {
                             <TableCell>
                               <p className="font-medium">
                                 {customer.company || customer.name}
+                                <span className="ml-1.5 rounded border px-1.5 py-0.5 align-middle text-[10px] font-medium text-muted-foreground">
+                                  {customer.currency}
+                                </span>
                               </p>
                               {customer.company && customer.name && customer.name !== customer.company && (
                                 <p className="text-xs text-muted-foreground">{customer.name}</p>
@@ -599,6 +618,29 @@ export default function CustomersPage() {
                   }
                   required
                 />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="currency">
+                  Currency <span className="text-destructive">*</span>
+                </Label>
+                <Select
+                  value={formData.currency}
+                  onValueChange={(v) => setFormData((prev) => ({ ...prev, currency: v }))}
+                >
+                  <SelectTrigger id="currency">
+                    <SelectValue placeholder="Select currency" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {COMMON_CURRENCIES.map((c) => (
+                      <SelectItem key={c} value={c}>
+                        {c}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  The same business billed in another currency is a separate customer.
+                </p>
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="name">Contact Name</Label>

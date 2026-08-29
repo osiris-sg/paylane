@@ -49,6 +49,14 @@ import {
   DialogTitle,
 } from "~/components/ui/dialog";
 import { Label } from "~/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "~/components/ui/select";
+import { COMMON_CURRENCIES } from "~/lib/currency";
 import { UserPlus } from "lucide-react";
 import { SendAccessGuard } from "~/components/subscription/send-access-guard";
 import { uploadViaPresignedPut } from "~/lib/upload-file";
@@ -179,7 +187,7 @@ function CustomerPicker({
   label,
   warnWhenEmpty = true,
 }: {
-  customers: { id: string; name: string; company: string | null; email: string | null }[];
+  customers: { id: string; name: string; company: string | null; email: string | null; currency: string }[];
   selectedId: string;
   onSelect: (id: string) => void;
   onAddNew?: () => void;
@@ -210,7 +218,10 @@ function CustomerPicker({
           }`}
         >
           {selected ? (
-            <span className="truncate font-medium">{selected.company || selected.name}</span>
+            <span className="truncate font-medium">
+              {selected.company || selected.name}
+              <span className="ml-1 text-xs text-muted-foreground">· {selected.currency}</span>
+            </span>
           ) : showWarning ? (
             <>
               <AlertCircle className="h-3.5 w-3.5 shrink-0 text-red-600" />
@@ -239,7 +250,10 @@ function CustomerPicker({
               return (
                 <button key={c.id} onClick={() => { onSelect(c.id); setOpen(false); setSearch(""); }} className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-gray-100 ${c.id === selectedId ? "bg-blue-50" : ""}`}>
                   <div className="min-w-0 flex-1 text-left">
-                    <p className="truncate text-left">{primary}</p>
+                    <p className="truncate text-left">
+                      {primary}
+                      <span className="ml-1 text-xs text-muted-foreground">· {c.currency}</span>
+                    </p>
                     {secondary && <p className="truncate text-left text-xs text-muted-foreground">{secondary}</p>}
                   </div>
                   {c.id === selectedId && <Check className="ml-auto h-3.5 w-3.5 shrink-0 text-blue-600" />}
@@ -358,24 +372,29 @@ function UploadInvoicePageInner() {
 
   // Add-customer dialog state
   const [addCustomerFor, setAddCustomerFor] = useState<string | null>(null); // invoice id or "bulk"
-  const [newCust, setNewCust] = useState({ name: "", email: "", phone: "", company: "", address: "" });
+  const [newCust, setNewCust] = useState({ name: "", email: "", phone: "", company: "", address: "", currency: "SGD" });
 
-  const resetNewCust = () => setNewCust({ name: "", email: "", phone: "", company: "", address: "" });
+  const resetNewCust = () => setNewCust({ name: "", email: "", phone: "", company: "", address: "", currency: "SGD" });
 
   // Confirm-new-customer prompt: queue of AI-recognised customers not in the DB.
   // The dialog walks the queue one at a time; `handledCustomerKeys` stops a name
   // from re-queuing once the user has saved or skipped it.
+  // A customer is (name, currency): the same business in a different currency
+  // is a separate record, so the queue + the "already handled" keys carry the
+  // invoice's currency alongside the normalised name.
   const [newCustomerQueue, setNewCustomerQueue] = useState<
-    { company: string; name: string; email: string }[]
+    { company: string; name: string; email: string; currency: string }[]
   >([]);
-  const [confirmForm, setConfirmForm] = useState({ company: "", name: "", email: "", phone: "", address: "" });
+  const [confirmForm, setConfirmForm] = useState({ company: "", name: "", email: "", phone: "", address: "", currency: "SGD" });
+  const customerKey = (company: string, currency: string) =>
+    `${normaliseCompany(company)}|${currency.toUpperCase()}`;
   const handledCustomerKeys = useRef<Set<string>>(new Set());
 
   // Prefill the form whenever the head of the queue changes.
   useEffect(() => {
     const head = newCustomerQueue[0];
     if (head) {
-      setConfirmForm({ company: head.company, name: head.name, email: head.email, phone: "", address: "" });
+      setConfirmForm({ company: head.company, name: head.name, email: head.email, phone: "", address: "", currency: head.currency });
     }
   }, [newCustomerQueue]);
 
@@ -387,7 +406,7 @@ function UploadInvoicePageInner() {
       toast.error("Add an email or phone so the customer can be reached");
       return;
     }
-    const key = normaliseCompany(head.company);
+    const key = customerKey(head.company, head.currency);
     try {
       const created = await createCustomer.mutateAsync({
         company: confirmForm.company.trim(),
@@ -395,19 +414,16 @@ function UploadInvoicePageInner() {
         email: confirmForm.email.trim() || undefined,
         phone: confirmForm.phone.trim() || undefined,
         address: confirmForm.address.trim() || undefined,
+        currency: confirmForm.currency,
       });
       await refetchCustomers();
       handledCustomerKeys.current.add(key);
       // Assign the new customer to every unassigned row the AI read as this name.
-      const targets = invoices.filter(
-        (inv) => !inv.customerId && normaliseCompany(inv.customerName) === key,
-      );
+      const matchesKey = (inv: UploadedInvoice) =>
+        !inv.customerId && customerKey(inv.customerName, inv.currency) === key;
+      const targets = invoices.filter(matchesKey);
       setInvoices((prev) =>
-        prev.map((inv) =>
-          !inv.customerId && normaliseCompany(inv.customerName) === key
-            ? { ...inv, customerId: created.id }
-            : inv,
-        ),
+        prev.map((inv) => (matchesKey(inv) ? { ...inv, customerId: created.id } : inv)),
       );
       flushCustomerAssignment(targets, created.id);
       toast.success(`Customer "${created.company || created.name}" saved & assigned`);
@@ -419,15 +435,20 @@ function UploadInvoicePageInner() {
 
   const handleSkipNewCustomer = () => {
     const head = newCustomerQueue[0];
-    if (head) handledCustomerKeys.current.add(normaliseCompany(head.company));
+    if (head) handledCustomerKeys.current.add(customerKey(head.company, head.currency));
     setNewCustomerQueue((prev) => prev.slice(1));
   };
 
-  const openAddCustomer = (forId: string, prefill?: { name?: string; email?: string }) => {
+  const openAddCustomer = (forId: string, prefill?: { name?: string; email?: string; currency?: string }) => {
     resetNewCust();
     if (prefill) {
       // AI usually extracts the company/bill-to name — prefill that as the company
-      setNewCust((p) => ({ ...p, company: prefill.name ?? "", email: prefill.email ?? "" }));
+      setNewCust((p) => ({
+        ...p,
+        company: prefill.name ?? "",
+        email: prefill.email ?? "",
+        currency: prefill.currency ?? "SGD",
+      }));
     }
     setAddCustomerFor(forId);
   };
@@ -445,6 +466,7 @@ function UploadInvoicePageInner() {
         email: newCust.email.trim() || undefined,
         phone: newCust.phone.trim() || undefined,
         address: newCust.address.trim() || undefined,
+        currency: newCust.currency,
       });
       await refetchCustomers();
       toast.success("Customer added");
@@ -482,10 +504,13 @@ function UploadInvoicePageInner() {
       );
 
       let matchedCustomerId = "";
+      const invoiceCurrency = String(data.currency ?? "SGD").toUpperCase();
       if (data.customerName || data.customerEmail) {
         const needle = normaliseCompany(data.customerName ?? "");
         const email = data.customerEmail?.toLowerCase();
         const match = customers.find((c) => {
+          // Same business in another currency is a different customer record.
+          if (c.currency !== invoiceCurrency) return false;
           if (email && c.email?.toLowerCase() === email) return true;
           if (!needle) return false;
           // Match against BOTH company and contact name — most customers store
@@ -505,12 +530,20 @@ function UploadInvoicePageInner() {
       // unassigned. Deduped by normalised name across the batch, and skipped for
       // names the user has already created or dismissed this session.
       if (!matchedCustomerId && data.customerName) {
-        const key = normaliseCompany(data.customerName);
-        if (key && !handledCustomerKeys.current.has(key)) {
+        const key = customerKey(data.customerName, invoiceCurrency);
+        if (normaliseCompany(data.customerName) && !handledCustomerKeys.current.has(key)) {
           setNewCustomerQueue((prev) =>
-            prev.some((q) => normaliseCompany(q.company) === key)
+            prev.some((q) => customerKey(q.company, q.currency) === key)
               ? prev
-              : [...prev, { company: data.customerName as string, name: "", email: (data.customerEmail as string) ?? "" }],
+              : [
+                  ...prev,
+                  {
+                    company: data.customerName as string,
+                    name: "",
+                    email: (data.customerEmail as string) ?? "",
+                    currency: invoiceCurrency,
+                  },
+                ],
           );
         }
       }
@@ -665,7 +698,9 @@ function UploadInvoicePageInner() {
     let customerId = "";
     const needleRaw = extraction.customer.company.trim();
     const needle = normaliseCompany(needleRaw);
+    const statementCurrency = (extraction.currency || "SGD").toUpperCase();
     const match = customers.find((c) => {
+      if (c.currency !== statementCurrency) return false;
       const company = normaliseCompany(c.company ?? "");
       const name = normaliseCompany(c.name);
       if (!needle) return false;
@@ -690,6 +725,7 @@ function UploadInvoicePageInner() {
           company: extraction.customer.company.trim(),
           name: extraction.customer.name?.trim() || undefined,
           email: extraction.customer.email?.trim() || undefined,
+          currency: statementCurrency,
         });
         customerId = created.id;
         await refetchCustomers();
@@ -1242,7 +1278,7 @@ function UploadInvoicePageInner() {
                               customers={customers}
                               selectedId={inv.customerId}
                               onSelect={(id) => assignCustomer(inv.id, id)}
-                              onAddNew={() => openAddCustomer(inv.id, { name: inv.customerName, email: inv.customerEmail })}
+                              onAddNew={() => openAddCustomer(inv.id, { name: inv.customerName, email: inv.customerEmail, currency: inv.currency })}
                             />
                           ) : (
                             <span className="text-sm font-medium">{customerLabel ?? "—"}</span>
@@ -1322,6 +1358,19 @@ function UploadInvoicePageInner() {
               <Input id="cust-company" value={newCust.company} onChange={(e) => setNewCust({ ...newCust, company: e.target.value })} placeholder="Acme Pte Ltd" />
             </div>
             <div className="grid gap-1.5">
+              <Label htmlFor="cust-currency">Currency <span className="text-red-600">*</span></Label>
+              <Select value={newCust.currency} onValueChange={(v) => setNewCust({ ...newCust, currency: v })}>
+                <SelectTrigger id="cust-currency">
+                  <SelectValue placeholder="Currency" />
+                </SelectTrigger>
+                <SelectContent>
+                  {COMMON_CURRENCIES.map((c) => (
+                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-1.5">
               <Label htmlFor="cust-name">Contact Name</Label>
               <Input id="cust-name" value={newCust.name} onChange={(e) => setNewCust({ ...newCust, name: e.target.value })} placeholder="John Doe" />
             </div>
@@ -1384,6 +1433,19 @@ function UploadInvoicePageInner() {
                 Company <span className="text-red-600">*</span>
               </Label>
               <Input id="confirm-company" value={confirmForm.company} onChange={(e) => setConfirmForm({ ...confirmForm, company: e.target.value })} placeholder="Acme Pte Ltd" />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="confirm-currency">Currency <span className="text-red-600">*</span></Label>
+              <Select value={confirmForm.currency} onValueChange={(v) => setConfirmForm({ ...confirmForm, currency: v })}>
+                <SelectTrigger id="confirm-currency">
+                  <SelectValue placeholder="Currency" />
+                </SelectTrigger>
+                <SelectContent>
+                  {COMMON_CURRENCIES.map((c) => (
+                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid gap-1.5">
               <Label htmlFor="confirm-name">Contact Name</Label>

@@ -35,3 +35,9 @@ export function formatCurrency(
     return `${code} ${safeValue}`;
   }
 }
+
+/** Currencies offered in pickers (customer dialog, invoice form). Any other
+ *  ISO 4217 code still works — this is just the shortlist. */
+export const COMMON_CURRENCIES = [
+  "SGD", "USD", "EUR", "GBP", "MYR", "IDR", "CNY", "JPY", "AUD", "HKD", "THB", "INR",
+] as const;
