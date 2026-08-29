@@ -290,7 +290,14 @@ function BulkInner() {
           const extractedEmail = body.extraction?.customerEmail ?? null;
           const rawCur = (body.extraction?.currency ?? "").trim().toUpperCase();
           const extractedCurrency = /^[A-Z]{3}$/.test(rawCur) ? rawCur : "SGD";
-          const match = matchCustomer(extractedName, customerOptions, extractedCurrency);
+          // Match against a fresh list, not the one captured when the file was
+          // dropped — dropping before the customer list finished loading used
+          // to match against an empty list and report everything unmatched.
+          const freshList = await utils.customer.list.fetch({ page: 1, limit: 100 });
+          const freshOptions: CustomerOption[] = (freshList.customers ?? []).map((c) => ({
+            id: c.id, company: c.company, name: c.name, currency: c.currency,
+          }));
+          const match = matchCustomer(extractedName, freshOptions, extractedCurrency);
 
           updateRow(row.id, {
             extractedName,
@@ -339,7 +346,6 @@ function BulkInner() {
   const readyRows = rows.filter(
     (r) => r.fileKey && r.customerId && r.status !== "sent",
   );
-  const allMatched = rows.length > 0 && rows.every((r) => r.customerId);
 
   const handleSendAll = async () => {
     const items = readyRows.map((r) => ({
@@ -393,6 +399,17 @@ function BulkInner() {
     }
   };
 
+  // ── Progress summary for the stepper / footer ──────────────────────────
+  const counts = {
+    reading: rows.filter((r) => r.status === "extracting" || r.status === "queued").length,
+    matched: rows.filter((r) => r.customerId && r.status !== "sent" && r.status !== "sending").length,
+    attention: rows.filter((r) => !r.customerId && r.status !== "extracting" && r.status !== "queued" && r.status !== "sent").length,
+    sent: rows.filter((r) => r.status === "sent").length,
+    sending: rows.filter((r) => r.status === "sending").length,
+  };
+  const step: 1 | 2 | 3 =
+    rows.length === 0 ? 1 : counts.sent === rows.length ? 3 : 2;
+
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -407,11 +424,46 @@ function BulkInner() {
           Upload statements
         </h1>
         <p className="text-sm text-muted-foreground">
-          Drop in your SOA files. We&apos;ll read each one and try to match it
-          to the right customer. Review and send.
+          One PDF per customer. We read who each statement is for, match it to your
+          customers, and you confirm before anything is sent.
         </p>
       </div>
 
+      {/* ── Stepper ── */}
+      <ol className="grid grid-cols-3 gap-2 text-sm">
+        {[
+          { n: 1, title: "Upload", body: "Drop one statement file per customer" },
+          { n: 2, title: "Review", body: "Check each file matched the right customer" },
+          { n: 3, title: "Send", body: "Each customer gets their own statement" },
+        ].map((st) => {
+          const done = st.n < step || (st.n === 3 && step === 3);
+          const active = st.n === step;
+          return (
+            <li
+              key={st.n}
+              className={cn(
+                "flex items-start gap-3 rounded-lg border px-3 py-2.5",
+                active ? "border-blue-300 bg-blue-50" : done ? "border-emerald-200 bg-emerald-50/60" : "bg-white",
+              )}
+            >
+              <span
+                className={cn(
+                  "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold",
+                  done ? "bg-emerald-600 text-white" : active ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-600",
+                )}
+              >
+                {done ? <CheckCircle2 className="h-4 w-4" /> : st.n}
+              </span>
+              <span className="min-w-0">
+                <span className="block font-semibold">{st.title}</span>
+                <span className="block text-xs text-muted-foreground">{st.body}</span>
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+
+      {/* ── Step 1: upload zone (full size until files exist, then compact) ── */}
       <label
         onDragOver={(e) => {
           e.preventDefault();
@@ -420,7 +472,8 @@ function BulkInner() {
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
         className={cn(
-          "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-12 text-center transition-colors",
+          "flex cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed text-center transition-colors",
+          rows.length === 0 ? "flex-col px-4 py-12" : "flex-row px-4 py-3",
           dragOver
             ? "border-blue-400 bg-blue-50"
             : "border-gray-200 bg-gray-50 hover:border-blue-300 hover:bg-blue-50/40",
@@ -433,16 +486,48 @@ function BulkInner() {
           className="hidden"
           onChange={(e) => e.target.files && void acceptFiles(e.target.files)}
         />
-        <Upload className="h-7 w-7 text-gray-400" />
-        <p className="text-sm font-medium">Drop files here or click to upload</p>
-        <p className="text-xs text-muted-foreground">
-          PDF or image, up to 8 MB each
-        </p>
+        <Upload className={cn("text-gray-400", rows.length === 0 ? "h-7 w-7" : "h-4 w-4")} />
+        {rows.length === 0 ? (
+          <>
+            <p className="text-sm font-medium">Drop statement files here, or click to choose</p>
+            <p className="text-xs text-muted-foreground">
+              PDF or image, up to 8 MB each · one customer per file
+            </p>
+          </>
+        ) : (
+          <p className="text-sm font-medium">Add more files</p>
+        )}
       </label>
 
+      {/* ── Step 2: review ── */}
       {rows.length > 0 && (
         <Card>
           <CardContent className="p-0">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b bg-gray-50/70 px-4 py-2.5 text-sm">
+              <span className="font-semibold">
+                {rows.length} file{rows.length === 1 ? "" : "s"}
+              </span>
+              {counts.reading > 0 && (
+                <span className="flex items-center gap-1 text-muted-foreground">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" /> {counts.reading} reading…
+                </span>
+              )}
+              {counts.matched > 0 && (
+                <span className="flex items-center gap-1 text-emerald-700">
+                  <CheckCircle2 className="h-3.5 w-3.5" /> {counts.matched} ready to send
+                </span>
+              )}
+              {counts.attention > 0 && (
+                <span className="flex items-center gap-1 font-medium text-amber-700">
+                  <AlertCircle className="h-3.5 w-3.5" /> {counts.attention} need{counts.attention === 1 ? "s" : ""} a customer
+                </span>
+              )}
+              {counts.sent > 0 && (
+                <span className="flex items-center gap-1 text-emerald-700">
+                  <Send className="h-3.5 w-3.5" /> {counts.sent} sent
+                </span>
+              )}
+            </div>
             <div className="divide-y">
               {rows.map((row) => (
                 <RowView
@@ -464,16 +549,35 @@ function BulkInner() {
         </Card>
       )}
 
+      {/* ── Step 3: send bar ── */}
       {rows.length > 0 && (
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-xs text-muted-foreground">
-            {allMatched
-              ? "All files matched. Ready to send."
-              : "Resolve any unmatched rows before sending."}
-          </p>
+        <div className="sticky bottom-0 -mx-3 flex flex-col gap-2 border-t bg-white/95 px-3 py-3 backdrop-blur sm:mx-0 sm:flex-row sm:items-center sm:justify-between sm:rounded-lg sm:border sm:px-4">
+          <div className="text-sm">
+            {counts.sent === rows.length ? (
+              <span className="flex items-center gap-1.5 font-medium text-emerald-700">
+                <CheckCircle2 className="h-4 w-4" />
+                All {counts.sent} statement{counts.sent === 1 ? "" : "s"} sent.{" "}
+                <Link href="/statements" className="underline">View statements</Link>
+              </span>
+            ) : counts.attention > 0 ? (
+              <span className="text-amber-800">
+                <span className="font-medium">{counts.attention} file{counts.attention === 1 ? "" : "s"} still need{counts.attention === 1 ? "s" : ""} a customer</span>
+                {" "}— pick one from the dropdown or click <span className="font-medium">Create customer</span> on that row.
+                {readyRows.length > 0 && " You can send the ready ones now."}
+              </span>
+            ) : counts.reading > 0 ? (
+              <span className="text-muted-foreground">Reading your files…</span>
+            ) : (
+              <span className="text-emerald-700">
+                Every file is matched. Sending delivers each statement to its customer by email / WhatsApp.
+              </span>
+            )}
+          </div>
           <Button
+            size="lg"
             onClick={handleSendAll}
             disabled={!readyRows.length || bulkSend.isPending}
+            className="shrink-0"
           >
             {bulkSend.isPending ? (
               <>
@@ -539,6 +643,8 @@ function BulkInner() {
   );
 }
 
+// ─── One file row: status on the left, the action on the right ───────────────
+
 function RowView({
   row,
   customers,
@@ -552,102 +658,124 @@ function RowView({
   onCreateCustomer: () => void;
   onRemove: () => void;
 }) {
+  const matched = customers.find((c) => c.id === row.customerId) ?? null;
+  const busy = row.status === "extracting" || row.status === "queued" || row.status === "sending";
+  const needsCustomer = !row.customerId && !busy && row.status !== "sent" && row.status !== "error";
+
   return (
-    <div className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between">
+    <div
+      className={cn(
+        "flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between",
+        needsCustomer && "bg-amber-50/40",
+      )}
+    >
+      {/* Left: file + what we found + status */}
       <div className="flex min-w-0 flex-1 items-start gap-3">
         <FileText className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 space-y-1">
           <p className="truncate text-sm font-medium">{row.fileName}</p>
-          {row.status === "extracting" && (
-            <p className="flex items-center gap-1 text-xs text-muted-foreground">
+
+          {(row.status === "extracting" || row.status === "queued") && (
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <Loader2 className="h-3 w-3 animate-spin" />
-              Reading…
+              Reading who this statement is for…
             </p>
           )}
-          {row.status !== "extracting" && row.extractedName && (
-            <p className="text-xs text-muted-foreground">
-              Detected: <span className="font-mono">{row.extractedName}</span>
-              {row.confidence && (
-                <span
-                  className={cn(
-                    "ml-1.5 rounded px-1 py-0.5 text-[10px] uppercase",
-                    row.confidence === "high"
-                      ? "bg-emerald-50 text-emerald-700"
-                      : row.confidence === "medium"
-                        ? "bg-amber-50 text-amber-700"
-                        : "bg-rose-50 text-rose-700",
-                  )}
-                >
-                  {row.confidence}
-                </span>
-              )}
+
+          {row.status === "sending" && (
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Sending…
             </p>
           )}
-          {row.status === "no_match" && !row.extractedName && (
-            <p className="text-xs text-amber-700">
-              Couldn&apos;t read a customer name — pick one manually.
+
+          {row.status === "sent" && (
+            <p className="flex items-center gap-1.5 text-xs font-medium text-emerald-700">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              Sent to {matched ? matched.company || matched.name : "customer"}
             </p>
           )}
-          {row.status === "no_match" && row.extractedName && (
-            <p className="text-xs text-amber-700">
-              Not in your customers ({row.extractedCurrency}) — pick one, or{" "}
-              <button
-                type="button"
-                onClick={onCreateCustomer}
-                className="inline-flex items-center gap-1 font-medium text-blue-600 hover:underline"
-              >
-                <UserPlus className="h-3 w-3" />
-                create customer
-              </button>
-              .
-            </p>
-          )}
-          {row.autoCreated && row.status !== "sent" && (
-            <p className="text-xs text-emerald-700">New customer created from this statement.</p>
-          )}
+
           {row.status === "error" && (
-            <p className="flex items-center gap-1 text-xs text-rose-700">
-              <AlertCircle className="h-3 w-3" />
+            <p className="flex items-center gap-1.5 text-xs text-rose-700">
+              <AlertCircle className="h-3.5 w-3.5" />
               {row.errorMessage}
             </p>
           )}
-          {row.status === "sent" && (
-            <p className="flex items-center gap-1 text-xs text-emerald-700">
-              <CheckCircle2 className="h-3 w-3" />
-              Sent
+
+          {row.status === "matched" && matched && (
+            <p className="flex flex-wrap items-center gap-1.5 text-xs">
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-800">
+                <CheckCircle2 className="h-3 w-3" />
+                {row.autoCreated ? "New customer created" : "Matched"}
+              </span>
+              <span className="text-muted-foreground">
+                {row.extractedName ? <>Statement says <span className="font-medium text-foreground">{row.extractedName}</span></> : "Assigned manually"}
+                {row.confidence && !row.autoCreated && (
+                  <span className={cn("ml-1.5 rounded px-1 py-0.5 text-[10px] uppercase",
+                    row.confidence === "high" ? "bg-emerald-50 text-emerald-700"
+                    : row.confidence === "medium" ? "bg-amber-50 text-amber-700"
+                    : "bg-rose-50 text-rose-700")}>
+                    {row.confidence} confidence
+                  </span>
+                )}
+              </span>
+            </p>
+          )}
+
+          {needsCustomer && (
+            <p className="flex flex-wrap items-center gap-1.5 text-xs">
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-800">
+                <AlertCircle className="h-3 w-3" />
+                Needs a customer
+              </span>
+              <span className="text-amber-900">
+                {row.extractedName ? (
+                  <>
+                    Statement says <span className="font-medium">{row.extractedName}</span>
+                    {" "}({row.extractedCurrency}) — not in your customers yet.
+                  </>
+                ) : (
+                  <>Couldn&apos;t read a customer name from this file.</>
+                )}
+              </span>
             </p>
           )}
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
-        <Select
-          value={row.customerId ?? "_none"}
-          onValueChange={(v) => onChangeCustomer(v === "_none" ? null : v)}
-          disabled={row.status === "extracting" || row.status === "sending" || row.status === "sent"}
-        >
-          <SelectTrigger className="h-8 w-[220px]">
-            <SelectValue placeholder="Pick customer…" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="_none">
-              <span className="text-muted-foreground">Unmatched</span>
-            </SelectItem>
-            {customers.map((c) => (
-              <SelectItem key={c.id} value={c.id}>
-                {c.company || c.name}
-                <span className="ml-1 text-xs text-muted-foreground">· {c.currency}</span>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      {/* Right: the one action this row needs */}
+      <div className="flex shrink-0 items-center gap-2 sm:pl-3">
+        {needsCustomer && row.extractedName && (
+          <Button size="sm" onClick={onCreateCustomer}>
+            <UserPlus className="mr-1.5 h-3.5 w-3.5" />
+            Create customer
+          </Button>
+        )}
         {row.status !== "sent" && row.status !== "sending" && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={onRemove}
+          <Select
+            value={row.customerId ?? "_none"}
+            onValueChange={(v) => onChangeCustomer(v === "_none" ? null : v)}
+            disabled={busy}
           >
+            <SelectTrigger className={cn("h-9 w-[230px]", needsCustomer && "border-amber-300")}>
+              <SelectValue placeholder="Pick a customer…" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="_none">
+                <span className="text-muted-foreground">{needsCustomer ? "Pick an existing customer…" : "Unassign"}</span>
+              </SelectItem>
+              {customers.map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.company || c.name}
+                  <span className="ml-1 text-xs text-muted-foreground">· {c.currency}</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        {row.status !== "sent" && row.status !== "sending" && (
+          <Button variant="ghost" size="icon" className="h-9 w-9" onClick={onRemove} aria-label="Remove file">
             <X className="h-3.5 w-3.5" />
           </Button>
         )}
