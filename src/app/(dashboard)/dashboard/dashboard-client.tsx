@@ -7,8 +7,7 @@ import { PWAInstallBanner } from "~/components/pwa-install-guide";
 import {
   FileText,
   FileDown,
-  Plus,
-  Upload,
+  ScrollText,
   TrendingUp,
   TrendingDown,
 } from "lucide-react";
@@ -326,22 +325,20 @@ export function DashboardClient() {
             Overview of your invoice activity
           </p>
         </div>
-        {canSend && (
-          <div className="flex gap-3">
-            <Button variant="outline" asChild>
-              <Link href="/invoices/upload">
-                <Upload className="mr-2 h-4 w-4" />
-                Upload Invoice
-              </Link>
-            </Button>
-            <Button asChild>
-              <Link href="/invoices/new">
-                <Plus className="mr-2 h-4 w-4" />
-                Create Invoice
-              </Link>
-            </Button>
-          </div>
-        )}
+        <div className="flex gap-3">
+          <Button variant="outline" asChild>
+            <Link href="/invoices">
+              <FileText className="mr-2 h-4 w-4" />
+              View Invoices
+            </Link>
+          </Button>
+          <Button asChild>
+            <Link href="/statements">
+              <ScrollText className="mr-2 h-4 w-4" />
+              View Statements
+            </Link>
+          </Button>
+        </div>
       </div>
 
       <PWAInstallBanner />
