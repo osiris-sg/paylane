@@ -83,6 +83,10 @@ model Customer {
   statement      Statement?
   deliveryOrders DeliveryOrder[]
 
+  // DB backstop for the (owner, business, currency) identity. Exact-match
+  // only — the router does the case-insensitive check first and returns a
+  // friendly 409; this catches anything that bypasses it.
+  @@unique([companyId, company, currency])
   @@index([companyId])
 }
 
