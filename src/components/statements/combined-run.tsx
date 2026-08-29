@@ -107,7 +107,7 @@ export function CombinedRun({ jobId, onJobChange }: { jobId: string | null; onJo
     const m = new Map<number, Decision>();
     for (const seg of result.segments) {
       if (seg.suggestedCustomerId) m.set(seg.index, { action: "send", customerId: seg.suggestedCustomerId });
-      else if (seg.phone || seg.email) m.set(seg.index, { action: "send", customerId: null });
+      else if (seg.email) m.set(seg.index, { action: "send", customerId: null });
       else m.set(seg.index, { action: "skip" });
     }
     setDecisions(m);
@@ -153,7 +153,8 @@ export function CombinedRun({ jobId, onJobChange }: { jobId: string | null; onJo
     !!(seg.email || (d.action === "send" && d.contact?.email));
   const needsAttention = (seg: StatementSegmentRow) => {
     const d = decided(seg);
-    return !seg.suggestedCustomerId && d.action === "skip" && !hasContact(seg, d);
+    const matched = d.action === "send" && !!d.customerId;
+    return !matched && !hasContact(seg, d);
   };
   const openContactFor = (seg: StatementSegmentRow) => {
     const d = decided(seg);
@@ -163,20 +164,45 @@ export function CombinedRun({ jobId, onJobChange }: { jobId: string | null; onJo
     });
     setContactFor(seg.index);
   };
-  const saveContact = () => {
-    if (contactFor === null) return;
+  /** Record the typed contact on the row. Returns the row, or null if invalid. */
+  const saveContact = (): StatementSegmentRow | null => {
+    if (contactFor === null) return null;
     const email = contactForm.email.trim();
     const phone = contactForm.phone.trim();
     if (!email) {
       toast.error("An email is required for statement recipients");
-      return;
+      return null;
     }
     setDecisions((prev) => {
       const next = new Map(prev);
-      next.set(contactFor, { action: "send", customerId: null, contact: { email: email || undefined, phone: phone || undefined } });
+      next.set(contactFor, { action: "send", customerId: null, contact: { email, phone: phone || undefined } });
       return next;
     });
     setContactFor(null);
+    return segs.find((sg) => sg.index === contactFor) ?? null;
+  };
+  /** Save the contact AND create the customer right away (no statement sent). */
+  const saveContactAndCreate = async () => {
+    const email = contactForm.email.trim();
+    const phone = contactForm.phone.trim();
+    const seg = saveContact();
+    if (!seg || !data) return;
+    setBusyIndex(seg.index);
+    try {
+      const res = await createCustomers.mutateAsync({ id: data.id, items: [{ index: seg.index, email, phone: phone || undefined }] });
+      const hit = res.created[0] ?? res.reused[0];
+      if (hit) {
+        setDecisions((prev) => { const next = new Map(prev); next.set(hit.index, { action: "send", customerId: hit.customerId }); return next; });
+        toast.success(`${seg.customerName} ${res.created.length ? "created" : "already existed — linked"}. Nothing was sent.`);
+        void job.refetch(); void customers.refetch();
+      } else if (res.skipped[0]) {
+        toast.error(`Couldn't create: ${res.skipped[0].reason}`);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't create customer");
+    } finally {
+      setBusyIndex(null);
+    }
   };
 
   // ── Create / update customers from the run — no statements sent ─────────
@@ -224,8 +250,8 @@ export function CombinedRun({ jobId, onJobChange }: { jobId: string | null; onJo
   const counts = {
     total: segs.length,
     matched: segs.filter((s) => { const d = decided(s); return d.action === "send" && d.customerId; }).length,
-    create: segs.filter((s) => { const d = decided(s); return d.action === "send" && !d.customerId; }).length,
-    skip: segs.filter((s) => decided(s).action === "skip").length,
+    create: segs.filter((s) => { const d = decided(s); return d.action === "send" && !d.customerId && hasContact(s, d); }).length,
+    skip: segs.filter((s) => decided(s).action === "skip" && !needsAttention(s)).length,
     attention: segs.filter(needsAttention).length,
   };
   const toSend = counts.matched + counts.create;
@@ -237,7 +263,8 @@ export function CombinedRun({ jobId, onJobChange }: { jobId: string | null; onJo
         id: data.id,
         decisions: segs.map((s) => {
           const d = decided(s);
-          return d.action === "send"
+          const sendable = d.action === "send" && (!!d.customerId || hasContact(s, d));
+          return sendable && d.action === "send"
             ? { index: s.index, action: "send" as const, customerId: d.customerId, email: d.contact?.email, phone: d.contact?.phone }
             : { index: s.index, action: "skip" as const };
         }),
@@ -346,12 +373,12 @@ export function CombinedRun({ jobId, onJobChange }: { jobId: string | null; onJo
                 {counts.matched > 0 && <span className="flex items-center gap-1 text-emerald-700"><CheckCircle2 className="h-3.5 w-3.5" /> {counts.matched} matched existing</span>}
                 {counts.create > 0 && <span className="flex items-center gap-1 text-blue-700"><UserPlus className="h-3.5 w-3.5" /> {counts.create} will be created</span>}
                 {counts.attention > 0 && <span className="flex items-center gap-1 font-medium text-amber-700"><AlertCircle className="h-3.5 w-3.5" /> {counts.attention} need an email</span>}
-                {counts.skip - counts.attention > 0 && <span className="flex items-center gap-1 text-muted-foreground"><SkipForward className="h-3.5 w-3.5" /> {counts.skip - counts.attention} skipped</span>}
+                {counts.skip > 0 && <span className="flex items-center gap-1 text-muted-foreground"><SkipForward className="h-3.5 w-3.5" /> {counts.skip} skipped</span>}
                 <div className="ml-auto flex items-center gap-3">
                   {creatableRows.length > 0 && (
                     <Button size="sm" variant="outline" onClick={() => setConfirmCreateAll(true)} disabled={createCustomers.isPending}>
                       <Users className="mr-1.5 h-3.5 w-3.5" />
-                      Create {creatableRows.length} customer{creatableRows.length === 1 ? "" : "s"} now
+                      Create {creatableRows.length} customer{creatableRows.length === 1 ? "" : "s"} (no sending)
                     </Button>
                   )}
                   <label className="flex items-center gap-2 text-xs">
@@ -496,7 +523,9 @@ export function CombinedRun({ jobId, onJobChange }: { jobId: string | null; onJo
           <div className="sticky bottom-0 -mx-3 flex flex-col gap-2 border-t bg-white/95 px-3 py-3 backdrop-blur sm:mx-0 sm:flex-row sm:items-center sm:justify-between sm:rounded-lg sm:border sm:px-4">
             <p className="text-sm">
               {toSend > 0 ? (
-                <>Ready to send <span className="font-semibold">{toSend}</span> statement{toSend === 1 ? "" : "s"}{counts.create > 0 ? <> — <span className="font-medium">{counts.create}</span> new customer{counts.create === 1 ? "" : "s"} will be created first</> : null}{counts.skip > 0 ? <>, {counts.skip} skipped</> : null}. Each customer receives only their own pages.</>
+                <>Ready to send <span className="font-semibold">{toSend}</span> statement{toSend === 1 ? "" : "s"}{counts.create > 0 ? <> — <span className="font-medium">{counts.create}</span> new customer{counts.create === 1 ? "" : "s"} will be created first</> : null}{counts.attention > 0 ? <>, <span className="font-medium text-amber-800">{counts.attention} still need an email</span></> : null}{counts.skip > 0 ? <>, {counts.skip} skipped</> : null}. Each customer receives only their own pages.</>
+              ) : counts.attention > 0 ? (
+                <span className="text-amber-800">Nothing can be sent yet — <span className="font-medium">{counts.attention} row{counts.attention === 1 ? "" : "s"} need an email</span>. Click <span className="font-medium">Add an email</span> on a row to enter it, or pick an existing customer from its dropdown.</span>
               ) : (
                 <span className="text-amber-800">Nothing selected to send — pick a customer or &ldquo;Create new&rdquo; on at least one row.</span>
               )}
@@ -597,7 +626,7 @@ export function CombinedRun({ jobId, onJobChange }: { jobId: string | null; onJo
       <Dialog open={confirmCreateAll} onOpenChange={setConfirmCreateAll}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Create {creatableRows.length} customer{creatableRows.length === 1 ? "" : "s"} now?</DialogTitle>
+            <DialogTitle>Create {creatableRows.length} customer{creatableRows.length === 1 ? "" : "s"} without sending?</DialogTitle>
             <DialogDescription>
               Adds every &ldquo;Create new customer&rdquo; row that has an email to your customer book, with the name, email and address read off its page (plus any WhatsApp number you typed).
               <span className="mt-2 block font-medium text-foreground">No statements are sent.</span> You can still send afterwards, or not at all.
@@ -624,6 +653,7 @@ export function CombinedRun({ jobId, onJobChange }: { jobId: string | null; onJo
             <DialogDescription>
               {segs.find((s) => s.index === contactFor)?.customerName} ({segs.find((s) => s.index === contactFor)?.currency}) will be created as a new customer.
               Statements are delivered by email, so an email is required. A WhatsApp number is optional.
+              <span className="mt-2 block text-xs"><span className="font-medium">Save</span> keeps the email on this row for later. <span className="font-medium">Save &amp; create customer now</span> adds them to your customers immediately — no statement is sent either way.</span>
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-3 py-2">
@@ -638,8 +668,11 @@ export function CombinedRun({ jobId, onJobChange }: { jobId: string | null; onJo
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setContactFor(null)}>Cancel</Button>
-            <Button onClick={saveContact} disabled={!contactForm.email.trim()}>
-              Save &amp; create on send
+            <Button variant="outline" onClick={() => saveContact()} disabled={!contactForm.email.trim()} title="Keep the email on this row; the customer is created later, when you press Create or Send">
+              Save
+            </Button>
+            <Button onClick={() => void saveContactAndCreate()} disabled={!contactForm.email.trim() || createCustomers.isPending} title="Create this customer in your customer book right now — no statement is sent">
+              {createCustomers.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <><UserPlus className="mr-2 h-4 w-4" /> Save &amp; create customer now</>}
             </Button>
           </DialogFooter>
         </DialogContent>
