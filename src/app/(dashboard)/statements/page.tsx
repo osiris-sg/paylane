@@ -104,13 +104,13 @@ function StatementsContent() {
             <Button asChild>
               <Link href="/customers/send-statements">
                 <Upload className="mr-2 h-4 w-4" />
-                Bulk send
+                Upload statements
               </Link>
             </Button>
           ) : (
             <Button disabled>
               <Upload className="mr-2 h-4 w-4" />
-              Bulk send
+              Upload statements
             </Button>
           ))}
       </div>
@@ -245,7 +245,7 @@ function SentStatementsTable() {
       <EmptyState
         icon={<MailCheck className="h-10 w-10 text-muted-foreground" />}
         title="No statements sent yet"
-        body="Send a statement from any customer's detail page, or use Bulk send to upload several at once."
+        body="Send a statement from any customer's detail page, or use Upload statements to send several at once."
       />
     );
   }

@@ -267,7 +267,7 @@ function BulkInner() {
         </Button>
         <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight md:text-3xl">
           <Sparkles className="h-6 w-6 text-blue-600" />
-          Bulk send statements
+          Upload statements
         </h1>
         <p className="text-sm text-muted-foreground">
           Drop in your SOA files. We&apos;ll read each one and try to match it
