@@ -409,6 +409,14 @@ export function CombinedRun({ jobId, onJobChange }: { jobId: string | null; onJo
                               <button type="button" onClick={() => openContactFor(seg)} className="text-blue-700 hover:underline">Edit</button>
                             </p>
                           )}
+                          {d.action === "send" && !d.customerId && !d.contact && seg.email && (
+                            <p className="text-xs text-emerald-700">
+                              Will be created with {seg.email}.{" "}
+                              <button type="button" onClick={() => openContactFor(seg)} className="text-blue-700 hover:underline">
+                                Add WhatsApp
+                              </button>
+                            </p>
+                          )}
                           {seg.matchConfidence === "fuzzy" && d.action === "send" && d.customerId === seg.suggestedCustomerId && (
                             <p className="text-xs text-amber-700">Fuzzy match — double-check the customer on the right.</p>
                           )}
