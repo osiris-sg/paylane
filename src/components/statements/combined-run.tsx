@@ -34,9 +34,12 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog";
+import { Input } from "~/components/ui/input";
+import { Label } from "~/components/ui/label";
 import { uploadViaPresignedPut } from "~/lib/upload-file";
 import type { StatementsResult, StatementSegmentRow } from "~/server/import/extract-statements";
 
@@ -46,7 +49,9 @@ import type { StatementsResult, StatementSegmentRow } from "~/server/import/extr
  * customer↔pages mapping → confirm → background split + send per customer.
  */
 
-type Decision = { action: "send"; customerId: string | null } | { action: "skip" };
+type Decision =
+  | { action: "send"; customerId: string | null; contact?: { email?: string; phone?: string } }
+  | { action: "skip" };
 
 const CREATE = "__create__";
 const SKIP = "__skip__";
@@ -58,6 +63,9 @@ export function CombinedRun({ jobId, onJobChange }: { jobId: string | null; onJo
   const [onlyAttention, setOnlyAttention] = useState(false);
   // Which segment is open in the preview dialog (null = closed).
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+  // "Create new customer" for a row whose page had no contact → ask for one.
+  const [contactFor, setContactFor] = useState<number | null>(null);
+  const [contactForm, setContactForm] = useState({ email: "", phone: "" });
 
   const createUploadUrl = api.storage.createUploadUrl.useMutation();
   const createJob = api.importJob.create.useMutation();
@@ -133,8 +141,35 @@ export function CombinedRun({ jobId, onJobChange }: { jobId: string | null; onJo
   // ── Derived review counts ──────────────────────────────────────────────
   const segs = result?.segments ?? [];
   const decided = (seg: StatementSegmentRow): Decision => decisions.get(seg.index) ?? { action: "skip" };
-  const needsAttention = (seg: StatementSegmentRow) =>
-    !seg.suggestedCustomerId && !seg.phone && !seg.email && decided(seg).action === "skip";
+  const hasContact = (seg: StatementSegmentRow, d: Decision) =>
+    !!(seg.phone || seg.email || (d.action === "send" && (d.contact?.email || d.contact?.phone)));
+  const needsAttention = (seg: StatementSegmentRow) => {
+    const d = decided(seg);
+    return !seg.suggestedCustomerId && d.action === "skip" && !hasContact(seg, d);
+  };
+  const openContactFor = (seg: StatementSegmentRow) => {
+    const d = decided(seg);
+    setContactForm({
+      email: (d.action === "send" && d.contact?.email) || seg.email || "",
+      phone: (d.action === "send" && d.contact?.phone) || seg.phone || "",
+    });
+    setContactFor(seg.index);
+  };
+  const saveContact = () => {
+    if (contactFor === null) return;
+    const email = contactForm.email.trim();
+    const phone = contactForm.phone.trim();
+    if (!email && !phone) {
+      toast.error("Add an email or phone so the customer can be reached");
+      return;
+    }
+    setDecisions((prev) => {
+      const next = new Map(prev);
+      next.set(contactFor, { action: "send", customerId: null, contact: { email: email || undefined, phone: phone || undefined } });
+      return next;
+    });
+    setContactFor(null);
+  };
   const counts = {
     total: segs.length,
     matched: segs.filter((s) => { const d = decided(s); return d.action === "send" && d.customerId; }).length,
@@ -151,7 +186,9 @@ export function CombinedRun({ jobId, onJobChange }: { jobId: string | null; onJo
         id: data.id,
         decisions: segs.map((s) => {
           const d = decided(s);
-          return d.action === "send" ? { index: s.index, action: "send" as const, customerId: d.customerId } : { index: s.index, action: "skip" as const };
+          return d.action === "send"
+            ? { index: s.index, action: "send" as const, customerId: d.customerId, email: d.contact?.email, phone: d.contact?.phone }
+            : { index: s.index, action: "skip" as const };
         }),
       });
       toast.success(`Sending ${sendTotal} statement${sendTotal === 1 ? "" : "s"} in the background — we'll notify you when done.`);
@@ -299,7 +336,21 @@ export function CombinedRun({ jobId, onJobChange }: { jobId: string | null; onJo
                             {seg.phone ? ` · ${seg.phone}` : ""}
                             {seg.email ? ` · ${seg.email}` : ""}
                           </p>
-                          {attention && <p className="text-xs text-amber-800">No phone or email on the statement, so we can&apos;t create this customer — pick an existing one or skip.</p>}
+                          {attention && (
+                            <p className="text-xs text-amber-800">
+                              No phone or email on this page.{" "}
+                              <button type="button" onClick={() => openContactFor(seg)} className="font-medium text-blue-700 hover:underline">
+                                Add contact details
+                              </button>{" "}
+                              to create the customer, pick an existing one, or skip.
+                            </p>
+                          )}
+                          {d.action === "send" && !d.customerId && d.contact && (
+                            <p className="text-xs text-emerald-700">
+                              Will be created with {[d.contact.email, d.contact.phone].filter(Boolean).join(" · ")}.{" "}
+                              <button type="button" onClick={() => openContactFor(seg)} className="text-blue-700 hover:underline">Edit</button>
+                            </p>
+                          )}
                           {seg.matchConfidence === "fuzzy" && d.action === "send" && d.customerId === seg.suggestedCustomerId && (
                             <p className="text-xs text-amber-700">Fuzzy match — double-check the customer on the right.</p>
                           )}
@@ -307,23 +358,33 @@ export function CombinedRun({ jobId, onJobChange }: { jobId: string | null; onJo
                       </div>
                       <Select
                         value={value}
-                        onValueChange={(v) =>
+                        onValueChange={(v) => {
+                          // Creating a customer needs a contact channel; if the
+                          // page had none, collect it before committing.
+                          if (v === CREATE && !seg.phone && !seg.email && !(d.action === "send" && d.contact)) {
+                            openContactFor(seg);
+                            return;
+                          }
                           setDecisions((prev) => {
                             const next = new Map(prev);
-                            next.set(seg.index, v === SKIP ? { action: "skip" } : { action: "send", customerId: v === CREATE ? null : v });
+                            const keepContact = d.action === "send" ? d.contact : undefined;
+                            next.set(seg.index, v === SKIP ? { action: "skip" } : { action: "send", customerId: v === CREATE ? null : v, contact: v === CREATE ? keepContact : undefined });
                             return next;
-                          })
-                        }
+                          });
+                        }}
                       >
                         <SelectTrigger className={cn("h-9 w-full sm:w-[280px]", attention && "border-amber-300")}>
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {(seg.phone || seg.email) && (
-                            <SelectItem value={CREATE}>
-                              <span className="flex items-center gap-1.5"><UserPlus className="h-3.5 w-3.5" /> Create new customer ({seg.currency})</span>
-                            </SelectItem>
-                          )}
+                          <SelectItem value={CREATE}>
+                            <span className="flex items-center gap-1.5">
+                              <UserPlus className="h-3.5 w-3.5" />
+                              {seg.phone || seg.email || (d.action === "send" && d.contact)
+                                ? `Create new customer (${seg.currency})`
+                                : "Create new customer — add contact…"}
+                            </span>
+                          </SelectItem>
                           <SelectItem value={SKIP}>
                             <span className="flex items-center gap-1.5 text-muted-foreground"><SkipForward className="h-3.5 w-3.5" /> Skip this one</span>
                           </SelectItem>
@@ -439,6 +500,35 @@ export function CombinedRun({ jobId, onJobChange }: { jobId: string | null; onJo
               </a>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Contact details for a create-new row whose page had none */}
+      <Dialog open={contactFor !== null} onOpenChange={(o) => { if (!o) setContactFor(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add contact details</DialogTitle>
+            <DialogDescription>
+              {segs.find((s) => s.index === contactFor)?.customerName} ({segs.find((s) => s.index === contactFor)?.currency}) will be created as a new customer.
+              Add an email or phone so they can be reached.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 py-2">
+            <div className="grid gap-1.5">
+              <Label htmlFor="seg-contact-email">Email</Label>
+              <Input id="seg-contact-email" type="email" value={contactForm.email} onChange={(e) => setContactForm({ ...contactForm, email: e.target.value })} placeholder="accounts@acme.com" />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="seg-contact-phone">Phone</Label>
+              <Input id="seg-contact-phone" value={contactForm.phone} onChange={(e) => setContactForm({ ...contactForm, phone: e.target.value })} placeholder="+65 1234 5678" />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setContactFor(null)}>Cancel</Button>
+            <Button onClick={saveContact} disabled={!contactForm.email.trim() && !contactForm.phone.trim()}>
+              Save &amp; create on send
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

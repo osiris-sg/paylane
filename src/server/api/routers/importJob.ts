@@ -108,6 +108,10 @@ export const importJobRouter = createTRPCRouter({
               action: z.enum(["send", "skip"]),
               /** Existing customer to send to; null = create from the statement. */
               customerId: z.string().nullable().optional(),
+              /** Contact details typed on the review screen for a create-new
+               *  row whose page had none (the customer must be reachable). */
+              email: z.string().trim().email().optional(),
+              phone: z.string().trim().min(3).optional(),
             }),
           )
           .min(1),
@@ -148,6 +152,11 @@ export const importJobRouter = createTRPCRouter({
           !d || d.action === "skip"
             ? { action: "skip" }
             : { action: "send", customerId: d.customerId ?? null };
+        // Contact typed by the user overrides what was read off the page.
+        if (d?.action === "send" && !d.customerId) {
+          if (d.email) seg.email = d.email;
+          if (d.phone) seg.phone = d.phone;
+        }
         seg.status = "pending";
       }
       const sendTotal = result.segments.filter((s) => s.decision?.action === "send").length;
