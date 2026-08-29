@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import {
@@ -13,7 +13,19 @@ import {
   ArrowLeft,
   Sparkles,
   Send,
+  UserPlus,
 } from "lucide-react";
+import { Input } from "~/components/ui/input";
+import { Label } from "~/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "~/components/ui/dialog";
+import { COMMON_CURRENCIES } from "~/lib/currency";
 import { Card, CardContent } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import {
@@ -43,10 +55,20 @@ type Row = {
     | "sent"
     | "error";
   extractedName: string | null;
+  extractedEmail: string | null;
+  extractedCurrency: string; // ISO code; defaults to SGD when not on the document
   confidence: "high" | "medium" | "low" | null;
   customerId: string | null; // null = unmatched / unselected
+  autoCreated?: boolean; // customer was created from this statement
   errorMessage?: string;
 };
+
+type CustomerOption = { id: string; company: string | null; name: string; currency: string };
+
+const normName = (s: string | null | undefined) =>
+  (s ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+/** Customer identity is (name, currency) — see customer router. */
+const customerKey = (name: string, currency: string) => `${normName(name)}|${currency}`;
 
 const ACCEPTED_TYPES = [
   "application/pdf",
@@ -60,24 +82,29 @@ function newRowId() {
   return Math.random().toString(36).slice(2, 11);
 }
 
-/** Best-match a customer using a fuzzy alphanumeric overlap heuristic. */
+/**
+ * Best-match a customer using a fuzzy alphanumeric overlap heuristic, within
+ * the statement's currency — the same business in another currency is a
+ * different customer record and must not be matched.
+ */
 function matchCustomer(
   extracted: string | null,
-  customers: Array<{ id: string; company: string | null; name: string }>,
+  customers: CustomerOption[],
+  currency: string,
 ): { id: string; confidence: "exact" | "fuzzy" } | null {
   if (!extracted) return null;
-  const norm = (s: string | null | undefined) =>
-    (s ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const norm = normName;
   const target = norm(extracted);
   if (!target) return null;
+  const pool = customers.filter((c) => c.currency === currency);
 
-  const exact = customers.find(
+  const exact = pool.find(
     (c) => norm(c.company) === target || norm(c.name) === target,
   );
   if (exact) return { id: exact.id, confidence: "exact" };
 
   // Substring containment with length floor for stability.
-  const fuzzy = customers.find((c) => {
+  const fuzzy = pool.find((c) => {
     const co = norm(c.company);
     const na = norm(c.name);
     return (
@@ -107,18 +134,100 @@ function BulkInner() {
   const [dragOver, setDragOver] = useState(false);
 
   const customers = api.customer.list.useQuery({ page: 1, limit: 100 });
-  const customerOptions = useMemo(
+  const customerOptions = useMemo<CustomerOption[]>(
     () =>
       (customers.data?.customers ?? []).map((c) => ({
         id: c.id,
         company: c.company,
         name: c.name,
+        currency: c.currency,
       })),
     [customers.data],
   );
 
   const bulkSend = api.statement.bulkSend.useMutation();
   const createUploadUrl = api.storage.createUploadUrl.useMutation();
+  const createCustomer = api.customer.create.useMutation();
+
+  // Create-or-reuse a customer for an unrecognised statement, without ever
+  // duplicating. Three guards, innermost first:
+  //   1. the server rejects a same-name+currency customer (409 CONFLICT) —
+  //      on conflict we refetch and adopt the existing record;
+  //   2. concurrent rows in one batch (extractions run in parallel) share ONE
+  //      in-flight create per (name, currency) via `pendingCreates`;
+  //   3. anything created is refetched into `customerOptions`, so later rows
+  //      match it instead of creating again.
+  const pendingCreates = useRef(new Map<string, Promise<string>>());
+  const createOrReuseCustomer = async (input: {
+    company: string;
+    email?: string;
+    phone?: string;
+    currency: string;
+  }): Promise<string> => {
+    const key = customerKey(input.company, input.currency);
+    const inFlight = pendingCreates.current.get(key);
+    if (inFlight) return inFlight;
+
+    const run = (async () => {
+      try {
+        const created = await createCustomer.mutateAsync({
+          company: input.company.trim(),
+          email: input.email?.trim() || undefined,
+          phone: input.phone?.trim() || undefined,
+          currency: input.currency,
+        });
+        await customers.refetch();
+        return created.id;
+      } catch (err) {
+        // Already exists (created moments ago, or a case/spacing variant the
+        // fuzzy matcher missed) → use it rather than fail.
+        const isConflict =
+          typeof err === "object" && err !== null &&
+          (err as { data?: { code?: string } }).data?.code === "CONFLICT";
+        if (!isConflict) throw err;
+        const fresh = await customers.refetch();
+        const existing = (fresh.data?.customers ?? []).find(
+          (c) => c.currency === input.currency && customerKey(c.company ?? c.name, c.currency) === key,
+        );
+        if (!existing) throw err;
+        return existing.id;
+      } finally {
+        pendingCreates.current.delete(key);
+      }
+    })();
+    pendingCreates.current.set(key, run);
+    return run;
+  };
+
+  // Manual create dialog for rows whose statement had no email/phone (the
+  // customer router requires one so the customer is reachable).
+  const [createFor, setCreateFor] = useState<Row | null>(null);
+  const [createForm, setCreateForm] = useState({ company: "", email: "", phone: "", currency: "SGD" });
+  const openCreateFor = (row: Row) => {
+    setCreateForm({
+      company: row.extractedName ?? "",
+      email: row.extractedEmail ?? "",
+      phone: "",
+      currency: row.extractedCurrency,
+    });
+    setCreateFor(row);
+  };
+  const submitCreate = async () => {
+    if (!createFor) return;
+    if (!createForm.company.trim()) { toast.error("Company name is required"); return; }
+    if (!createForm.email.trim() && !createForm.phone.trim()) {
+      toast.error("Add an email or phone so the customer can be reached");
+      return;
+    }
+    try {
+      const id = await createOrReuseCustomer(createForm);
+      updateRow(createFor.id, { customerId: id, status: "matched", autoCreated: true });
+      toast.success(`Customer "${createForm.company.trim()}" created and assigned`);
+      setCreateFor(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't create customer");
+    }
+  };
 
   const updateRow = (id: string, patch: Partial<Row>) =>
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
@@ -144,6 +253,8 @@ function BulkInner() {
       fileKey: null,
       status: "extracting",
       extractedName: null,
+      extractedEmail: null,
+      extractedCurrency: "SGD",
       confidence: null,
       customerId: null,
     }));
@@ -167,6 +278,8 @@ function BulkInner() {
           const body = (await res.json().catch(() => ({}))) as {
             extraction?: {
               customerName?: string | null;
+              customerEmail?: string | null;
+              currency?: string | null;
               confidence?: "high" | "medium" | "low" | null;
             };
             error?: string;
@@ -174,14 +287,38 @@ function BulkInner() {
           if (!res.ok) throw new Error(body.error || "Extract failed");
 
           const extractedName = body.extraction?.customerName ?? null;
-          const match = matchCustomer(extractedName, customerOptions);
+          const extractedEmail = body.extraction?.customerEmail ?? null;
+          const rawCur = (body.extraction?.currency ?? "").trim().toUpperCase();
+          const extractedCurrency = /^[A-Z]{3}$/.test(rawCur) ? rawCur : "SGD";
+          const match = matchCustomer(extractedName, customerOptions, extractedCurrency);
 
           updateRow(row.id, {
             extractedName,
+            extractedEmail,
+            extractedCurrency,
             confidence: body.extraction?.confidence ?? null,
             customerId: match?.id ?? null,
             status: match ? "matched" : "no_match",
           });
+
+          // Not one of ours yet → create it automatically when the statement
+          // gives us a way to reach them (email). Without an email/phone the
+          // row offers a one-click "Create customer" instead, since the
+          // customer router requires a contact channel.
+          if (!match && extractedName && extractedEmail) {
+            try {
+              const id = await createOrReuseCustomer({
+                company: extractedName,
+                email: extractedEmail,
+                currency: extractedCurrency,
+              });
+              updateRow(row.id, { customerId: id, status: "matched", autoCreated: true });
+              toast.success(`New customer "${extractedName}" created from ${row.fileName}`);
+            } catch (err) {
+              console.error("Auto-create customer failed:", err);
+              // Leave the row unmatched; the user can create/pick manually.
+            }
+          }
         } catch (err) {
           updateRow(row.id, {
             status: "error",
@@ -318,6 +455,7 @@ function BulkInner() {
                       status: id ? "matched" : "no_match",
                     })
                   }
+                  onCreateCustomer={() => openCreateFor(row)}
                   onRemove={() => removeRow(row.id)}
                 />
               ))}
@@ -351,6 +489,52 @@ function BulkInner() {
           </Button>
         </div>
       )}
+
+      <Dialog open={!!createFor} onOpenChange={(o) => { if (!o) setCreateFor(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create customer</DialogTitle>
+            <DialogDescription>
+              This statement is for a customer you don&apos;t have yet. Add an email or
+              phone so they can be reached, and we&apos;ll assign the statement to them.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 py-2">
+            <div className="grid gap-1.5">
+              <Label htmlFor="bulk-cust-company">Company <span className="text-red-600">*</span></Label>
+              <Input id="bulk-cust-company" value={createForm.company} onChange={(e) => setCreateForm({ ...createForm, company: e.target.value })} />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="bulk-cust-currency">Currency <span className="text-red-600">*</span></Label>
+              <Select value={createForm.currency} onValueChange={(v) => setCreateForm({ ...createForm, currency: v })}>
+                <SelectTrigger id="bulk-cust-currency"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {COMMON_CURRENCIES.map((c) => (
+                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="bulk-cust-email">Email</Label>
+              <Input id="bulk-cust-email" type="email" value={createForm.email} onChange={(e) => setCreateForm({ ...createForm, email: e.target.value })} placeholder="accounts@acme.com" />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="bulk-cust-phone">Phone</Label>
+              <Input id="bulk-cust-phone" value={createForm.phone} onChange={(e) => setCreateForm({ ...createForm, phone: e.target.value })} placeholder="+65 1234 5678" />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setCreateFor(null)}>Cancel</Button>
+            <Button
+              onClick={submitCreate}
+              disabled={createCustomer.isPending || !createForm.company.trim() || (!createForm.email.trim() && !createForm.phone.trim())}
+            >
+              {createCustomer.isPending ? "Creating…" : "Create & assign"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -359,11 +543,13 @@ function RowView({
   row,
   customers,
   onChangeCustomer,
+  onCreateCustomer,
   onRemove,
 }: {
   row: Row;
-  customers: Array<{ id: string; company: string | null; name: string }>;
+  customers: CustomerOption[];
   onChangeCustomer: (id: string | null) => void;
+  onCreateCustomer: () => void;
   onRemove: () => void;
 }) {
   return (
@@ -402,6 +588,23 @@ function RowView({
               Couldn&apos;t read a customer name — pick one manually.
             </p>
           )}
+          {row.status === "no_match" && row.extractedName && (
+            <p className="text-xs text-amber-700">
+              Not in your customers ({row.extractedCurrency}) — pick one, or{" "}
+              <button
+                type="button"
+                onClick={onCreateCustomer}
+                className="inline-flex items-center gap-1 font-medium text-blue-600 hover:underline"
+              >
+                <UserPlus className="h-3 w-3" />
+                create customer
+              </button>
+              .
+            </p>
+          )}
+          {row.autoCreated && row.status !== "sent" && (
+            <p className="text-xs text-emerald-700">New customer created from this statement.</p>
+          )}
           {row.status === "error" && (
             <p className="flex items-center gap-1 text-xs text-rose-700">
               <AlertCircle className="h-3 w-3" />
@@ -433,6 +636,7 @@ function RowView({
             {customers.map((c) => (
               <SelectItem key={c.id} value={c.id}>
                 {c.company || c.name}
+                <span className="ml-1 text-xs text-muted-foreground">· {c.currency}</span>
               </SelectItem>
             ))}
           </SelectContent>
