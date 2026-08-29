@@ -666,13 +666,13 @@ export function CombinedRun({ jobId, onJobChange }: { jobId: string | null; onJo
               <Input id="seg-contact-phone" value={contactForm.phone} onChange={(e) => setContactForm({ ...contactForm, phone: e.target.value })} placeholder="+65 9123 4567" />
             </div>
           </div>
-          <DialogFooter className="gap-2">
+          <DialogFooter className="min-w-0 flex-wrap gap-2">
             <Button variant="outline" onClick={() => setContactFor(null)}>Cancel</Button>
             <Button variant="outline" onClick={() => saveContact()} disabled={!contactForm.email.trim()} title="Keep the email on this row; the customer is created later, when you press Create or Send">
               Save
             </Button>
             <Button onClick={() => void saveContactAndCreate()} disabled={!contactForm.email.trim() || createCustomers.isPending} title="Create this customer in your customer book right now — no statement is sent">
-              {createCustomers.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <><UserPlus className="mr-2 h-4 w-4" /> Save &amp; create customer now</>}
+              {createCustomers.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <><UserPlus className="mr-2 h-4 w-4" /> Save &amp; create now</>}
             </Button>
           </DialogFooter>
         </DialogContent>
